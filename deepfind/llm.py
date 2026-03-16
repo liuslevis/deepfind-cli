@@ -52,7 +52,6 @@ class ResponseAgent:
             request: dict[str, Any] = {
                 "model": self.settings.model,
                 "messages": messages,
-                "temperature": 0.2,
                 "max_tokens": 1400,
             }
             if use_tools:

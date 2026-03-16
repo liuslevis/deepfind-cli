@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
 deepfind/__init__.py
+deepfind/bili_transcribe.py
 deepfind/cli.py
 deepfind/config.py
 deepfind/json_utils.py
@@ -16,6 +17,7 @@ deepfind_cli.egg-info/dependency_links.txt
 deepfind_cli.egg-info/entry_points.txt
 deepfind_cli.egg-info/requires.txt
 deepfind_cli.egg-info/top_level.txt
+tests/test_bili_transcribe.py
 tests/test_cli.py
 tests/test_config.py
 tests/test_llm.py

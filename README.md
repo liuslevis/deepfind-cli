@@ -14,11 +14,25 @@ Install optional ASR dependencies only when you need Bilibili transcription:
 python3 -m pip install -e ".[media]"
 ```
 
+Pre-download the ASR model on Windows (PowerShell) to avoid first-run delay:
+
+```powershell
+hf download Qwen/Qwen3-ASR-1.7B --repo-type model
+```
+
 Optional tools:
 
 - [twitter-cli](https://github.com/jackwener/twitter-cli)
 - [xiaohongshu-cli](https://github.com/jackwener/xiaohongshu-cli)
 - [bilibili-cli](https://github.com/jackwener/bilibili-cli)
+
+Install optional CLIs (WSL):
+
+```bash
+uv tool install bilibili-cli
+uv tool install git+https://github.com/jackwener/xiaohongshu-cli.git
+uv tool install git+https://github.com/jackwener/twitter-cli.git
+```
 
 ## Env
 

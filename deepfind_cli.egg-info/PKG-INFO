@@ -5,8 +5,13 @@ Summary: Lead/sub-agent web research CLI powered by Qwen.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: openai>=2.15.0
-Provides-Extra: viewer
-Requires-Dist: frogmouth>=0.9.2; extra == "viewer"
+Provides-Extra: media
+Requires-Dist: accelerate>=0.20.0; extra == "media"
+Requires-Dist: librosa>=0.10.0; extra == "media"
+Requires-Dist: qwen-asr; extra == "media"
+Requires-Dist: torch>=2.0.0; extra == "media"
+Requires-Dist: torchaudio>=2.0.0; extra == "media"
+Requires-Dist: transformers>=4.37.0; extra == "media"
 
 # deepfind-cli
 
@@ -18,10 +23,17 @@ Minimal multi-agent research CLI in Python.
 python3 -m pip install -e .
 ```
 
+Install optional ASR dependencies only when you need Bilibili transcription:
+
+```bash
+python3 -m pip install -e ".[media]"
+```
+
 Optional tools:
 
 - [twitter-cli](https://github.com/jackwener/twitter-cli)
 - [xiaohongshu-cli](https://github.com/jackwener/xiaohongshu-cli)
+- [bilibili-cli](https://github.com/jackwener/bilibili-cli)
 
 ## Env
 
@@ -44,6 +56,9 @@ Optional:
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 TWITTER_CLI_BIN=twitter
 XHS_CLI_BIN=xhs
+BILI_BIN=bili
+ASR_MODEL=Qwen/Qwen3-ASR-1.7B
+DEEPFIND_AUDIO_DIR=audio
 DEEPFIND_TOOL_TIMEOUT=90
 ```
 
@@ -66,16 +81,34 @@ Flags:
 For prettier terminal Markdown:
 
 ```bash
-python3 -m pip install -e '.[viewer]'
+pipx install frogmouth
 ```
 
 ## How It Works
 
 - Lead agent splits the query into a few tasks.
-- Sub-agents call local tools such as `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, and `twitter_read`.
+- Sub-agents call local tools such as `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, and `bili_transcribe`.
 - Lead agent merges the results into one answer.
 
 Qwen is used through the OpenAI-compatible `chat.completions` API.
+
+## Bilibili Transcription Tool
+
+`bili_transcribe` is available to sub-agents and accepts either a Bilibili video URL
+or a raw `BV...` ID.
+It returns transcript text only (no summary generation).
+
+Setup (WSL):
+
+```bash
+uv tool install bilibili-cli
+bili status
+```
+
+Artifacts:
+
+- Segments: `audio/<BVID>/seg_*`
+- Transcript: `audio/transcripts/<BVID>.txt`
 
 ## Test
 
