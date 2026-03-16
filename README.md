@@ -5,6 +5,7 @@ Multi-agent search CLI in Python.
 通过 CLI 工具帮你在小红书搜索问题、总结B站视频。
 
 ![img1](./doc/img/screenshot1.png)
+
 ![img2](./doc/img/screenshot2.png)
 
 ## Usage
