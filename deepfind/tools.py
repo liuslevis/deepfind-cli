@@ -8,6 +8,49 @@ from .config import Settings
 from .json_utils import dump_json, try_load_json
 
 
+def _twitter_type(value: str) -> str | None:
+    mapping = {
+        "top": "top",
+        "latest": None,
+        "photos": "photos",
+        "videos": "videos",
+        "Top": "top",
+        "Latest": None,
+        "Photos": "photos",
+        "Videos": "videos",
+        "People": "top",
+    }
+    return mapping.get(value)
+
+
+def _xhs_sort(value: str) -> str:
+    mapping = {
+        "general": "general",
+        "popular": "popular",
+        "latest": "latest",
+        "latest_popular": "latest",
+        "most_popular": "popular",
+    }
+    return mapping.get(value, "general")
+
+
+def _xhs_type(value: str) -> str:
+    mapping = {
+        "all": "all",
+        "video": "video",
+        "image": "image",
+    }
+    return mapping.get(value, "all")
+
+
+def _xhs_items(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, dict):
+        items = data.get("items")
+        if isinstance(items, list):
+            return [item for item in items if isinstance(item, dict)]
+    return []
+
+
 class Toolset:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -33,7 +76,7 @@ class Toolset:
                         "max_results": {"type": "integer", "minimum": 1, "maximum": 20},
                         "tab": {
                             "type": "string",
-                            "enum": ["Top", "Latest", "People", "Photos", "Videos"],
+                            "enum": ["top", "photos", "videos"],
                         },
                     },
                     "required": ["query"],
@@ -59,10 +102,10 @@ class Toolset:
                     "type": "object",
                     "properties": {
                         "query": {"type": "string"},
-                        "page": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "page": {"type": "integer", "minimum": 1, "maximum": 10},
                         "sort": {
                             "type": "string",
-                            "enum": ["general", "latest_popular", "most_popular"],
+                            "enum": ["general", "popular", "latest"],
                         },
                         "note_type": {
                             "type": "string",
@@ -146,11 +189,16 @@ class Toolset:
         self,
         query: str,
         max_results: int = 10,
-        tab: str = "Latest",
+        tab: str = "",
     ) -> dict[str, Any]:
+        search_type = _twitter_type(tab)
+        args = ["search"]
+        if search_type:
+            args.extend(["--type", search_type])
+        args.extend(["--max", str(max_results), query, "--json"])
         return self._run(
             self.settings.twitter_bin,
-            ["search", query, "--max", str(max_results), "--tab", tab, "--json"],
+            args,
             "twitter_search",
         )
 
@@ -164,25 +212,71 @@ class Toolset:
     def xhs_search(
         self,
         query: str,
-        page: int = 1,
+        page: int = 10,
         sort: str = "general",
         note_type: str = "all",
+        pages: int | None = None,
     ) -> dict[str, Any]:
-        return self._run(
-            self.settings.xhs_bin,
-            [
-                "search",
-                query,
-                "--page",
-                str(page),
-                "--sort",
-                sort,
-                "--note-type",
-                note_type,
-                "--json",
-            ],
-            "xhs_search",
-        )
+        page_limit = pages if pages is not None else page
+        page_limit = max(1, min(10, page_limit))
+        seen_ids: set[str] = set()
+        merged_items: list[dict[str, Any]] = []
+        commands: list[list[str]] = []
+        pages_fetched = 0
+        has_more = False
+
+        for current_page in range(1, page_limit + 1):
+            result = self._run(
+                self.settings.xhs_bin,
+                [
+                    "search",
+                    "--sort",
+                    _xhs_sort(sort),
+                    "--type",
+                    _xhs_type(note_type),
+                    "--page",
+                    str(current_page),
+                    query,
+                    "--json",
+                ],
+                "xhs_search",
+            )
+            if not result.get("ok"):
+                return result
+
+            command = result.get("command")
+            if isinstance(command, list):
+                commands.append(command)
+
+            data = result.get("data")
+            items = _xhs_items(data)
+            for item in items:
+                item_id = str(item.get("id", ""))
+                if item_id and item_id in seen_ids:
+                    continue
+                if item_id:
+                    seen_ids.add(item_id)
+                merged_items.append(item)
+
+            pages_fetched += 1
+            has_more = bool(data.get("has_more")) if isinstance(data, dict) else False
+
+        return {
+            "ok": True,
+            "tool": "xhs_search",
+                "command": commands[-1] if commands else [],
+            "commands": commands,
+            "data": {
+                "query": query,
+                "sort": _xhs_sort(sort),
+                "type": _xhs_type(note_type),
+                "page_start": 1,
+                "pages_requested": page_limit,
+                "pages_fetched": pages_fetched,
+                "has_more": has_more,
+                "items": merged_items,
+            },
+        }
 
     def xhs_read(self, ref: str) -> dict[str, Any]:
         return self._run(

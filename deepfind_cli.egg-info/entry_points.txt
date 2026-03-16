@@ -1,0 +1,2 @@
+[console_scripts]
+deepfind = deepfind.cli:main

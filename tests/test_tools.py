@@ -29,6 +29,75 @@ class ToolsetTests(unittest.TestCase):
                 "deepfind.tools.subprocess.run",
                 return_value=SimpleNamespace(returncode=0, stdout='{"items":[1]}', stderr=""),
             ):
-                result = toolset.xhs_search("topic")
+                result = toolset.xhs_search("topic", page=1)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["data"], {"items": [1]})
+        self.assertEqual(result["data"]["items"], [])
+
+    def test_twitter_search_uses_supported_flags(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/twitter"):
+            with patch(
+                "deepfind.tools.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout='{"items":[]}', stderr=""),
+            ) as run_mock:
+                toolset.twitter_search("robotics", max_results=5, tab="Latest")
+        command = run_mock.call_args.kwargs["args"] if "args" in run_mock.call_args.kwargs else run_mock.call_args[0][0]
+        self.assertEqual(
+            command,
+            ["/usr/bin/twitter", "search", "--max", "5", "robotics", "--json"],
+        )
+
+    def test_twitter_search_keeps_top_when_requested(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/twitter"):
+            with patch(
+                "deepfind.tools.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout='{"items":[]}', stderr=""),
+            ) as run_mock:
+                toolset.twitter_search("robotics", max_results=5, tab="top")
+        command = run_mock.call_args.kwargs["args"] if "args" in run_mock.call_args.kwargs else run_mock.call_args[0][0]
+        self.assertEqual(
+            command,
+            ["/usr/bin/twitter", "search", "--type", "top", "--max", "5", "robotics", "--json"],
+        )
+
+    def test_xhs_search_uses_supported_flags(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch(
+                "deepfind.tools.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout='{"items":[]}', stderr=""),
+            ) as run_mock:
+                toolset.xhs_search("机器人手", page=1, sort="most_popular", note_type="image")
+        first_call = run_mock.call_args_list[0]
+        command = first_call.kwargs["args"] if "args" in first_call.kwargs else first_call[0][0]
+        self.assertEqual(
+            command,
+            ["/usr/bin/xhs", "search", "--sort", "popular", "--type", "image", "--page", "1", "机器人手", "--json"],
+        )
+
+    def test_xhs_search_fetches_ten_pages_by_default(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        page_payload = SimpleNamespace(returncode=0, stdout='{"items":[],"has_more":true}', stderr="")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=page_payload) as run_mock:
+                toolset.xhs_search("机器灵巧手")
+        self.assertEqual(run_mock.call_count, 10)
+        first = run_mock.call_args_list[0][0][0]
+        last = run_mock.call_args_list[-1][0][0]
+        self.assertEqual(first, ["/usr/bin/xhs", "search", "--sort", "general", "--type", "all", "--page", "1", "机器灵巧手", "--json"])
+        self.assertEqual(last, ["/usr/bin/xhs", "search", "--sort", "general", "--type", "all", "--page", "10", "机器灵巧手", "--json"])
+
+    def test_xhs_search_uses_page_as_upper_bound(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        page_payload = SimpleNamespace(returncode=0, stdout='{"items":[],"has_more":false}', stderr="")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=page_payload) as run_mock:
+                result = toolset.xhs_search("灵巧手 机器人", page=3)
+        self.assertEqual(run_mock.call_count, 3)
+        first = run_mock.call_args_list[0][0][0]
+        last = run_mock.call_args_list[-1][0][0]
+        self.assertEqual(first, ["/usr/bin/xhs", "search", "--sort", "general", "--type", "all", "--page", "1", "灵巧手 机器人", "--json"])
+        self.assertEqual(last, ["/usr/bin/xhs", "search", "--sort", "general", "--type", "all", "--page", "3", "灵巧手 机器人", "--json"])
+        self.assertEqual(result["data"]["pages_requested"], 3)
+        self.assertEqual(result["data"]["pages_fetched"], 3)

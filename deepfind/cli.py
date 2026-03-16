@@ -4,6 +4,8 @@ import argparse
 import sys
 
 from .orchestrator import DeepFind
+from .output import render_answer
+from .progress import ConsoleProgress
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,6 +18,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=50,
         help="max response/tool rounds per agent",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="disable progress output",
+    )
+    parser.add_argument(
+        "--viewer",
+        choices=("auto", "plain", "frogmouth"),
+        default="auto",
+        help="final answer viewer: auto, plain, or frogmouth",
+    )
     return parser
 
 
@@ -27,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_iter_per_agent < 1:
         parser.error("--max-iter-per-agent must be >= 1")
 
-    app = DeepFind()
+    app = DeepFind(progress=ConsoleProgress(enabled=not args.quiet))
     try:
         answer = app.run(
             query=args.query,
@@ -38,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    print(answer)
+    render_answer(answer, viewer=args.viewer, stream=sys.stdout)
     return 0
 
 

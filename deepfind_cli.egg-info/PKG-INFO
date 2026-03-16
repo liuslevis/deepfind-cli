@@ -1,3 +1,13 @@
+Metadata-Version: 2.4
+Name: deepfind-cli
+Version: 0.1.0
+Summary: Lead/sub-agent web research CLI powered by Qwen.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: openai>=2.15.0
+Provides-Extra: viewer
+Requires-Dist: frogmouth>=0.9.2; extra == "viewer"
+
 # deepfind-cli
 
 Minimal multi-agent research CLI in Python.
@@ -56,7 +66,7 @@ Flags:
 For prettier terminal Markdown:
 
 ```bash
-pipx install frogmouth
+python3 -m pip install -e '.[viewer]'
 ```
 
 ## How It Works

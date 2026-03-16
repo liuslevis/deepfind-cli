@@ -6,6 +6,7 @@ from typing import Any
 from .config import Settings
 from .json_utils import dump_json, try_load_json
 from .models import AgentResult
+from .progress import ConsoleProgress
 from .tools import Toolset
 
 
@@ -34,6 +35,7 @@ class ResponseAgent:
     settings: Settings
     tools: Toolset
     max_iter: int
+    progress: ConsoleProgress | None = None
 
     def __post_init__(self) -> None:
         self.client = self.settings.new_client()
@@ -45,6 +47,8 @@ class ResponseAgent:
         ]
 
         for iteration in range(1, self.max_iter + 1):
+            if self.progress:
+                self.progress.iteration(name, iteration)
             request: dict[str, Any] = {
                 "model": self.settings.model,
                 "messages": messages,
@@ -80,10 +84,19 @@ class ResponseAgent:
                     }
                 )
                 for call in tool_calls:
+                    if self.progress:
+                        self.progress.tool_call(
+                            name,
+                            iteration,
+                            call.function.name,
+                            _parse_tool_arguments(call.function.arguments),
+                        )
                     output = self.tools.call(
                         call.function.name,
                         _parse_tool_arguments(call.function.arguments),
                     )
+                    if self.progress:
+                        self.progress.tool_result(name, call.function.name, output)
                     messages.append(
                         {
                             "role": "tool",
@@ -96,8 +109,12 @@ class ResponseAgent:
             text = (message.content or "").strip()
             if not text:
                 text = dump_json({"summary": "", "facts": [], "gaps": ["empty_output"]})
+            if self.progress:
+                self.progress.agent_done(name, iteration, text)
             return AgentResult(name=name, text=text, citations=[], iterations=iteration)
 
+        if self.progress:
+            self.progress.agent_done(name, self.max_iter, "max_iter_reached")
         return AgentResult(
             name=name,
             text=dump_json({"summary": "", "facts": [], "gaps": ["max_iter_reached"]}),
