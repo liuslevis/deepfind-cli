@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepfind-cli"
+version = "0.1.0"
+description = "Lead/sub-agent web research CLI powered by Qwen."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "openai>=2.15.0",
+]
+
+[project.scripts]
+deepfind = "deepfind.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["deepfind*"]
