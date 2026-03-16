@@ -111,6 +111,19 @@ def find_segments(root: Path) -> list[Path]:
     )
 
 
+def load_cached_transcript(audio_root: Path, bili_id: str) -> tuple[Path, str] | None:
+    candidate = audio_root / "transcripts" / f"{bili_id}.txt"
+    if not candidate.is_file():
+        return None
+    try:
+        transcript = candidate.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return None
+    if transcript:
+        return candidate, transcript
+    return None
+
+
 def ensure_segments(
     bili_id: str,
     output_dir: Path,
@@ -274,6 +287,15 @@ def transcribe_bili_audio(
 ) -> dict[str, str]:
     resolved_id = parse_bili_id(bili_id)
     audio_root = resolve_audio_root(audio_dir)
+    cached = load_cached_transcript(audio_root, resolved_id)
+    if cached:
+        transcript_path, transcript = cached
+        return {
+            "bili_id": resolved_id,
+            "transcript_path": str(transcript_path),
+            "transcript": transcript,
+        }
+
     audio_dir_path = audio_root / resolved_id
     transcript_root = audio_root / "transcripts"
     transcript_root.mkdir(parents=True, exist_ok=True)

@@ -81,3 +81,24 @@ class BiliTranscribeTests(unittest.TestCase):
                 "first line\nsecond line\n",
             )
             self.assertFalse((tmp_path / "transcripts" / "summary.txt").exists())
+
+    def test_transcribe_bili_audio_uses_cached_transcript_and_skips_pipeline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            transcript_dir = tmp_path / "transcripts"
+            transcript_dir.mkdir(parents=True, exist_ok=True)
+            cached_path = transcript_dir / "BV1cgPSzeEj5.txt"
+            cached_path.write_text("cached line\n", encoding="utf-8")
+
+            with patch("deepfind.bili_transcribe.ensure_segments") as ensure_mock:
+                with patch("deepfind.bili_transcribe.load_model") as load_model_mock:
+                    result = transcribe_bili_audio(
+                        "BV1cgPSzeEj5",
+                        audio_dir=tmpdir,
+                    )
+
+        self.assertEqual(result["bili_id"], "BV1cgPSzeEj5")
+        self.assertEqual(result["transcript"], "cached line")
+        self.assertEqual(result["transcript_path"], str(cached_path))
+        ensure_mock.assert_not_called()
+        load_model_mock.assert_not_called()

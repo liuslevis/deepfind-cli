@@ -20,17 +20,13 @@ Pre-download the ASR model on Windows (PowerShell) to avoid first-run delay:
 hf download Qwen/Qwen3-ASR-1.7B --repo-type model
 ```
 
-Optional tools:
-
-- [twitter-cli](https://github.com/jackwener/twitter-cli)
-- [xiaohongshu-cli](https://github.com/jackwener/xiaohongshu-cli)
-- [bilibili-cli](https://github.com/jackwener/bilibili-cli)
-
-Install optional CLIs (WSL):
-
 ```bash
-uv tool install bilibili-cli xiaohongshu-cli twitter-cli
-uv tool upgrade bilibili-cli xiaohongshu-cli twitter-cli
+uv tool install bilibili-cli
+uv tool install xiaohongshu-cli
+uv tool install twitter-cli
+bili whoami
+xhs whoami
+twitter whoami
 ```
 
 ## Env
@@ -63,9 +59,10 @@ DEEPFIND_TOOL_TIMEOUT=90
 ## Run
 
 ```bash
-python3 -m deepfind.cli "小红书上的博主：刘小鸭的AI日记 都有什么内容？ 他有多少粉丝?" --num-agent 2
-python3 -m deepfind.cli "same query" --num-agent 2 --quiet
-python3 -m deepfind.cli "same query" --viewer frogmouth
+uv run -m deepfind.cli "小红书博主：刘小鸭的AI日记 发过哪些内容？粉丝数?" --num-agent 2
+uv run -m deepfind.cli "帮我总结https://www.bilibili.com/video/BV1tew5zVEDf 关于话题世界模型、逃出硅谷、反OpenAI 、AMI Labs、两次拒绝Ilya、杨立昆、李飞飞和42的内容" --num-agent 1
+uv run -m deepfind.cli "same query" --num-agent 2 --quiet
+uv run -m deepfind.cli "same query" 
 ```
 
 Flags:
@@ -74,7 +71,7 @@ Flags:
 - `--num-agent`: `1..4`
 - `--max-iter-per-agent`: default `50`
 - `--quiet`: disable formatted progress output
-- `--viewer`: `auto|plain|frogmouth`, default `auto`
+- `--viewer`: `plain|pretify`, default `pretify`
 
 For prettier terminal Markdown:
 
@@ -95,6 +92,8 @@ Qwen is used through the OpenAI-compatible `chat.completions` API.
 `bili_transcribe` is available to sub-agents and accepts either a Bilibili video URL
 or a raw `BV...` ID.
 It returns transcript text only (no summary generation).
+If `audio/transcripts/<BVID>.txt` already exists,
+the tool reuses it and skips download + ASR transcription.
 
 Setup (WSL):
 

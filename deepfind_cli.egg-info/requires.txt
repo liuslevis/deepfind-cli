@@ -1,4 +1,5 @@
 openai>=2.15.0
+frogmouth
 
 [media]
 accelerate>=0.20.0

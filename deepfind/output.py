@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import TextIO
 
 
-def render_answer(answer: str, viewer: str = "auto", stream: TextIO = sys.stdout) -> None:
+def render_answer(answer: str, viewer: str = "pretify", stream: TextIO = sys.stdout) -> None:
     if viewer == "plain" or not _is_interactive(stream):
         print(answer, file=stream)
         return
 
-    if viewer in {"auto", "frogmouth"} and _run_frogmouth(answer):
+    if viewer in {"pretify"} and _run_frogmouth(answer):
         return
 
     print(answer, file=stream)
