@@ -1,7 +1,20 @@
 # deepfind-cli
 
-Minimal multi-agent research CLI in Python.
+Multi-agent search CLI in Python.
 
+通过 CLI 工具帮你在小红书搜索问题、总结B站视频。
+
+![img1](./doc/img/screenshot1.png)
+![img2](./doc/img/screenshot2.png)
+
+## Usage
+
+```
+uv run -m deepfind.cli "帮我总结https://www.bilibili.com/video/BV1tew5zVEDf 关于话题世界模型、逃出硅谷 、反OpenAI、AMI Labs、两次拒绝Ilya、杨立昆、李飞飞和42的内容" --num-agent 1 --quiet
+
+uv run -m deepfind.cli "上海哪里赏樱人少？搜索小红书" --num-agent 2
+
+```
 ## Install
 
 ```bash
@@ -71,13 +84,6 @@ Flags:
 - `--num-agent`: `1..4`
 - `--max-iter-per-agent`: default `50`
 - `--quiet`: disable formatted progress output
-- `--viewer`: `plain|pretify`, default `pretify`
-
-For prettier terminal Markdown:
-
-```bash
-pipx install frogmouth
-```
 
 ## How It Works
 

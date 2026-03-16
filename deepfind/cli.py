@@ -23,12 +23,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="disable progress output",
     )
-    parser.add_argument(
-        "--viewer",
-        choices=("auto", "plain", "frogmouth"),
-        default="auto",
-        help="final answer viewer: auto, plain, or frogmouth",
-    )
     return parser
 
 
@@ -51,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    render_answer(answer, viewer=args.viewer, stream=sys.stdout)
+    render_answer(answer, stream=sys.stdout)
     return 0
 
 

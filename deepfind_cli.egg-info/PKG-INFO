@@ -5,7 +5,6 @@ Summary: Lead/sub-agent web research CLI powered by Qwen.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: openai>=2.15.0
-Requires-Dist: frogmouth
 Provides-Extra: media
 Requires-Dist: accelerate>=0.20.0; extra == "media"
 Requires-Dist: librosa>=0.10.0; extra == "media"
@@ -16,7 +15,9 @@ Requires-Dist: transformers>=4.37.0; extra == "media"
 
 # deepfind-cli
 
-Minimal multi-agent research CLI in Python.
+Multi-agent search CLI in Python.
+
+通过 CLI 工具帮你在小红书搜索问题、总结B站视频。
 
 ## Install
 
@@ -37,8 +38,12 @@ hf download Qwen/Qwen3-ASR-1.7B --repo-type model
 ```
 
 ```bash
-uv tool install bilibili-cli xiaohongshu-cli twitter-cli
-uv tool upgrade bilibili-cli xiaohongshu-cli twitter-cli
+uv tool install bilibili-cli
+uv tool install xiaohongshu-cli
+uv tool install twitter-cli
+bili whoami
+xhs whoami
+twitter whoami
 ```
 
 ## Env
@@ -83,13 +88,6 @@ Flags:
 - `--num-agent`: `1..4`
 - `--max-iter-per-agent`: default `50`
 - `--quiet`: disable formatted progress output
-- `--viewer`: `plain|pretify`, default `pretify`
-
-For prettier terminal Markdown:
-
-```bash
-pipx install frogmouth
-```
 
 ## How It Works
 

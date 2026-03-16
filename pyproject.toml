@@ -9,8 +9,7 @@ description = "Lead/sub-agent web research CLI powered by Qwen."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "openai>=2.15.0",
-  "frogmouth",
+  "openai>=2.15.0"
 ]
 
 [project.optional-dependencies]
@@ -28,3 +27,12 @@ deepfind = "deepfind.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["deepfind*"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
