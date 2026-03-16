@@ -16,7 +16,7 @@ python3 -m pip install -e ".[media]"
 
 Pre-download the ASR model on Windows (PowerShell) to avoid first-run delay:
 
-```powershell
+```bash
 hf download Qwen/Qwen3-ASR-1.7B --repo-type model
 ```
 
@@ -29,9 +29,8 @@ Optional tools:
 Install optional CLIs (WSL):
 
 ```bash
-uv tool install bilibili-cli
-uv tool install git+https://github.com/jackwener/xiaohongshu-cli.git
-uv tool install git+https://github.com/jackwener/twitter-cli.git
+uv tool install bilibili-cli xiaohongshu-cli twitter-cli
+uv tool upgrade bilibili-cli xiaohongshu-cli twitter-cli
 ```
 
 ## Env
