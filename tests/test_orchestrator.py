@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from deepfind.config import Settings
-from deepfind.orchestrator import DeepFind
+from deepfind.orchestrator import DeepFind, WORKER_PROMPT
 
 
 class OrchestratorTests(unittest.TestCase):
@@ -17,3 +17,6 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(tasks), 3)
         self.assertEqual(tasks[0], "one task")
 
+    def test_worker_prompt_mentions_bili_transcribe(self) -> None:
+        self.assertIn("bili_transcribe", WORKER_PROMPT)
+        self.assertIn("Bilibili", WORKER_PROMPT)

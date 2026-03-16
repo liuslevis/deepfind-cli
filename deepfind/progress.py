@@ -42,6 +42,8 @@ def _tool_summary(parsed: dict[str, Any]) -> str:
         note = data.get("note") if isinstance(data.get("note"), dict) else None
         if note and note.get("title"):
             return _short(note["title"], 64)
+        if data.get("transcript_path"):
+            return _short(f"transcript={data['transcript_path']}", 64)
 
     return parsed.get("tool", "")
 

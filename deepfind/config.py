@@ -6,6 +6,8 @@ from pathlib import Path
 
 from openai import OpenAI
 
+from .bili_transcribe import DEFAULT_ASR_MODEL
+
 
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_MODEL = "qwen3-max"
@@ -55,6 +57,9 @@ class Settings:
     base_url: str = DEFAULT_BASE_URL
     twitter_bin: str = "twitter"
     xhs_bin: str = "xhs"
+    bili_bin: str = "bili"
+    asr_model: str = DEFAULT_ASR_MODEL
+    audio_dir: str = "audio"
     subprocess_timeout: int = 90
 
     @classmethod
@@ -70,6 +75,9 @@ class Settings:
             base_url=_env("QWEN_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL,
             twitter_bin=_env("TWITTER_CLI_BIN", "twitter") or "twitter",
             xhs_bin=_env("XHS_CLI_BIN", "xhs") or "xhs",
+            bili_bin=_env("BILI_BIN", "bili") or "bili",
+            asr_model=_env("ASR_MODEL", DEFAULT_ASR_MODEL) or DEFAULT_ASR_MODEL,
+            audio_dir=_env("DEEPFIND_AUDIO_DIR", "audio") or "audio",
             subprocess_timeout=int(timeout or "90"),
         )
 

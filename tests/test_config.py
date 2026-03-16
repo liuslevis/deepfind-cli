@@ -24,6 +24,9 @@ class ConfigTests(unittest.TestCase):
             "QWEN_BASE_URL": f"{DEFAULT_BASE_URL} # comment",
             "TWITTER_CLI_BIN": "twitter # comment",
             "XHS_CLI_BIN": "xhs # comment",
+            "BILI_BIN": "bili # comment",
+            "ASR_MODEL": "Qwen/Qwen3-ASR-1.7B # comment",
+            "DEEPFIND_AUDIO_DIR": "audio # comment",
             "DEEPFIND_TOOL_TIMEOUT": "45 # comment",
         }
         with patch.dict(os.environ, env, clear=True):
@@ -33,6 +36,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.base_url, DEFAULT_BASE_URL)
         self.assertEqual(settings.twitter_bin, "twitter")
         self.assertEqual(settings.xhs_bin, "xhs")
+        self.assertEqual(settings.bili_bin, "bili")
+        self.assertEqual(settings.asr_model, "Qwen/Qwen3-ASR-1.7B")
+        self.assertEqual(settings.audio_dir, "audio")
         self.assertEqual(settings.subprocess_timeout, 45)
 
     def test_from_env_loads_dotenv_file(self) -> None:
@@ -46,6 +52,9 @@ class ConfigTests(unittest.TestCase):
                         "QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1",
                         "TWITTER_CLI_BIN=twitter",
                         "XHS_CLI_BIN=xhs",
+                        "BILI_BIN=bili",
+                        "ASR_MODEL=Qwen/Qwen3-ASR-1.7B",
+                        "DEEPFIND_AUDIO_DIR=audio",
                         "DEEPFIND_TOOL_TIMEOUT=30",
                     ]
                 )
@@ -55,4 +64,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.api_key, "sk-from-dotenv")
         self.assertEqual(settings.model, DEFAULT_MODEL)
         self.assertEqual(settings.base_url, DEFAULT_BASE_URL)
+        self.assertEqual(settings.bili_bin, "bili")
+        self.assertEqual(settings.audio_dir, "audio")
         self.assertEqual(settings.subprocess_timeout, 30)

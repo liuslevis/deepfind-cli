@@ -11,7 +11,10 @@ from .progress import ConsoleProgress
 from .tools import Toolset
 
 PLAN_PROMPT = "Split into {n} distinct research tasks. JSON array only."
-WORKER_PROMPT = 'Do the task. Use tools. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
+WORKER_PROMPT = (
+    'Do the task. Use tools. If the task mentions Bilibili video/audio, call bili_transcribe with the URL or BVID '
+    'before summarizing. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
+)
 LEAD_PROMPT = "Merge worker reports. Fill gaps with tools if needed. Answer briefly with sources."
 
 

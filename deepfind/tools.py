@@ -4,6 +4,14 @@ import shutil
 import subprocess
 from typing import Any
 
+from .bili_transcribe import (
+    BiliDownloadError,
+    BiliTranscribeError,
+    InvalidBiliIdError,
+    MissingDependencyError,
+    TranscriptionError,
+    transcribe_bili_audio,
+)
 from .config import Settings
 from .json_utils import dump_json, try_load_json
 
@@ -62,6 +70,7 @@ class Toolset:
             "xhs_search_user": self.xhs_search_user,
             "xhs_user": self.xhs_user,
             "xhs_user_posts": self.xhs_user_posts,
+            "bili_transcribe": self.bili_transcribe,
         }
 
     def specs(self) -> list[dict[str, Any]]:
@@ -162,6 +171,18 @@ class Toolset:
                         "cursor": {"type": "string"},
                     },
                     "required": ["user_id"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "bili_transcribe",
+                "Transcribe Bilibili video audio by URL or BVID.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "bili_id": {"type": "string"},
+                    },
+                    "required": ["bili_id"],
                     "additionalProperties": False,
                 },
             ),
@@ -309,6 +330,61 @@ class Toolset:
             args,
             "xhs_user_posts",
         )
+
+    def bili_transcribe(self, bili_id: str) -> dict[str, Any]:
+        try:
+            data = transcribe_bili_audio(
+                bili_id,
+                bili_bin=self.settings.bili_bin,
+                asr_model=self.settings.asr_model,
+                audio_dir=self.settings.audio_dir,
+                timeout=self.settings.subprocess_timeout,
+            )
+        except InvalidBiliIdError as exc:
+            return {
+                "ok": False,
+                "tool": "bili_transcribe",
+                "error_code": "invalid_bili_id",
+                "error": str(exc),
+            }
+        except MissingDependencyError as exc:
+            return {
+                "ok": False,
+                "tool": "bili_transcribe",
+                "error_code": "missing_dependency",
+                "error": str(exc),
+            }
+        except BiliDownloadError as exc:
+            return {
+                "ok": False,
+                "tool": "bili_transcribe",
+                "error_code": "download_failed",
+                "error": str(exc),
+            }
+        except TranscriptionError as exc:
+            return {
+                "ok": False,
+                "tool": "bili_transcribe",
+                "error_code": "transcription_failed",
+                "error": str(exc),
+            }
+        except BiliTranscribeError as exc:
+            return {
+                "ok": False,
+                "tool": "bili_transcribe",
+                "error_code": "transcription_error",
+                "error": str(exc),
+            }
+
+        return {
+            "ok": True,
+            "tool": "bili_transcribe",
+            "data": {
+                "bili_id": data["bili_id"],
+                "transcript_path": data["transcript_path"],
+                "transcript": data["transcript"],
+            },
+        }
 
     def _run(self, binary: str, args: list[str], tool: str) -> dict[str, Any]:
         resolved = shutil.which(binary)
