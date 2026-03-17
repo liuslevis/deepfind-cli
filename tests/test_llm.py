@@ -89,3 +89,23 @@ class ResponseAgentTests(unittest.TestCase):
         result = agent.run("lead", "prompt", "q=test", use_tools=False)
 
         self.assertIn("empty_output", result.text)
+
+    def test_includes_history_messages_before_latest_input(self) -> None:
+        settings = FakeSettings([message_response('{"summary":"ok","facts":[],"gaps":[]}')])
+        agent = ResponseAgent(settings=settings, tools=FakeTools(), max_iter=1)
+
+        agent.run(
+            "lead",
+            "prompt",
+            "q=current",
+            use_tools=False,
+            history=[
+                {"role": "user", "content": "q=previous"},
+                {"role": "assistant", "content": "a=previous"},
+            ],
+        )
+
+        messages = settings.new_client().chat.completions.calls[0]["messages"]
+        self.assertEqual(messages[1], {"role": "user", "content": "q=previous"})
+        self.assertEqual(messages[2], {"role": "assistant", "content": "a=previous"})
+        self.assertEqual(messages[3], {"role": "user", "content": "q=current"})

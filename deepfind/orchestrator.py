@@ -1,21 +1,30 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date
+from typing import Sequence
 
 from .config import Settings
 from .json_utils import dump_json, try_load_json
 from .llm import ResponseAgent
-from .models import WorkerReport
+from .models import ChatMessage, WorkerReport
 from .progress import ConsoleProgress
 from .tools import Toolset
 
-PLAN_PROMPT = "Split into {n} distinct research tasks. JSON array only."
-WORKER_PROMPT = (
-    'Do the task. Use tools. If the task mentions Bilibili video/audio, call bili_transcribe with the URL or BVID '
-    'before summarizing. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
+PLAN_PROMPT = (
+    "You are the lead planner for an ongoing research chat. Use the prior conversation for context when needed, "
+    "but focus on the latest user request. Split it into {n} distinct research tasks. JSON array only."
 )
-LEAD_PROMPT = "Merge worker reports. Fill gaps with tools if needed. Answer briefly with sources."
+WORKER_PROMPT = (
+    "You are a research worker in an ongoing chat. Use the conversation history for context when the latest request "
+    "depends on earlier turns. Do the task. Use tools. If the task mentions Bilibili video/audio, call "
+    'bili_transcribe with the URL or BVID before summarizing. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
+)
+LEAD_PROMPT = (
+    "You are the lead researcher in an ongoing chat. Use the conversation history for context, answer the latest "
+    "user request, merge worker reports, fill gaps with tools if needed, and answer briefly with sources."
+)
 
 
 def _fallback_tasks(query: str, count: int) -> list[str]:
@@ -28,8 +37,20 @@ def _fallback_tasks(query: str, count: int) -> list[str]:
     return pool[:count] if count <= len(pool) else pool + [query] * (count - len(pool))
 
 
+def _history_messages(transcript: Sequence[ChatMessage]) -> list[dict[str, str]]:
+    return [{"role": message.role, "content": message.content} for message in transcript]
+
+
+def _planner_payload(query: str) -> str:
+    return f"d={date.today().isoformat()}\nlatest_user_request={query}"
+
+
 def _worker_payload(query: str, task: str) -> str:
-    return f"d={date.today().isoformat()}\nq={query}\nt={task}"
+    return f"d={date.today().isoformat()}\nlatest_user_request={query}\nassigned_task={task}"
+
+
+def _lead_payload(query: str, reports: str) -> str:
+    return f"d={date.today().isoformat()}\nlatest_user_request={query}\nreports={reports}"
 
 
 def _normalize_task(item: object) -> str:
@@ -62,21 +83,52 @@ class DeepFind:
         self.tools = Toolset(self.settings)
         self.progress = progress
 
+    def session(self, num_agent: int, max_iter_per_agent: int) -> "ChatSession":
+        num_agent, max_iter_per_agent = self._validated_run_args(num_agent, max_iter_per_agent)
+        return ChatSession(
+            app=self,
+            num_agent=num_agent,
+            max_iter_per_agent=max_iter_per_agent,
+        )
+
     def run(self, query: str, num_agent: int, max_iter_per_agent: int) -> str:
-        num_agent = max(1, min(4, num_agent))
+        return self.session(num_agent, max_iter_per_agent).ask(query)
+
+    def _validated_run_args(self, num_agent: int, max_iter_per_agent: int) -> tuple[int, int]:
+        if not 1 <= num_agent <= 4:
+            raise ValueError("num_agent must be between 1 and 4")
+        if max_iter_per_agent < 1:
+            raise ValueError("max_iter_per_agent must be >= 1")
+        return num_agent, max_iter_per_agent
+
+    def _run_turn(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        num_agent: int,
+        max_iter_per_agent: int,
+    ) -> str:
         if self.progress:
             self.progress.run_started(query, num_agent, max_iter_per_agent)
-        tasks = self._plan(query, num_agent, max_iter_per_agent)
-        reports = self._run_workers(query, tasks, max_iter_per_agent)
-        return self._lead(query, reports, max_iter_per_agent).strip()
+        tasks = self._plan(query, transcript, num_agent, max_iter_per_agent)
+        reports = self._run_workers(query, transcript, tasks, max_iter_per_agent)
+        return self._lead(query, transcript, reports, max_iter_per_agent).strip()
 
-    def _plan(self, query: str, num_agent: int, max_iter: int) -> list[str]:
+    def _plan(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        num_agent: int,
+        max_iter: int,
+    ) -> list[str]:
+        history = _history_messages(transcript)
         agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
         result = agent.run(
             name="lead-plan",
             instructions=PLAN_PROMPT.format(n=num_agent),
-            user_input=f"d={date.today().isoformat()}\nq={query}",
+            user_input=_planner_payload(query),
             use_tools=False,
+            history=history,
         )
         parsed = try_load_json(result.text)
         if isinstance(parsed, list):
@@ -93,30 +145,52 @@ class DeepFind:
             self.progress.plan_ready(tasks)
         return tasks
 
-    def _run_workers(self, query: str, tasks: list[str], max_iter: int) -> list[WorkerReport]:
+    def _run_workers(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        tasks: list[str],
+        max_iter: int,
+    ) -> list[WorkerReport]:
         with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
             futures = [
-                pool.submit(self._run_worker, index + 1, query, task, max_iter)
+                pool.submit(self._run_worker, index + 1, query, transcript, task, max_iter)
                 for index, task in enumerate(tasks)
             ]
         return [future.result() for future in futures]
 
-    def _run_worker(self, index: int, query: str, task: str, max_iter: int) -> WorkerReport:
+    def _run_worker(
+        self,
+        index: int,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        task: str,
+        max_iter: int,
+    ) -> WorkerReport:
         name = f"sub-{index}"
         if self.progress:
             self.progress.worker_started(name, task)
+        history = _history_messages(transcript)
         agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
         result = agent.run(
             name=name,
             instructions=WORKER_PROMPT,
             user_input=_worker_payload(query, task),
             use_tools=True,
+            history=history,
         )
         return _parse_report(task, result.text, result.citations)
 
-    def _lead(self, query: str, reports: list[WorkerReport], max_iter: int) -> str:
+    def _lead(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        reports: list[WorkerReport],
+        max_iter: int,
+    ) -> str:
         if self.progress:
             self.progress.synthesize_started(len(reports))
+        history = _history_messages(transcript)
         agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
         report_blob = dump_json(
             [
@@ -132,7 +206,32 @@ class DeepFind:
         result = agent.run(
             name="lead-final",
             instructions=LEAD_PROMPT,
-            user_input=f"d={date.today().isoformat()}\nq={query}\nreports={report_blob}",
+            user_input=_lead_payload(query, report_blob),
             use_tools=True,
+            history=history,
         )
         return result.text
+
+
+@dataclass
+class ChatSession:
+    app: DeepFind
+    num_agent: int
+    max_iter_per_agent: int
+    transcript: list[ChatMessage] = field(default_factory=list)
+
+    def ask(self, query: str) -> str:
+        transcript = list(self.transcript)
+        answer = self.app._run_turn(
+            query=query,
+            transcript=transcript,
+            num_agent=self.num_agent,
+            max_iter_per_agent=self.max_iter_per_agent,
+        )
+        self.transcript.extend(
+            [
+                ChatMessage(role="user", content=query),
+                ChatMessage(role="assistant", content=answer),
+            ]
+        )
+        return answer

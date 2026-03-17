@@ -11,10 +11,11 @@ Multi-agent search CLI in Python.
 ## Usage
 
 ```
+uv run -m deepfind.cli "帮我总结 https://www.bilibili.com/video/BV1EhwmzsEqB 关于非游戏部分，重点看AI，有什么新的产品发布？每个产品摘要重点" --num-agent 1
+
 uv run -m deepfind.cli "帮我总结https://www.bilibili.com/video/BV1tew5zVEDf 关于话题世界模型、逃出硅谷 、反OpenAI、AMI Labs、两次拒绝Ilya、杨立昆、李飞飞和42的内容" --num-agent 1 --quiet
 
 uv run -m deepfind.cli "上海哪里赏樱人少？搜索小红书" --num-agent 2
-
 ```
 ## Install
 
@@ -85,6 +86,26 @@ Flags:
 - `--num-agent`: `1..4`
 - `--max-iter-per-agent`: default `50`
 - `--quiet`: disable formatted progress output
+- `--once`: always exit after the first answer
+
+## Chat Mode
+
+When `deepfind` runs in a real terminal, it now stays open after the first answer so
+you can continue the conversation with the same multi-agent/tool setup.
+
+```bash
+uv run -m deepfind.cli "first question"
+```
+
+Follow-up commands:
+
+- Press `Enter` on a blank line to skip it.
+- Type `exit` or `quit` to leave the session.
+- Use `--once` to force the old one-shot behavior.
+
+```bash
+uv run -m deepfind.cli "first question" --once
+```
 
 ## How It Works
 

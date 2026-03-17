@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from .config import Settings
 from .json_utils import dump_json, try_load_json
@@ -40,11 +40,27 @@ class ResponseAgent:
     def __post_init__(self) -> None:
         self.client = self.settings.new_client()
 
-    def run(self, name: str, instructions: str, user_input: str, use_tools: bool) -> AgentResult:
+    def run(
+        self,
+        name: str,
+        instructions: str,
+        user_input: str,
+        use_tools: bool,
+        history: Sequence[Mapping[str, str]] | None = None,
+    ) -> AgentResult:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": instructions},
-            {"role": "user", "content": user_input},
         ]
+        if history:
+            messages.extend(
+                {
+                    "role": item["role"],
+                    "content": item["content"],
+                }
+                for item in history
+                if item.get("role") in {"user", "assistant"} and item.get("content")
+            )
+        messages.append({"role": "user", "content": user_input})
 
         for iteration in range(1, self.max_iter + 1):
             if self.progress:

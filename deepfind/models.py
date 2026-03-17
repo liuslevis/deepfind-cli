@@ -17,3 +17,9 @@ class WorkerReport:
     text: str
     citations: list[str]
     parsed: dict
+
+
+@dataclass(frozen=True)
+class ChatMessage:
+    role: str
+    content: str
