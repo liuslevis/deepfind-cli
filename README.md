@@ -4,7 +4,7 @@ A multi-agent research tool in both Web App and CLI.
 
 - Unlimit search in Google / Baidu / Xiaohongshu via opencli
 - Help you watch video in Bilibili and summarize
-- More you could add
+- Customize any cli as agent tool
 
 
 ## Web App Usage
