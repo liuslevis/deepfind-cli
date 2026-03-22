@@ -9,13 +9,15 @@ A multi-agent research tool in both Web App and CLI.
 
 ## Web App Usage
 
-![ui1](./doc/ui/1.PNG)
-![ui2](./doc/ui/2.PNG)
+![ui1](./doc/ui/1.png)
+![ui2](./doc/ui/2.png)
 
 
 ## CLI Usage
 
 ```
+uv run -m deepfind.cli "Help me do a research on Robotic Hands, give me a TLDR table" --num-agent 1
+
 uv run -m deepfind.cli "Help me summarize nVidia press conference https://www.bilibili.com/video/BV1EhwmzsEqB - What's new?" --num-agent 1
 
 uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5zVEDf What Saining Xie point of view in the interview" --num-agent 1 --quiet
@@ -23,9 +25,11 @@ uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5
 uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 2
 ```
 
-![img1](./doc/img/screenshot1.PNG)
+![img1](./doc/img/screenshot1.png)
 
-![img2](./doc/img/screenshot2.PNG)
+![img2](./doc/img/screenshot2.png)
+
+![img3](./doc/img/screenshot3.png)
 
 ## Install
 
