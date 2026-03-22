@@ -72,6 +72,7 @@ class Toolset:
         self.settings = settings
         self._functions = {
             "web_search": self.web_search,
+            "arxiv_search": self.arxiv_search,
             "twitter_search": self.twitter_search,
             "x_search": self.x_search,
             "twitter_read": self.twitter_read,
@@ -102,6 +103,19 @@ class Toolset:
                         "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                     },
                     "required": ["engine", "query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "arxiv_search",
+                "Search arXiv papers via opencli.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+                    },
+                    "required": ["query"],
                     "additionalProperties": False,
                 },
             ),
@@ -385,6 +399,18 @@ class Toolset:
             "command": command,
             "data": parsed,
         }
+
+    def arxiv_search(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        return self._opencli_site_search(
+            site="arxiv",
+            query=query,
+            limit=max(1, min(25, limit)),
+            tool="arxiv_search",
+        )
 
     def twitter_search(
         self,

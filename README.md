@@ -1,20 +1,32 @@
 # deepfind-cli
 
-Multi-agent research tool. Both UI / CLI.
+A multi-agent research tool in both Web App and CLI.
+
+- Unlimit search in Google / Baidu / Xiaohongshu via opencli
+- Help you watch video in Bilibili and summarize
+- More you could add
+
+
+## Web App Usage
+
+![ui1](./doc/ui/1.PNG)
+![ui2](./doc/ui/2.PNG)
+
+
+## CLI Usage
+
+```
+uv run -m deepfind.cli "Help me summarize nVidia press conference https://www.bilibili.com/video/BV1EhwmzsEqB - What's new?" --num-agent 1
+
+uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5zVEDf What Saining Xie point of view in the interview" --num-agent 1 --quiet
+
+uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 2
+```
 
 ![img1](./doc/img/screenshot1.PNG)
 
 ![img2](./doc/img/screenshot2.PNG)
 
-## Usage
-
-```
-uv run -m deepfind.cli "帮我总结 https://www.bilibili.com/video/BV1EhwmzsEqB 关于非游戏部分，重点看AI，有什么新的产品发布？每个产品摘要重点" --num-agent 1
-
-uv run -m deepfind.cli "帮我总结https://www.bilibili.com/video/BV1tew5zVEDf 关于话题世界模型、逃出硅谷 、反OpenAI、AMI Labs、两次拒绝Ilya、杨立昆、李飞飞和42的内容" --num-agent 1 --quiet
-
-uv run -m deepfind.cli "上海哪里赏樱人少？搜索小红书" --num-agent 2
-```
 ## Install
 
 ```bash
@@ -84,8 +96,8 @@ DEEPFIND_IMAGE_SIZE=2K
 ## Run
 
 ```bash
-uv run -m deepfind.cli "小红书博主：刘小鸭的AI日记 发过哪些内容？粉丝数?" --num-agent 2
-uv run -m deepfind.cli "帮我总结https://www.bilibili.com/video/BV1tew5zVEDf 关于话题世界模型、逃出硅谷、反OpenAI 、AMI Labs、两次拒绝Ilya、杨立昆、李飞飞和42的内容" --num-agent 1
+uv run -m deepfind.cli "What's new in Xiaohongshu?" --num-agent 2
+uv run -m deepfind.cli "Help me summarize video https://www.bilibili.com/video/BV1tew5zVEDf" --num-agent 1
 uv run -m deepfind.cli "same query" --num-agent 2 --quiet
 uv run -m deepfind.cli "same query" 
 ```

@@ -29,6 +29,7 @@ class ToolsetTests(unittest.TestCase):
         toolset = Toolset(Settings(api_key="x"))
         names = [item["function"]["name"] for item in toolset.specs()]
         self.assertIn("web_search", names)
+        self.assertIn("arxiv_search", names)
         self.assertIn("x_search", names)
         self.assertIn("zhihu_search", names)
         self.assertIn("bili_transcribe", names)
@@ -283,6 +284,29 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(
             run_mock.call_args_list[1][0][0],
             ["/usr/bin/opencli", "zhihu", "search", "--query", "AI", "--limit", "4", "-f", "json"],
+        )
+
+    def test_arxiv_search_uses_positional_query(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout='[{"command":"arxiv/search","args":[{"name":"query","positional":true},{"name":"limit","positional":false}]}]',
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=0, stdout='[{"title":"Attention Is All You Need"}]', stderr=""),
+                    ],
+                ) as run_mock:
+                    result = toolset.arxiv_search("transformer", limit=4)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "arxiv_search")
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            ["/usr/bin/opencli", "arxiv", "search", "transformer", "--limit", "4", "-f", "json"],
         )
 
     def test_xhs_search_uses_supported_flags(self) -> None:
