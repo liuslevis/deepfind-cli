@@ -3,3 +3,8 @@ __pycache__/
 .venv/
 .env
 tmp/
+web/node_modules/
+web/dist/
+web/.vite/
+web/coverage/
+web/*.tsbuildinfo

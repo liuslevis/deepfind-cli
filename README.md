@@ -1,8 +1,6 @@
 # deepfind-cli
 
-Multi-agent search CLI in Python.
-
-通过 CLI 工具帮你在小红书搜索问题、总结B站视频。
+Multi-agent research tool. Both UI / CLI.
 
 ![img1](./doc/img/screenshot1.PNG)
 
@@ -127,6 +125,28 @@ Example follow-up in chat mode:
 Generate a 16:9 cover image from that summary and save it under tmp/
 Generate 3 HTML slides from that summary and save them under tmp/
 ```
+
+## Web App
+
+The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
+live run activity, and a mode switch for `Fast (1 agent)` and `Expert (4 agents)`.
+
+Backend:
+
+```bash
+uv run deepfind-web --reload
+```
+
+Frontend:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open the Vite URL during development, or run `npm run build` so `deepfind-web` can
+serve `web/dist` directly.
 
 ## How It Works
 

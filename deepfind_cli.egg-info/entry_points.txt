@@ -1,2 +1,3 @@
 [console_scripts]
 deepfind = deepfind.cli:main
+deepfind-web = deepfind.web_api:main

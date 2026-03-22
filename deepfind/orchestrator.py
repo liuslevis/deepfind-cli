@@ -117,11 +117,27 @@ class DeepFind:
         num_agent: int,
         max_iter_per_agent: int,
     ) -> str:
+        answer, _ = self._run_turn_detailed(
+            query=query,
+            transcript=transcript,
+            num_agent=num_agent,
+            max_iter_per_agent=max_iter_per_agent,
+        )
+        return answer
+
+    def _run_turn_detailed(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        num_agent: int,
+        max_iter_per_agent: int,
+    ) -> tuple[str, list[WorkerReport]]:
         if self.progress:
             self.progress.run_started(query, num_agent, max_iter_per_agent)
         tasks = self._plan(query, transcript, num_agent, max_iter_per_agent)
         reports = self._run_workers(query, transcript, tasks, max_iter_per_agent)
-        return self._lead(query, transcript, reports, max_iter_per_agent).strip()
+        answer = self._lead(query, transcript, reports, max_iter_per_agent).strip()
+        return answer, reports
 
     def _plan(
         self,
