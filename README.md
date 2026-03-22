@@ -1,9 +1,9 @@
 # deepfind-cli
 
-A multi-agent research tool in both Web App and CLI.
+A multi-agent research tool in both Web App and CLI, which have:
 
 - Unlimit search in Google / Baidu / Xiaohongshu via opencli
-- Help you watch video in Bilibili and summarize
+- Watch video in Bilibili and summarize
 - Customize any cli as agent tool
 
 
