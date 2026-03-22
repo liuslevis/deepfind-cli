@@ -10,7 +10,10 @@ A multi-agent research tool in both Web App and CLI.
 ## Web App Usage
 
 ![ui1](./doc/ui/1.png)
+
 ![ui2](./doc/ui/2.png)
+
+![ui3](./doc/ui/3.png)
 
 
 ## CLI Usage
