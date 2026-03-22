@@ -7,6 +7,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .bili_transcribe import DEFAULT_ASR_MODEL
+from .gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
 
 
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -55,6 +56,11 @@ class Settings:
     api_key: str
     model: str = DEFAULT_MODEL
     base_url: str = DEFAULT_BASE_URL
+    nano_banana_api_key: str | None = None
+    nano_banana_model: str = DEFAULT_IMAGE_MODEL
+    image_dir: str = DEFAULT_IMAGE_DIR
+    image_size: str = DEFAULT_IMAGE_SIZE
+    opencli_bin: str = "opencli"
     twitter_bin: str = "twitter"
     xhs_bin: str = "xhs"
     bili_bin: str = "bili"
@@ -73,6 +79,23 @@ class Settings:
             api_key=api_key,
             model=_env("QWEN_MODEL") or _env("QWEN_MODEL_NAME", DEFAULT_MODEL) or DEFAULT_MODEL,
             base_url=_env("QWEN_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL,
+            nano_banana_api_key=(
+                _env("GOOGLE_NANO_BANANA_API_KEY")
+                or _env("GEMINI_API_KEY")
+                or _env("GOOGLE_API_KEY")
+            ),
+            nano_banana_model=(
+                _env("GOOGLE_NANO_BANANA_MODEL")
+                or _env("GEMINI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL)
+                or DEFAULT_IMAGE_MODEL
+            ),
+            image_dir=_env("DEEPFIND_IMAGE_DIR", DEFAULT_IMAGE_DIR) or DEFAULT_IMAGE_DIR,
+            image_size=(
+                _env("GOOGLE_NANO_BANANA_IMAGE_SIZE")
+                or _env("DEEPFIND_IMAGE_SIZE", DEFAULT_IMAGE_SIZE)
+                or DEFAULT_IMAGE_SIZE
+            ),
+            opencli_bin=_env("OPENCLI_BIN", "opencli") or "opencli",
             twitter_bin=_env("TWITTER_CLI_BIN", "twitter") or "twitter",
             xhs_bin=_env("XHS_CLI_BIN", "xhs") or "xhs",
             bili_bin=_env("BILI_BIN", "bili") or "bili",

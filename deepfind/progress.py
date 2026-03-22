@@ -44,6 +44,10 @@ def _tool_summary(parsed: dict[str, Any]) -> str:
             return _short(note["title"], 64)
         if data.get("transcript_path"):
             return _short(f"transcript={data['transcript_path']}", 64)
+        if data.get("image_path"):
+            return _short(f"image={data['image_path']}", 64)
+        if data.get("html_path"):
+            return _short(f"html={data['html_path']}", 64)
 
     return parsed.get("tool", "")
 

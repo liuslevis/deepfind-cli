@@ -23,6 +23,13 @@ uv run -m deepfind.cli "上海哪里赏樱人少？搜索小红书" --num-agent 
 python3 -m pip install -e .
 ```
 
+Install `opencli` as an optional dependency when you want broad web search through
+`web_search`:
+
+```bash
+npm install -g @jackwener/opencli
+```
+
 Install optional ASR dependencies only when you need Bilibili transcription:
 
 ```bash
@@ -63,12 +70,17 @@ Optional:
 
 ```bash
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENCLI_BIN=opencli
 TWITTER_CLI_BIN=twitter
 XHS_CLI_BIN=xhs
 BILI_BIN=bili
 ASR_MODEL=Qwen/Qwen3-ASR-1.7B
 DEEPFIND_AUDIO_DIR=audio
 DEEPFIND_TOOL_TIMEOUT=90
+GOOGLE_NANO_BANANA_API_KEY=...
+GOOGLE_NANO_BANANA_MODEL=gemini-3.1-flash-image-preview
+DEEPFIND_IMAGE_DIR=tmp
+DEEPFIND_IMAGE_SIZE=2K
 ```
 
 ## Run
@@ -102,15 +114,24 @@ Follow-up commands:
 - Press `Enter` on a blank line to skip it.
 - Type `exit` or `quit` to leave the session.
 - Use `--once` to force the old one-shot behavior.
+- If `GOOGLE_NANO_BANANA_API_KEY` is set, you can ask for an image after a summary and it will be saved under `tmp/`.
+- You can also ask for one or more standalone HTML slides after a summary and they will be saved under `tmp/`.
 
 ```bash
 uv run -m deepfind.cli "first question" --once
 ```
 
+Example follow-up in chat mode:
+
+```text
+Generate a 16:9 cover image from that summary and save it under tmp/
+Generate 3 HTML slides from that summary and save them under tmp/
+```
+
 ## How It Works
 
 - Lead agent splits the query into a few tasks.
-- Sub-agents call local tools such as `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, and `bili_transcribe`.
+- Sub-agents call local tools such as `web_search`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, and `bili_transcribe`.
 - Lead agent merges the results into one answer.
 
 Qwen is used through the OpenAI-compatible `chat.completions` API.
