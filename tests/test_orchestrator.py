@@ -20,19 +20,23 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_worker_prompt_mentions_bili_transcribe(self) -> None:
         self.assertIn("bili_transcribe", WORKER_PROMPT)
+        self.assertIn("youtube_transcribe", WORKER_PROMPT)
         self.assertIn("Bilibili", WORKER_PROMPT)
+        self.assertIn("YouTube", WORKER_PROMPT)
         self.assertIn("web_search", WORKER_PROMPT)
         self.assertIn("gen_img", WORKER_PROMPT)
         self.assertIn("gen_slides", WORKER_PROMPT)
 
     def test_lead_prompt_mentions_gen_img(self) -> None:
         self.assertIn("web_search", LEAD_PROMPT)
+        self.assertIn("YouTube", LEAD_PROMPT)
         self.assertIn("gen_img", LEAD_PROMPT)
         self.assertIn("gen_slides", LEAD_PROMPT)
 
     def test_plan_prompt_mentions_slides(self) -> None:
         self.assertIn("slides", PLAN_PROMPT)
         self.assertIn("web_search", PLAN_PROMPT)
+        self.assertIn("YouTube", PLAN_PROMPT)
 
     def test_chat_session_keeps_full_successful_transcript(self) -> None:
         settings = Settings(api_key="x")

@@ -16,20 +16,22 @@ PLAN_PROMPT = (
     "You are the lead planner for an ongoing research chat. Use the prior conversation for context when needed, "
     "but focus on the latest user request. If the user wants an image or slides, plan only supporting research/context "
     "tasks and leave the final asset creation for the lead response. Prefer broad web research tasks that can use "
-    "web_search, and reserve Xiaohongshu, X/Twitter, and Bilibili-specific tasks for the matching platform tools. "
+    "web_search, and reserve Xiaohongshu, X/Twitter, Bilibili, and YouTube-specific tasks for the matching platform "
+    "tools. "
     "Split it into {n} distinct research tasks. JSON array only."
 )
 WORKER_PROMPT = (
     "You are a research worker in an ongoing chat. Use the conversation history for context when the latest request "
     "depends on earlier turns. Do the task. Use tools. Prefer web_search for broad web research, and keep using "
-    "the Xiaohongshu, X/Twitter, and Bilibili-specific tools for those platforms. If the task mentions Bilibili "
-    'video/audio, call bili_transcribe with the URL or BVID before summarizing. If the latest user request asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image asset. If the latest user request asks for slides, do not call gen_slides unless the assigned task explicitly asks you to produce the final slide asset. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
+    "the Xiaohongshu, X/Twitter, Bilibili, and YouTube-specific tools for those platforms. If the task mentions "
+    "Bilibili video/audio, call bili_transcribe with the URL or BVID before summarizing. If the task mentions "
+    'YouTube video/audio, call youtube_transcribe with the URL or video ID before summarizing. If the latest user request asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image asset. If the latest user request asks for slides, do not call gen_slides unless the assigned task explicitly asks you to produce the final slide asset. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
 )
 LEAD_PROMPT = (
     "You are the lead researcher in an ongoing chat. Use the conversation history for context, answer the latest "
     "user request, merge worker reports, fill gaps with tools if needed, and answer briefly with sources. Prefer "
-    "web_search for broad web research gaps, and use the platform-specific tools for Xiaohongshu, X/Twitter, and "
-    "Bilibili tasks. If the latest user request asks for an image, call gen_img exactly once with a concrete prompt, "
+    "web_search for broad web research gaps, and use the platform-specific tools for Xiaohongshu, X/Twitter, "
+    "Bilibili, and YouTube tasks. If the latest user request asks for an image, call gen_img exactly once with a concrete prompt, "
     "then mention the saved image path in the final answer. If the latest user request asks for slides, call "
     "gen_slides exactly once with a concrete prompt and slide_count, then mention the saved html path in the final "
     "answer. Do not claim an asset exists unless the corresponding tool succeeds."

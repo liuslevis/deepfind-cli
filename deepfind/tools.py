@@ -18,6 +18,14 @@ from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
 from .json_utils import dump_json, try_load_json
+from .youtube_transcribe import (
+    InvalidYouTubeIdError,
+    load_cached_youtube_transcript,
+    normalize_youtube_transcript,
+    parse_youtube_id,
+    resolve_audio_root,
+    store_youtube_transcript,
+)
 
 _WEB_SEARCH_ENGINES = frozenset({"google", "bing", "baidu"})
 _OPENCLI_REGISTRY_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
@@ -83,6 +91,7 @@ class Toolset:
             "xhs_user": self.xhs_user,
             "xhs_user_posts": self.xhs_user_posts,
             "bili_transcribe": self.bili_transcribe,
+            "youtube_transcribe": self.youtube_transcribe,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
         }
@@ -91,7 +100,7 @@ class Toolset:
         return [
             self._function_spec(
                 "web_search",
-                "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, and Bilibili.",
+                "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, and YouTube.",
                 {
                     "type": "object",
                     "properties": {
@@ -257,6 +266,19 @@ class Toolset:
                         "bili_id": {"type": "string"},
                     },
                     "required": ["bili_id"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "youtube_transcribe",
+                "Transcribe YouTube video subtitles by URL or video ID through opencli.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "lang": {"type": "string"},
+                    },
+                    "required": ["url"],
                     "additionalProperties": False,
                 },
             ),
@@ -714,6 +736,124 @@ class Toolset:
                 "bili_id": data["bili_id"],
                 "transcript_path": data["transcript_path"],
                 "transcript": data["transcript"],
+            },
+        }
+
+    def youtube_transcribe(self, url: str, lang: str = "") -> dict[str, Any]:
+        try:
+            youtube_id = parse_youtube_id(url)
+        except InvalidYouTubeIdError as exc:
+            return {
+                "ok": False,
+                "tool": "youtube_transcribe",
+                "error_code": "invalid_youtube_id",
+                "error": str(exc),
+            }
+
+        audio_root = resolve_audio_root(self.settings.audio_dir)
+        cached = load_cached_youtube_transcript(audio_root, youtube_id)
+        if cached:
+            transcript_path, transcript = cached
+            return {
+                "ok": True,
+                "tool": "youtube_transcribe",
+                "data": {
+                    "youtube_id": youtube_id,
+                    "transcript_path": str(transcript_path),
+                    "transcript": transcript,
+                },
+            }
+
+        command_prefix, resolve_error = self._opencli_command_prefix()
+        if not command_prefix:
+            return {
+                "ok": False,
+                "tool": "youtube_transcribe",
+                "url": url,
+                "error_code": "missing_dependency",
+                "error": resolve_error or f"{self.settings.opencli_bin} not found",
+            }
+
+        registry_result = self._opencli_registry(command_prefix)
+        if not registry_result.get("ok"):
+            return {
+                **registry_result,
+                "tool": "youtube_transcribe",
+                "url": url,
+            }
+
+        registry = registry_result["data"]
+        command_name = "youtube/transcript"
+        command_spec = registry.get(command_name)
+        if not command_spec:
+            return {
+                "ok": False,
+                "tool": "youtube_transcribe",
+                "url": url,
+                "error_code": "unsupported_command",
+                "error": f"{command_name} is not available in the current opencli registry",
+            }
+
+        command = [*command_prefix, "youtube", "transcript"]
+        if self._opencli_arg_is_positional(command_spec, "url"):
+            command.append(url)
+        else:
+            command.extend(["--url", url])
+        normalized_lang = lang.strip()
+        if normalized_lang and self._opencli_supports_arg(command_spec, "lang"):
+            command.extend(["--lang", normalized_lang])
+        if self._opencli_supports_arg(command_spec, "mode"):
+            command.extend(["--mode", "grouped"])
+        command.extend(["-f", "json"])
+
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=self.settings.subprocess_timeout,
+        )
+        if proc.returncode != 0:
+            return {
+                "ok": False,
+                "tool": "youtube_transcribe",
+                "url": url,
+                "command": command,
+                "error_code": "command_failed",
+                "error": (proc.stderr or proc.stdout or "").strip()[:4000],
+            }
+
+        parsed = try_load_json(proc.stdout or "")
+        if parsed is None:
+            return {
+                "ok": False,
+                "tool": "youtube_transcribe",
+                "url": url,
+                "command": command,
+                "error_code": "invalid_json",
+                "error": "opencli returned non-JSON output",
+            }
+
+        transcript = normalize_youtube_transcript(parsed)
+        if not transcript:
+            return {
+                "ok": False,
+                "tool": "youtube_transcribe",
+                "url": url,
+                "command": command,
+                "error_code": "transcript_empty",
+                "error": "opencli returned an empty YouTube transcript",
+            }
+
+        transcript_path = store_youtube_transcript(audio_root, youtube_id, transcript)
+        return {
+            "ok": True,
+            "tool": "youtube_transcribe",
+            "data": {
+                "youtube_id": youtube_id,
+                "transcript_path": str(transcript_path),
+                "transcript": transcript,
             },
         }
 

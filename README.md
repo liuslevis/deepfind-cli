@@ -3,13 +3,15 @@
 A multi-agent research tool in both Web App and CLI, which can:
 
 - Search (no limit) in Google / Baidu / Xiaohongshu via opencli
-- Watch video in Bilibili and summarize
+- Watch video in Bilibili / YouTube and summarize
 - Customize any cli as agent tool
 
 
 ## Web App Usage
 
 ![ui3](./doc/ui/3.png)
+
+![ui4](./doc/ui/4.png)
 
 
 ## CLI Usage
@@ -23,6 +25,8 @@ uv run -m deepfind.cli "Help me summarize nVidia press conference https://www.bi
 
 uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5zVEDf What Saining Xie point of view in the interview" --num-agent 1 --quiet
 
+uv run -m deepfind.cli "Help me summarize this YouTube talk https://www.youtube.com/watch?v=dQw4w9WgXcQ" --num-agent 1
+
 uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 2
 ```
 
@@ -34,7 +38,7 @@ python3 -m pip install -e .
 ```
 
 Install `opencli` as an optional dependency when you want broad web search through
-`web_search`:
+`web_search` or YouTube transcript support through `youtube_transcribe`:
 
 ```bash
 npm install -g @jackwener/opencli
@@ -98,6 +102,7 @@ DEEPFIND_IMAGE_SIZE=2K
 ```bash
 uv run -m deepfind.cli "What's new in Xiaohongshu?" --num-agent 2
 uv run -m deepfind.cli "Help me summarize video https://www.bilibili.com/video/BV1tew5zVEDf" --num-agent 1
+uv run -m deepfind.cli "Help me summarize video https://www.youtube.com/watch?v=dQw4w9WgXcQ" --num-agent 1
 uv run -m deepfind.cli "same query" --num-agent 2 --quiet
 uv run -m deepfind.cli "same query" 
 ```
@@ -163,18 +168,23 @@ serve `web/dist` directly.
 ## How It Works
 
 - Lead agent splits the query into a few tasks.
-- Sub-agents call local tools such as `web_search`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, and `bili_transcribe`.
+- Sub-agents call local tools such as `web_search`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
 - Lead agent merges the results into one answer.
 
 Qwen is used through the OpenAI-compatible `chat.completions` API.
 
-## Bilibili Transcription Tool
+## Video Transcription Tools
 
 `bili_transcribe` is available to sub-agents and accepts either a Bilibili video URL
 or a raw `BV...` ID.
 It returns transcript text only (no summary generation).
 If `audio/transcripts/<BVID>.txt` already exists,
 the tool reuses it and skips download + ASR transcription.
+
+`youtube_transcribe` is available to sub-agents and accepts either a YouTube video URL
+or a raw video ID.
+It calls `opencli youtube transcript` and caches grouped transcript text under
+`audio/transcripts/youtube/<VIDEO_ID>.txt`.
 
 Setup (WSL):
 

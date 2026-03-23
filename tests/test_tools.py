@@ -33,6 +33,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("x_search", names)
         self.assertIn("zhihu_search", names)
         self.assertIn("bili_transcribe", names)
+        self.assertIn("youtube_transcribe", names)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
 
@@ -393,6 +394,115 @@ class ToolsetTests(unittest.TestCase):
             result = toolset.bili_transcribe("BV1cgPSzeEj5")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "transcription_failed")
+
+    def test_youtube_transcribe_success_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+                with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                    with patch(
+                        "deepfind.tools.subprocess.run",
+                        side_effect=[
+                            SimpleNamespace(
+                                returncode=0,
+                                stdout='[{"command":"youtube/transcript","args":[{"name":"url","positional":true},{"name":"lang","positional":false},{"name":"mode","positional":false}]}]',
+                                stderr="",
+                            ),
+                            SimpleNamespace(
+                                returncode=0,
+                                stdout='[{"timestamp":"0:01","speaker":"","text":"line one"},{"timestamp":"0:35","speaker":"Host","text":"line two"}]',
+                                stderr="",
+                            ),
+                        ],
+                    ) as run_mock:
+                        result = toolset.youtube_transcribe("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["tool"], "youtube_transcribe")
+            self.assertEqual(result["data"]["youtube_id"], "dQw4w9WgXcQ")
+            self.assertEqual(result["data"]["transcript"], "[0:01] line one\n\n[0:35] Host: line two")
+            self.assertEqual(
+                run_mock.call_args_list[1][0][0],
+                [
+                    "/usr/bin/opencli",
+                    "youtube",
+                    "transcript",
+                    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    "--mode",
+                    "grouped",
+                    "-f",
+                    "json",
+                ],
+            )
+            transcript_path = Path(result["data"]["transcript_path"])
+            self.assertTrue(transcript_path.exists())
+            self.assertEqual(transcript_path.read_text(encoding="utf-8"), "[0:01] line one\n\n[0:35] Host: line two\n")
+
+    def test_youtube_transcribe_uses_cached_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            transcript_dir = Path(tmpdir) / "transcripts" / "youtube"
+            transcript_dir.mkdir(parents=True, exist_ok=True)
+            cached_path = transcript_dir / "dQw4w9WgXcQ.txt"
+            cached_path.write_text("cached line\n", encoding="utf-8")
+
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            with patch("deepfind.tools.subprocess.run") as run_mock:
+                result = toolset.youtube_transcribe("dQw4w9WgXcQ")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["transcript"], "cached line")
+        self.assertEqual(result["data"]["transcript_path"], str(cached_path))
+        run_mock.assert_not_called()
+
+    def test_youtube_transcribe_invalid_id_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        result = toolset.youtube_transcribe("not a video")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_youtube_id")
+
+    def test_youtube_transcribe_missing_dependency_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.shutil.which", return_value=None):
+            result = toolset.youtube_transcribe("dQw4w9WgXcQ")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "missing_dependency")
+
+    def test_youtube_transcribe_passes_lang_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+                with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                    with patch(
+                        "deepfind.tools.subprocess.run",
+                        side_effect=[
+                            SimpleNamespace(
+                                returncode=0,
+                                stdout='[{"command":"youtube/transcript","args":[{"name":"url","positional":true},{"name":"lang","positional":false},{"name":"mode","positional":false}]}]',
+                                stderr="",
+                            ),
+                            SimpleNamespace(
+                                returncode=0,
+                                stdout='[{"timestamp":"0:01","speaker":"","text":"line one"}]',
+                                stderr="",
+                            ),
+                        ],
+                    ) as run_mock:
+                        result = toolset.youtube_transcribe("dQw4w9WgXcQ", lang="zh-Hans")
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            [
+                "/usr/bin/opencli",
+                "youtube",
+                "transcript",
+                "dQw4w9WgXcQ",
+                "--lang",
+                "zh-Hans",
+                "--mode",
+                "grouped",
+                "-f",
+                "json",
+            ],
+        )
 
     def test_gen_img_success_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
