@@ -84,9 +84,17 @@ function messageFromServer(message: WebMessage): ClientMessage {
   };
 }
 
+function createClientMessageId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function newClientMessage(role: "user" | "assistant", content: string, mode: ChatMode): ClientMessage {
   return {
-    id: `local_${crypto.randomUUID()}`,
+    id: `local_${createClientMessageId()}`,
     role,
     content,
     created_at: new Date().toISOString(),
