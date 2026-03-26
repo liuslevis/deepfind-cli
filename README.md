@@ -205,7 +205,8 @@ What the deploy script does:
 No-password deploy requirements:
 
 - Passwordless SSH to the Pi must already work for `david@<host>`.
-- The Pi already needs `python3` 3.11+, `node` 18+, `npm`, `curl`, and `systemd`.
+- The Pi already needs `python3` 3.11+, `curl`, `tar`, and `systemd`.
+- `deploy_rpi.sh` will install a user-local Node.js 20.x automatically when `node`/`npm` are missing or too old.
 - Boot persistence for the user service requires a one-time admin command on the Pi:
 
 ```bash

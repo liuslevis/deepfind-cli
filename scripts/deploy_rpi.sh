@@ -11,6 +11,7 @@ RPI_APP_DIR="${RPI_APP_DIR:-/home/david/apps/deepfind-cli}"
 RPI_PORT="${RPI_PORT:-8000}"
 SERVICE_NAME="${SERVICE_NAME:-deepfind-web}"
 LOCAL_ENV_FILE="${LOCAL_ENV_FILE:-${REPO_ROOT}/.env}"
+NODE_CHANNEL="${NODE_CHANNEL:-latest-v20.x}"
 TARGET="${RPI_USER}@${RPI_HOST}"
 SSH_OPTS=(
   -p "${RPI_SSH_PORT}"
@@ -56,7 +57,9 @@ ssh "${SSH_OPTS[@]}" "${TARGET}" "
 "
 
 echo "Uploading repository archive..."
-tar \
+COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar \
+  --no-xattrs \
+  --no-mac-metadata \
   --exclude='.git' \
   --exclude='.venv' \
   --exclude='__pycache__' \
@@ -78,8 +81,8 @@ echo "Copying ${LOCAL_ENV_FILE}..."
 scp "${SCP_OPTS[@]}" "${LOCAL_ENV_FILE}" "${TARGET}:${RPI_APP_DIR}/.env"
 
 echo "Building the app and configuring a user service..."
-ssh -tt "${SSH_OPTS[@]}" "${TARGET}" \
-  "APP_DIR=$(printf '%q' "${RPI_APP_DIR}") SERVICE_NAME=$(printf '%q' "${SERVICE_NAME}") APP_PORT=$(printf '%q' "${RPI_PORT}") bash -s" <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "${TARGET}" \
+  "APP_DIR=$(printf '%q' "${RPI_APP_DIR}") SERVICE_NAME=$(printf '%q' "${SERVICE_NAME}") APP_PORT=$(printf '%q' "${RPI_PORT}") NODE_CHANNEL=$(printf '%q' "${NODE_CHANNEL}") bash -se" <<'REMOTE'
 set -euo pipefail
 
 export PATH="${HOME}/.local/bin:${PATH}"
@@ -95,14 +98,71 @@ require_remote_cmd() {
 require_remote_cmd python3
 require_remote_cmd curl
 require_remote_cmd tar
-require_remote_cmd node
-require_remote_cmd npm
 require_remote_cmd systemctl
 
 if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
   echo "Python 3.11 or newer is required on the Raspberry Pi." >&2
   exit 1
 fi
+
+ensure_node() {
+  local current_major=""
+  local arch=""
+  local shasums=""
+  local tarball=""
+  local node_dir=""
+  local node_root="${HOME}/.local/node"
+
+  if command -v node >/dev/null 2>&1; then
+    current_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+  fi
+
+  if [[ -n "${current_major}" ]] && (( current_major >= 18 )) && command -v npm >/dev/null 2>&1; then
+    return
+  fi
+
+  case "$(uname -m)" in
+    aarch64|arm64)
+      arch="arm64"
+      ;;
+    x86_64|amd64)
+      arch="x64"
+      ;;
+    armv7l)
+      arch="armv7l"
+      ;;
+    *)
+      echo "Unsupported Raspberry Pi architecture: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  echo "Installing Node.js ${NODE_CHANNEL} for ${arch} under ${node_root}..."
+  mkdir -p "${node_root}" "${HOME}/.local/bin"
+  shasums="$(curl -fsSL "https://nodejs.org/dist/${NODE_CHANNEL}/SHASUMS256.txt")"
+  tarball="$(printf '%s\n' "${shasums}" | awk '/linux-'"${arch}"'\.tar\.gz$/ {print $2; exit}')"
+
+  if [[ -z "${tarball}" ]]; then
+    echo "Could not find a Node.js tarball for architecture ${arch} in ${NODE_CHANNEL}." >&2
+    exit 1
+  fi
+
+  node_dir="${tarball%.tar.gz}"
+  rm -rf "${node_root:?}/${node_dir}"
+  curl -fsSL "https://nodejs.org/dist/${NODE_CHANNEL}/${tarball}" | tar -xzf - -C "${node_root}"
+
+  ln -sfn "${node_root}/${node_dir}/bin/node" "${HOME}/.local/bin/node"
+  ln -sfn "${node_root}/${node_dir}/bin/npm" "${HOME}/.local/bin/npm"
+  ln -sfn "${node_root}/${node_dir}/bin/npx" "${HOME}/.local/bin/npx"
+  if [[ -x "${node_root}/${node_dir}/bin/corepack" ]]; then
+    ln -sfn "${node_root}/${node_dir}/bin/corepack" "${HOME}/.local/bin/corepack"
+  fi
+  hash -r
+}
+
+ensure_node
+require_remote_cmd node
+require_remote_cmd npm
 
 if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)' >/dev/null 2>&1; then
   echo "Node.js 18 or newer is required on the Raspberry Pi." >&2
