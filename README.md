@@ -3,9 +3,9 @@
 A multi-agent research tool in both Web App and CLI, which can:
 
 - Search (no limit) in Google / Baidu / Xiaohongshu via opencli
-- Search BOSS直聘 jobs via opencli
-- Watch video in Bilibili and summarize
-- Customize any cli as agent tool
+- Search BOSS Zhipin jobs via opencli
+- Watch video in Bilibili and summarize via opencli
+- Customize any other cli as agent tool
 
 
 ## Web App Usage
