@@ -87,6 +87,8 @@ set -euo pipefail
 
 export PATH="${HOME}/.local/bin:${PATH}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export NPM_CONFIG_PREFIX="${HOME}/.local/npm-global"
+export PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"
 
 require_remote_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -169,6 +171,24 @@ if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0
   exit 1
 fi
 
+ensure_opencli() {
+  if command -v opencli >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "Installing @jackwener/opencli under ${NPM_CONFIG_PREFIX}..."
+  mkdir -p "${NPM_CONFIG_PREFIX}"
+  npm install -g @jackwener/opencli
+  hash -r
+
+  if ! command -v opencli >/dev/null 2>&1; then
+    echo "opencli was not found after npm installation." >&2
+    exit 1
+  fi
+}
+
+ensure_opencli
+
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="${HOME}/.local/bin:${PATH}"
@@ -197,7 +217,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=${APP_DIR}
-Environment=PATH=${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=${APP_DIR}/.env
 ExecStart=${UV_BIN} run deepfind-web --host 0.0.0.0 --port ${APP_PORT}
 Restart=always
@@ -217,6 +237,14 @@ systemctl --user daemon-reload
 systemctl --user enable "${SERVICE_NAME}.service"
 systemctl --user restart "${SERVICE_NAME}.service"
 systemctl --user --no-pager --full status "${SERVICE_NAME}.service"
+
+for attempt in $(seq 1 20); do
+  if curl -fsS "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
 curl -fsS "http://127.0.0.1:${APP_PORT}/api/health"
 
 if command -v loginctl >/dev/null 2>&1; then
