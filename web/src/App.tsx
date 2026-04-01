@@ -28,6 +28,13 @@ interface ClientMessage extends WebMessage {
   activity?: ProgressEvent[];
 }
 
+interface ChatRuntime {
+  messages: ClientMessage[];
+  pending: boolean;
+  error: string | null;
+  abortController?: AbortController;
+}
+
 interface SourceGroup {
   label: string;
   urls: string[];
@@ -508,7 +515,11 @@ function groupSources(sources: string[]): SourceGroup[] {
   return Array.from(grouped, ([label, urls]) => ({ label, urls }));
 }
 
-function summaryFromChat(chat: WebChatDetail): WebChatSummary {
+type ChatLike = Pick<WebChatDetail, "id" | "title" | "created_at" | "updated_at"> & {
+  messages: Array<{ content: string }>;
+};
+
+function summaryFromChat(chat: ChatLike): WebChatSummary {
   const preview = chat.messages.length > 0 ? summarize(chat.messages[chat.messages.length - 1].content, 72) : "";
   return {
     id: chat.id,
@@ -650,10 +661,9 @@ export default function App() {
   const [composerValue, setComposerValue] = useState("");
   const [chats, setChats] = useState<WebChatSummary[]>([]);
   const [currentChat, setCurrentChat] = useState<WebChatDetail | null>(null);
-  const [messages, setMessages] = useState<ClientMessage[]>([]);
+  const [chatRuntimeById, setChatRuntimeById] = useState<Record<string, ChatRuntime>>({});
   const [selectedChatId, setSelectedChatId] = useState<string | null>(() => storageGetItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -661,14 +671,104 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const modeSelectRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<TranscriptScrollTarget | null>(null);
+  const selectedChatIdRef = useRef<string | null>(selectedChatId);
+  const activeRuntime = selectedChatId ? chatRuntimeById[selectedChatId] : null;
+  const activeMessages = activeRuntime?.messages ?? [];
+  const sending = activeRuntime?.pending ?? false;
 
   function queueTranscriptScroll(target: TranscriptScrollTarget) {
     pendingScrollTargetRef.current = target;
   }
 
+  function createRuntime(messages: ClientMessage[] = []): ChatRuntime {
+    return {
+      messages,
+      pending: false,
+      error: null,
+    };
+  }
+
+  function ensureChatRuntime(chatId: string, messages: ClientMessage[] = []) {
+    setChatRuntimeById((current) => {
+      if (current[chatId]) {
+        return current;
+      }
+      return {
+        ...current,
+        [chatId]: createRuntime(messages),
+      };
+    });
+  }
+
+  function updateChatRuntime(chatId: string, updater: (runtime: ChatRuntime) => ChatRuntime) {
+    setChatRuntimeById((current) => {
+      const existing = current[chatId] ?? createRuntime();
+      return {
+        ...current,
+        [chatId]: updater(existing),
+      };
+    });
+  }
+
+  function updateExistingChatRuntime(chatId: string, updater: (runtime: ChatRuntime) => ChatRuntime) {
+    setChatRuntimeById((current) => {
+      const existing = current[chatId];
+      if (!existing) {
+        return current;
+      }
+      return {
+        ...current,
+        [chatId]: updater(existing),
+      };
+    });
+  }
+
+  function pruneChatRuntimes(validIds: Set<string>) {
+    setChatRuntimeById((current) => {
+      let changed = false;
+      const next: Record<string, ChatRuntime> = {};
+      for (const [chatId, runtime] of Object.entries(current)) {
+        if (validIds.has(chatId)) {
+          next[chatId] = runtime;
+          continue;
+        }
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }
+
+  function summaryForChat(chatId: string): WebChatSummary | null {
+    return chats.find((chat) => chat.id === chatId) ?? null;
+  }
+
+  function setCurrentChatFromSummary(chatId: string) {
+    const summary = summaryForChat(chatId);
+    if (!summary) {
+      return;
+    }
+    setCurrentChat({
+      id: summary.id,
+      title: summary.title,
+      created_at: summary.created_at,
+      updated_at: summary.updated_at,
+      messages: [],
+    });
+  }
+
+  function updateCurrentChatIfActive(chatId: string, updater: (chat: WebChatDetail) => WebChatDetail) {
+    setCurrentChat((current) => {
+      if (!current || current.id !== chatId) {
+        return current;
+      }
+      return updater(current);
+    });
+  }
+
   async function hydrateChats(preferredChatId?: string | null): Promise<void> {
     const nextChats = await listChats();
     setChats(nextChats);
+    pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
     const targetId =
       preferredChatId && nextChats.some((chat) => chat.id === preferredChatId)
         ? preferredChatId
@@ -679,14 +779,13 @@ export default function App() {
     if (!targetId) {
       setSelectedChatId(null);
       setCurrentChat(null);
-      setMessages([]);
       storageRemoveItem(STORAGE_KEY);
       return;
     }
 
     const chat = await getChat(targetId);
     setCurrentChat(chat);
-    setMessages(chat.messages.map(messageFromServer));
+    ensureChatRuntime(chat.id, chat.messages.map(messageFromServer));
     setSelectedChatId(targetId);
     storageSetItem(STORAGE_KEY, targetId);
   }
@@ -703,6 +802,7 @@ export default function App() {
           return;
         }
         setChats(nextChats);
+        pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
         const storedId = storageGetItem(STORAGE_KEY);
         const targetId =
           storedId && nextChats.some((chat) => chat.id === storedId) ? storedId : nextChats[0]?.id ?? null;
@@ -712,7 +812,7 @@ export default function App() {
             return;
           }
           setCurrentChat(chat);
-          setMessages(chat.messages.map(messageFromServer));
+          ensureChatRuntime(chat.id, chat.messages.map(messageFromServer));
           setSelectedChatId(targetId);
           storageSetItem(STORAGE_KEY, targetId);
         }
@@ -758,7 +858,7 @@ export default function App() {
         pendingScrollTargetRef.current = null;
       }
     }
-  }, [messages, sending]);
+  }, [activeMessages, sending]);
 
   useEffect(() => {
     const className = "deepfind-drawer-open";
@@ -767,6 +867,10 @@ export default function App() {
       document.body.classList.remove(className);
     };
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    selectedChatIdRef.current = selectedChatId;
+  }, [selectedChatId]);
 
   useEffect(() => {
     if (!modeMenuOpen) {
@@ -816,10 +920,14 @@ export default function App() {
     setLoading(true);
     setPageError(null);
     try {
-      const chat = await getChat(chatId);
       queueTranscriptScroll("last-assistant-head");
-      setCurrentChat(chat);
-      setMessages(chat.messages.map(messageFromServer));
+      if (!chatRuntimeById[chatId]) {
+        const chat = await getChat(chatId);
+        setCurrentChat(chat);
+        ensureChatRuntime(chat.id, chat.messages.map(messageFromServer));
+      } else {
+        setCurrentChatFromSummary(chatId);
+      }
       setSelectedChatId(chatId);
       storageSetItem(STORAGE_KEY, chatId);
       setSidebarOpen(false);
@@ -836,7 +944,7 @@ export default function App() {
       const chat = await createChat();
       queueTranscriptScroll("bottom");
       setCurrentChat(chat);
-      setMessages([]);
+      ensureChatRuntime(chat.id, []);
       setSelectedChatId(chat.id);
       setChats((current) => upsertSummary(current, summaryFromChat(chat)));
       storageSetItem(STORAGE_KEY, chat.id);
@@ -850,6 +958,16 @@ export default function App() {
     setPageError(null);
     try {
       await deleteChat(chat.id);
+      setChatRuntimeById((current) => {
+        const runtime = current[chat.id];
+        if (!runtime) {
+          return current;
+        }
+        runtime.abortController?.abort();
+        const next = { ...current };
+        delete next[chat.id];
+        return next;
+      });
       if (chat.id === currentChat?.id || chat.id === selectedChatId) {
         await hydrateChats(null);
         return;
@@ -862,6 +980,9 @@ export default function App() {
 
   async function ensureActiveChat(content: string): Promise<WebChatDetail> {
     if (currentChat) {
+      if (!chatRuntimeById[currentChat.id]) {
+        ensureChatRuntime(currentChat.id, []);
+      }
       return currentChat;
     }
     const chat = await createChat();
@@ -873,15 +994,17 @@ export default function App() {
     setSelectedChatId(chat.id);
     setChats((current) => upsertSummary(current, summaryFromChat(titledChat)));
     storageSetItem(STORAGE_KEY, chat.id);
+    ensureChatRuntime(chat.id, []);
     return titledChat;
   }
 
-  function appendActivity(messageId: string, event: ProgressEvent) {
+  function appendActivity(chatId: string, messageId: string, event: ProgressEvent) {
     if (event.type === "answer_delta") {
       return;
     }
-    setMessages((current) =>
-      current.map((message) =>
+    updateExistingChatRuntime(chatId, (runtime) => ({
+      ...runtime,
+      messages: runtime.messages.map((message) =>
         message.id === messageId
           ? {
               ...message,
@@ -889,12 +1012,13 @@ export default function App() {
             }
           : message,
       ),
-    );
+    }));
   }
 
-  function applyFinalTurn(messageId: string, turnResult: TurnResult) {
-    setMessages((current) =>
-      current.map((message) =>
+  function applyFinalTurn(chatId: string, messageId: string, turnResult: TurnResult) {
+    updateExistingChatRuntime(chatId, (runtime) => ({
+      ...runtime,
+      messages: runtime.messages.map((message) =>
         message.id === messageId
           ? {
               ...message,
@@ -907,7 +1031,7 @@ export default function App() {
             }
           : message,
       ),
-    );
+    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -919,10 +1043,13 @@ export default function App() {
     const content = composerValue.trim();
     setComposerValue("");
     setPageError(null);
-    setSending(true);
+
+    const controller = new AbortController();
+    let activeChat: WebChatDetail | null = null;
 
     try {
       const chat = await ensureActiveChat(content);
+      activeChat = chat;
       const userMessage = newClientMessage("user", content, mode);
       const assistantMessage = newClientMessage("assistant", "", mode);
       const nextTitle = currentChat?.title && currentChat.title !== "New chat" ? currentChat.title : summarize(content, 48);
@@ -931,70 +1058,110 @@ export default function App() {
         title: nextTitle || chat.title,
         updated_at: assistantMessage.created_at,
       };
+      const priorMessages = chatRuntimeById[chat.id]?.messages ?? [];
 
       queueTranscriptScroll("bottom");
       setCurrentChat(chatSnapshot);
-      setMessages((current) => [...current, userMessage, assistantMessage]);
-      setChats((current) => upsertSummary(current, summaryFromChat({ ...chatSnapshot, messages: [...messages, userMessage] })));
+      updateChatRuntime(chat.id, (runtime) => ({
+        ...runtime,
+        messages: [...runtime.messages, userMessage, assistantMessage],
+        pending: true,
+        error: null,
+        abortController: controller,
+      }));
+      setChats((current) =>
+        upsertSummary(current, summaryFromChat({ ...chatSnapshot, messages: [...priorMessages, userMessage] })),
+      );
 
-      await streamChatMessage(chat.id, { content, mode }, (progressEvent) => {
-        appendActivity(assistantMessage.id, progressEvent);
-        if (progressEvent.type === "answer_delta") {
-          const delta = String(progressEvent.data.delta ?? "");
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantMessage.id
-                ? {
-                    ...message,
-                    content: `${message.content}${delta}`,
-                  }
-                : message,
-            ),
-          );
-        }
-        if (progressEvent.type === "answer_final") {
-          applyFinalTurn(assistantMessage.id, progressEvent.data as unknown as TurnResult);
-        }
-        if (progressEvent.type === "error") {
-          const text = String(progressEvent.data.message ?? "Something went wrong");
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantMessage.id
-                ? {
-                    ...message,
-                    pending: false,
-                    error: text,
-                    content: message.content || "The run ended before a final answer was produced.",
-                  }
-                : message,
-            ),
-          );
-          setPageError(text);
-        }
-      });
+      await streamChatMessage(
+        chat.id,
+        { content, mode },
+        (progressEvent) => {
+          appendActivity(chat.id, assistantMessage.id, progressEvent);
+          if (progressEvent.type === "answer_delta") {
+            const delta = String(progressEvent.data.delta ?? "");
+            updateExistingChatRuntime(chat.id, (runtime) => ({
+              ...runtime,
+              messages: runtime.messages.map((message) =>
+                message.id === assistantMessage.id
+                  ? {
+                      ...message,
+                      content: `${message.content}${delta}`,
+                    }
+                  : message,
+              ),
+            }));
+          }
+          if (progressEvent.type === "answer_final") {
+            applyFinalTurn(chat.id, assistantMessage.id, progressEvent.data as unknown as TurnResult);
+          }
+          if (progressEvent.type === "error") {
+            const text = String(progressEvent.data.message ?? "Something went wrong");
+            updateExistingChatRuntime(chat.id, (runtime) => ({
+              ...runtime,
+              pending: false,
+              error: text,
+              abortController: undefined,
+              messages: runtime.messages.map((message) =>
+                message.id === assistantMessage.id
+                  ? {
+                      ...message,
+                      pending: false,
+                      error: text,
+                      content: message.content || "The run ended before a final answer was produced.",
+                    }
+                  : message,
+              ),
+            }));
+            if (selectedChatIdRef.current === chat.id) {
+              setPageError(text);
+            }
+          }
+        },
+        { signal: controller.signal },
+      );
 
       const nextChats = await listChats();
       setChats(nextChats);
+      pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
       const refreshedSummary = nextChats.find((item) => item.id === chat.id);
       if (refreshedSummary) {
-        setCurrentChat((current) =>
-          current
-            ? {
-                ...current,
-                title: refreshedSummary.title,
-                updated_at: refreshedSummary.updated_at,
-              }
-            : current,
-        );
+        updateCurrentChatIfActive(chat.id, (current) => ({
+          ...current,
+          title: refreshedSummary.title,
+          updated_at: refreshedSummary.updated_at,
+        }));
       }
     } catch (error) {
-      setPageError(error instanceof Error ? error.message : "Failed to send message");
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Failed to send message";
+      if (activeChat && selectedChatIdRef.current === activeChat.id) {
+        setPageError(message);
+      }
+      if (activeChat) {
+        updateExistingChatRuntime(activeChat.id, (runtime) => ({
+          ...runtime,
+          pending: false,
+          error: message,
+          abortController: undefined,
+        }));
+      }
     } finally {
-      setSending(false);
+      if (activeChat) {
+        updateExistingChatRuntime(activeChat.id, (runtime) => ({
+          ...runtime,
+          pending: false,
+          abortController: undefined,
+        }));
+      }
     }
   }
 
-  const selectedTitle = currentChat?.title ?? "New chat";
+  const selectedSummary = selectedChatId ? summaryForChat(selectedChatId) : null;
+  const selectedTitle =
+    currentChat?.id === selectedChatId ? currentChat.title : selectedSummary?.title ?? "New chat";
 
   return (
     <div className={`app-shell${sidebarOpen ? " app-shell--sidebar-open" : ""}`}>
@@ -1021,14 +1188,21 @@ export default function App() {
         <div className="sidebar__list">
           {chats.length === 0 ? <p className="sidebar__empty">No saved chats yet.</p> : null}
           {chats.map((chat) => {
+            const isRunning = Boolean(chatRuntimeById[chat.id]?.pending);
             return (
               <div
                 key={chat.id}
                 className={`chat-tile${chat.id === selectedChatId ? " chat-tile--active" : ""}`}
               >
+                {isRunning ? (
+                  <span className="chat-tile__badge" aria-hidden="true">
+                    Running
+                  </span>
+                ) : null}
                 <button
                   className="chat-tile__open"
                   type="button"
+                  aria-label={chat.title}
                   onClick={() => void handleOpenChat(chat.id)}
                   title={chat.title}
                 >
@@ -1071,7 +1245,7 @@ export default function App() {
 
         <section ref={transcriptRef} className="transcript">
           {loading ? <p className="state-text">Loading chats...</p> : null}
-          {!loading && messages.length === 0 ? (
+          {!loading && activeMessages.length === 0 ? (
             <div className="hero-empty">
               <p className="eyebrow">Parallel web research</p>
               <h3>Ask for live research, then decide how much horsepower you want.</h3>
@@ -1082,7 +1256,7 @@ export default function App() {
             </div>
           ) : null}
 
-          {messages.map((message) => (
+          {activeMessages.map((message) => (
             <MessageCard key={message.id} message={message} />
           ))}
 

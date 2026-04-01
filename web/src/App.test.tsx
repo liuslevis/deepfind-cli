@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -706,5 +706,198 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await screen.findAllByText("Recovered answer");
+  });
+
+  it("streams in parallel across chats and preserves results when switching", async () => {
+    const streamA = createControlledStreamResponse();
+    const streamB = createControlledStreamResponse();
+    let alphaStreamAborted = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_a",
+              title: "Alpha",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:01:00Z",
+              preview: "Alpha preview",
+            },
+            {
+              id: "chat_b",
+              title: "Bravo",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Bravo preview",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_a" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_a",
+            title: "Alpha",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:01:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_b" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_b",
+            title: "Bravo",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_a/messages/stream") {
+        init?.signal?.addEventListener("abort", () => {
+          alphaStreamAborted = true;
+        });
+        return streamA.response;
+      }
+      if (url === "/api/chats/chat_b/messages/stream") {
+        return streamB.response;
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Alpha" });
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Question A");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Bravo" }));
+    await screen.findByRole("heading", { name: "Bravo" });
+    expect(alphaStreamAborted).toBe(false);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Question B");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    streamA.push({
+      type: "answer_final",
+      data: {
+        answer_markdown: "Answer A",
+        sources: [],
+        artifacts: [],
+        mode: "fast",
+      },
+    });
+    streamA.push({ type: "done", data: { chat_id: "chat_a" } });
+    streamA.close();
+
+    streamB.push({
+      type: "answer_final",
+      data: {
+        answer_markdown: "Answer B",
+        sources: [],
+        artifacts: [],
+        mode: "fast",
+      },
+    });
+    streamB.push({ type: "done", data: { chat_id: "chat_b" } });
+    streamB.close();
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "Alpha" }));
+    await screen.findByText("Answer A");
+
+    await userEvent.click(screen.getByRole("button", { name: "Bravo" }));
+    await screen.findByText("Answer B");
+  });
+
+  it("shows a running badge for background chats with in-flight requests", async () => {
+    const streamA = createControlledStreamResponse();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_a",
+              title: "Alpha",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:01:00Z",
+              preview: "Alpha preview",
+            },
+            {
+              id: "chat_b",
+              title: "Bravo",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Bravo preview",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_a" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_a",
+            title: "Alpha",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:01:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_b" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_b",
+            title: "Bravo",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_a/messages/stream") {
+        return streamA.response;
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Alpha" });
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Question A");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Bravo" }));
+    await screen.findByRole("heading", { name: "Bravo" });
+
+    const alphaTile = screen.getByRole("button", { name: "Alpha" }).closest(".chat-tile") as HTMLElement | null;
+    expect(alphaTile).not.toBeNull();
+    if (alphaTile) {
+      await waitFor(() => expect(within(alphaTile).getByText("Running")).toBeInTheDocument());
+    }
+
+    const bravoTile = screen.getByRole("button", { name: "Bravo" }).closest(".chat-tile") as HTMLElement | null;
+    expect(bravoTile).not.toBeNull();
+    if (bravoTile) {
+      expect(within(bravoTile).queryByText("Running")).not.toBeInTheDocument();
+    }
+
+    streamA.close();
   });
 });

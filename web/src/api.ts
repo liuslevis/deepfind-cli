@@ -77,6 +77,7 @@ export async function streamChatMessage(
   chatId: string,
   payload: { content: string; mode: ChatMode },
   onEvent: (event: ProgressEvent) => void,
+  options?: { signal?: AbortSignal },
 ): Promise<void> {
   const response = await fetch(`/api/chats/${chatId}/messages/stream`, {
     method: "POST",
@@ -85,6 +86,7 @@ export async function streamChatMessage(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+    signal: options?.signal,
   });
   if (!response.ok || !response.body) {
     throw new Error(await response.text());
