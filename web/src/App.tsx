@@ -1,5 +1,5 @@
-import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { Children, isValidElement, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -16,6 +16,11 @@ import type {
 } from "./types";
 
 const STORAGE_KEY = "deepfind.web.selected-chat";
+const MERMAID_BLOCK_START =
+  /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|requirementDiagram|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|xychart-beta|sankey-beta|block-beta)\b/;
+const MERMAID_STRUCTURAL_LINE =
+  /^(subgraph|end|style|classDef|class|linkStyle|click|section|accTitle|accDescr|title|todayMarker)\b/;
+let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
 
 interface ClientMessage extends WebMessage {
   pending?: boolean;
@@ -28,7 +33,33 @@ interface SourceGroup {
   urls: string[];
 }
 
+type TranscriptScrollTarget = "bottom" | "last-assistant-head";
+
 const RESEARCH_EVENT_TYPES = ["worker_started", "iteration", "tool_call", "tool_result"] as const;
+
+function storageGetItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSetItem(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures so the chat UI still works in constrained browsers/tests.
+  }
+}
+
+function storageRemoveItem(key: string): void {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures so the chat UI still works in constrained browsers/tests.
+  }
+}
 
 function modeLabel(mode: ChatMode | null): string {
   if (mode === "expert") {
@@ -58,9 +89,185 @@ function messageFromServer(message: WebMessage): ClientMessage {
   };
 }
 
+function createClientMessageId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getMermaid() {
+  if (!mermaidPromise) {
+    mermaidPromise = import("mermaid")
+      .then(({ default: loadedMermaid }) => {
+        loadedMermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+          securityLevel: "strict",
+          fontFamily: '"IBM Plex Mono", monospace',
+        });
+        return loadedMermaid;
+      })
+      .catch((error) => {
+        mermaidPromise = null;
+        throw error;
+      });
+  }
+  return mermaidPromise;
+}
+
+function flattenNodeText(node: ReactNode): string {
+  return Children.toArray(node)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") {
+        return String(child);
+      }
+      if (isValidElement<{ children?: ReactNode }>(child)) {
+        return flattenNodeText(child.props.children ?? "");
+      }
+      return "";
+    })
+    .join("");
+}
+
+function extractMermaidChart(children: ReactNode): string | null {
+  const child = Array.isArray(children) ? children[0] : children;
+  if (!isValidElement<{ className?: string; children?: ReactNode }>(child)) {
+    return null;
+  }
+
+  const className = typeof child.props.className === "string" ? child.props.className : "";
+  const chart = flattenNodeText(child.props.children ?? "").replace(/\n$/, "");
+  if (!chart.trim()) {
+    return null;
+  }
+
+  if (/\blanguage-mermaid\b/.test(className) || MERMAID_BLOCK_START.test(chart.trimStart())) {
+    return chart;
+  }
+  return null;
+}
+
+function looksLikeMermaidContinuation(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return (
+    MERMAID_BLOCK_START.test(trimmed) ||
+    MERMAID_STRUCTURAL_LINE.test(trimmed) ||
+    /^\d{4}-\d{2}-\d{2}\s*:/.test(trimmed) ||
+    /-->|---|==>|-.->|:::/.test(trimmed)
+  );
+}
+
+function normalizeMermaidMarkdown(body: string): string {
+  if (!body.trim()) {
+    return body;
+  }
+
+  const lines = body.split("\n");
+  const normalized: string[] = [];
+  let insideFence = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      insideFence = !insideFence;
+      normalized.push(line);
+      continue;
+    }
+
+    if (!insideFence && MERMAID_BLOCK_START.test(trimmed)) {
+      const block = [line];
+      while (index + 1 < lines.length && looksLikeMermaidContinuation(lines[index + 1])) {
+        index += 1;
+        block.push(lines[index]);
+      }
+      normalized.push("```mermaid", ...block, "```");
+      continue;
+    }
+
+    normalized.push(line);
+  }
+
+  return normalized.join("\n");
+}
+
+function MermaidBlock({ chart }: { chart: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const renderIdRef = useRef(`mermaid_${createClientMessageId().replace(/[^a-zA-Z0-9_-]/g, "_")}`);
+  const [svg, setSvg] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderChart() {
+      try {
+        const mermaid = await getMermaid();
+        const { svg: nextSvg, bindFunctions } = await mermaid.render(renderIdRef.current, chart);
+        if (cancelled) {
+          return;
+        }
+        setSvg(nextSvg);
+        setError(null);
+        requestAnimationFrame(() => {
+          if (cancelled) {
+            return;
+          }
+          const container = containerRef.current;
+          if (container) {
+            bindFunctions?.(container);
+          }
+        });
+      } catch (cause) {
+        if (cancelled) {
+          return;
+        }
+        setSvg("");
+        setError(cause instanceof Error ? cause.message : "Unable to render Mermaid diagram");
+      }
+    }
+
+    void renderChart();
+    return () => {
+      cancelled = true;
+    };
+  }, [chart]);
+
+  return (
+    <figure className="mermaid-block" aria-label="Mermaid diagram">
+      {svg ? (
+        <div
+          ref={containerRef}
+          className="mermaid-block__diagram"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : null}
+      {!svg && !error ? (
+        <div className="mermaid-block__status" aria-busy="true">
+          Rendering diagram...
+        </div>
+      ) : null}
+      {error ? (
+        <div className="mermaid-block__fallback">
+          <p>Mermaid render failed: {error}</p>
+          <pre>
+            <code>{chart}</code>
+          </pre>
+        </div>
+      ) : null}
+    </figure>
+  );
+}
+
 function newClientMessage(role: "user" | "assistant", content: string, mode: ChatMode): ClientMessage {
   return {
-    id: `local_${crypto.randomUUID()}`,
+    id: `local_${createClientMessageId()}`,
     role,
     content,
     created_at: new Date().toISOString(),
@@ -317,6 +524,10 @@ function upsertSummary(list: WebChatSummary[], next: WebChatSummary): WebChatSum
   return merged.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
 }
 
+function sidebarTitle(title: string): string {
+  return summarize(title, 24);
+}
+
 function ActivityPanel({ activity, pending }: { activity: ProgressEvent[]; pending: boolean }) {
   const summary = buildActivitySummary(activity);
   if (!summary) {
@@ -348,10 +559,15 @@ function ActivityPanel({ activity, pending }: { activity: ProgressEvent[]; pendi
 
 function MessageCard({ message }: { message: ClientMessage }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
+  const markdownBody = normalizeMermaidMarkdown(body);
   const sourceGroups = groupSources(message.sources);
 
   return (
-    <article className={`message message--${message.role}${message.pending ? " message--pending" : ""}`}>
+    <article
+      className={`message message--${message.role}${message.pending ? " message--pending" : ""}`}
+      data-message-id={message.id}
+      data-message-role={message.role}
+    >
       <div className="message__meta">
         <span className="message__author">{message.role === "assistant" ? "DeepFind" : "You"}</span>
         {message.mode ? <span className="message__mode">{modeLabel(message.mode)}</span> : null}
@@ -364,9 +580,16 @@ function MessageCard({ message }: { message: ClientMessage }) {
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+              pre: ({ children, ...props }) => {
+                const chart = extractMermaidChart(children);
+                if (chart) {
+                  return <MermaidBlock chart={chart} />;
+                }
+                return <pre {...props}>{children}</pre>;
+              },
             }}
           >
-            {body}
+            {markdownBody}
           </ReactMarkdown>
         </div>
       ) : (
@@ -428,11 +651,18 @@ export default function App() {
   const [chats, setChats] = useState<WebChatSummary[]>([]);
   const [currentChat, setCurrentChat] = useState<WebChatDetail | null>(null);
   const [messages, setMessages] = useState<ClientMessage[]>([]);
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY));
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(() => storageGetItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const transcriptRef = useRef<HTMLElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const pendingScrollTargetRef = useRef<TranscriptScrollTarget | null>(null);
+
+  function queueTranscriptScroll(target: TranscriptScrollTarget) {
+    pendingScrollTargetRef.current = target;
+  }
 
   async function hydrateChats(preferredChatId?: string | null): Promise<void> {
     const nextChats = await listChats();
@@ -448,7 +678,7 @@ export default function App() {
       setSelectedChatId(null);
       setCurrentChat(null);
       setMessages([]);
-      localStorage.removeItem(STORAGE_KEY);
+      storageRemoveItem(STORAGE_KEY);
       return;
     }
 
@@ -456,7 +686,7 @@ export default function App() {
     setCurrentChat(chat);
     setMessages(chat.messages.map(messageFromServer));
     setSelectedChatId(targetId);
-    localStorage.setItem(STORAGE_KEY, targetId);
+    storageSetItem(STORAGE_KEY, targetId);
   }
 
   useEffect(() => {
@@ -471,7 +701,7 @@ export default function App() {
           return;
         }
         setChats(nextChats);
-        const storedId = localStorage.getItem(STORAGE_KEY);
+        const storedId = storageGetItem(STORAGE_KEY);
         const targetId =
           storedId && nextChats.some((chat) => chat.id === storedId) ? storedId : nextChats[0]?.id ?? null;
         if (targetId) {
@@ -482,7 +712,7 @@ export default function App() {
           setCurrentChat(chat);
           setMessages(chat.messages.map(messageFromServer));
           setSelectedChatId(targetId);
-          localStorage.setItem(STORAGE_KEY, targetId);
+          storageSetItem(STORAGE_KEY, targetId);
         }
       } catch (error) {
         if (!cancelled) {
@@ -503,18 +733,67 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
+    const pendingTarget = pendingScrollTargetRef.current;
+    if (pendingTarget === "last-assistant-head") {
+      pendingScrollTargetRef.current = null;
+      const transcript = transcriptRef.current;
+      if (!transcript) {
+        return;
+      }
+      const assistantCards = transcript.querySelectorAll<HTMLElement>('[data-message-role="assistant"]');
+      const lastAssistant = assistantCards.item(assistantCards.length - 1);
+      if (lastAssistant) {
+        lastAssistant.scrollIntoView({ behavior: "auto", block: "start" });
+        return;
+      }
+      transcript.scrollTop = 0;
+      return;
+    }
+
+    if (pendingTarget === "bottom" || sending) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      if (!sending) {
+        pendingScrollTargetRef.current = null;
+      }
+    }
+  }, [messages, sending]);
+
+  useEffect(() => {
+    const className = "deepfind-drawer-open";
+    document.body.classList.toggle(className, sidebarOpen);
+    return () => {
+      document.body.classList.remove(className);
+    };
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!sidebarOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [sidebarOpen]);
 
   async function handleOpenChat(chatId: string) {
     setLoading(true);
     setPageError(null);
     try {
       const chat = await getChat(chatId);
+      queueTranscriptScroll("last-assistant-head");
       setCurrentChat(chat);
       setMessages(chat.messages.map(messageFromServer));
       setSelectedChatId(chatId);
-      localStorage.setItem(STORAGE_KEY, chatId);
+      storageSetItem(STORAGE_KEY, chatId);
+      setSidebarOpen(false);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Failed to open chat");
     } finally {
@@ -526,11 +805,13 @@ export default function App() {
     setPageError(null);
     try {
       const chat = await createChat();
+      queueTranscriptScroll("bottom");
       setCurrentChat(chat);
       setMessages([]);
       setSelectedChatId(chat.id);
       setChats((current) => upsertSummary(current, summaryFromChat(chat)));
-      localStorage.setItem(STORAGE_KEY, chat.id);
+      storageSetItem(STORAGE_KEY, chat.id);
+      setSidebarOpen(false);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Failed to create chat");
     }
@@ -560,7 +841,7 @@ export default function App() {
     setCurrentChat(titledChat);
     setSelectedChatId(chat.id);
     setChats((current) => upsertSummary(current, summaryFromChat(titledChat)));
-    localStorage.setItem(STORAGE_KEY, chat.id);
+    storageSetItem(STORAGE_KEY, chat.id);
     return titledChat;
   }
 
@@ -620,6 +901,7 @@ export default function App() {
         updated_at: assistantMessage.created_at,
       };
 
+      queueTranscriptScroll("bottom");
       setCurrentChat(chatSnapshot);
       setMessages((current) => [...current, userMessage, assistantMessage]);
       setChats((current) => upsertSummary(current, summaryFromChat({ ...chatSnapshot, messages: [...messages, userMessage] })));
@@ -684,49 +966,82 @@ export default function App() {
   const selectedTitle = currentChat?.title ?? "New chat";
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${sidebarOpen ? " app-shell--sidebar-open" : ""}`}>
+      <button
+        className="sidebar-backdrop"
+        type="button"
+        aria-label="Close chats"
+        aria-hidden={!sidebarOpen}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      <aside id="chat-sidebar" className="sidebar">
         <div className="sidebar__header">
           <div>
             <p className="eyebrow">DeepFind</p>
             <h1>Web Research Cockpit</h1>
           </div>
-          <button className="ghost-button" type="button" onClick={handleCreateChat}>
-            New chat
-          </button>
+          <div className="sidebar__actions">
+            <button className="ghost-button" type="button" onClick={handleCreateChat}>
+              New chat
+            </button>
+            <button className="ghost-button mobile-only" type="button" onClick={() => setSidebarOpen(false)}>
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="sidebar__list">
           {chats.length === 0 ? <p className="sidebar__empty">No saved chats yet.</p> : null}
-          {chats.map((chat) => (
-            <button
-              key={chat.id}
-              className={`chat-tile${chat.id === selectedChatId ? " chat-tile--active" : ""}`}
-              type="button"
-              onClick={() => void handleOpenChat(chat.id)}
-            >
-              <strong>{chat.title}</strong>
-              <span>{chat.preview || "Ready for a new question"}</span>
-              <time>{formatTime(chat.updated_at)}</time>
-            </button>
-          ))}
+          {chats.map((chat) => {
+            return (
+              <button
+                key={chat.id}
+                className={`chat-tile${chat.id === selectedChatId ? " chat-tile--active" : ""}`}
+                type="button"
+                onClick={() => void handleOpenChat(chat.id)}
+                title={chat.title}
+              >
+                <div className="chat-tile__header">
+                  <strong className="chat-tile__title">{sidebarTitle(chat.title)}</strong>
+                  <time className="chat-tile__time">{formatTime(chat.updated_at)}</time>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </aside>
 
       <main className="workspace">
         <header className="workspace__header">
-          <div>
+          <div className="workspace__title">
             <p className="eyebrow">Local-first</p>
             <h2>{selectedTitle}</h2>
           </div>
-          {currentChat ? (
-            <button className="ghost-button ghost-button--danger" type="button" onClick={() => void handleDeleteCurrentChat()}>
-              Delete chat
+          <div className="workspace__actions">
+            <button
+              className="ghost-button mobile-only"
+              type="button"
+              aria-controls="chat-sidebar"
+              aria-expanded={sidebarOpen}
+              aria-label="Open chats"
+              onClick={() => setSidebarOpen((current) => !current)}
+            >
+              Chats
             </button>
-          ) : null}
+            {currentChat ? (
+              <button
+                className="ghost-button ghost-button--danger"
+                type="button"
+                onClick={() => void handleDeleteCurrentChat()}
+              >
+                Delete chat
+              </button>
+            ) : null}
+          </div>
         </header>
 
-        <section className="transcript">
+        <section ref={transcriptRef} className="transcript">
           {loading ? <p className="state-text">Loading chats...</p> : null}
           {!loading && messages.length === 0 ? (
             <div className="hero-empty">

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="deepfind-bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#163860" />
+      <stop offset="100%" stop-color="#04070d" />
+    </linearGradient>
+    <linearGradient id="deepfind-glow" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#5de1ff" />
+      <stop offset="100%" stop-color="#25b6ff" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#deepfind-bg)" />
+  <circle cx="374" cy="132" r="54" fill="#5de1ff" fill-opacity="0.18" />
+  <path
+    d="M128 140h126c88 0 142 46 142 116 0 50-28 89-74 106l84 72h-92l-70-61h-48v61h-68z"
+    fill="url(#deepfind-glow)"
+    fill-opacity="0.12"
+  />
+  <path d="M166 178h86c73 0 116 33 116 88 0 56-43 90-116 90h-86zm78 181c49 0 77-18 77-53 0-34-28-51-77-51h-29v104z" fill="#edf6ff" />
+  <path d="M216 214h52c49 0 76 18 76 50 0 33-27 52-76 52h-52zm47 73c25 0 38-8 38-23 0-14-13-22-38-22h-17v45z" fill="url(#deepfind-glow)" />
+</svg>

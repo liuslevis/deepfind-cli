@@ -81,34 +81,40 @@ class ResponseAgent:
             tool_calls = getattr(message, "tool_calls", None) or []
 
             if tool_calls:
+                normalized_tool_calls = []
+                parsed_arguments: dict[str, dict[str, Any]] = {}
+                for call in tool_calls:
+                    parsed = _parse_tool_arguments(call.function.arguments)
+                    parsed_arguments[call.id] = parsed
+                    normalized_tool_calls.append(
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.function.name,
+                                "arguments": dump_json(parsed),
+                            },
+                        }
+                    )
                 messages.append(
                     {
                         "role": "assistant",
                         "content": message.content or "",
-                        "tool_calls": [
-                            {
-                                "id": call.id,
-                                "type": "function",
-                                "function": {
-                                    "name": call.function.name,
-                                    "arguments": call.function.arguments,
-                                },
-                            }
-                            for call in tool_calls
-                        ],
+                        "tool_calls": normalized_tool_calls,
                     }
                 )
                 for call in tool_calls:
+                    arguments = parsed_arguments.get(call.id, {})
                     if self.progress:
                         self.progress.tool_call(
                             name,
                             iteration,
                             call.function.name,
-                            _parse_tool_arguments(call.function.arguments),
+                            arguments,
                         )
                     output = self.tools.call(
                         call.function.name,
-                        _parse_tool_arguments(call.function.arguments),
+                        arguments,
                     )
                     if self.progress:
                         self.progress.tool_result(name, call.function.name, output)

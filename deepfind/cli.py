@@ -4,14 +4,16 @@ import argparse
 import sys
 from typing import Callable, TextIO
 
+from .config import Settings
 from .orchestrator import ChatSession, DeepFind
 from .output import render_answer
 from .progress import ConsoleProgress
+from .tools import Toolset
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="deepfind")
-    parser.add_argument("query")
+    parser.add_argument("query", nargs="?")
     parser.add_argument("--num-agent", type=int, default=2, help="1-4 sub agents")
     parser.add_argument(
         "--max-iter-per-agent",
@@ -29,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="always exit after the first answer",
     )
+    parser.add_argument(
+        "--list-tools",
+        action="store_true",
+        help="list available deepfind tools and exit",
+    )
     return parser
 
 
@@ -38,6 +45,16 @@ def _isatty(stream: TextIO) -> bool:
 
 def _should_enter_chat_mode(args: argparse.Namespace, stdin: TextIO, stdout: TextIO) -> bool:
     return not args.once and _isatty(stdin) and _isatty(stdout)
+
+
+def _print_tools(stdout: TextIO) -> None:
+    toolset = Toolset(Settings(api_key=""))
+    for spec in toolset.specs():
+        function = spec.get("function", {})
+        name = str(function.get("name", "")).strip()
+        description = str(function.get("description", "")).strip()
+        if name:
+            print(f"{name}\t{description}", file=stdout)
 
 
 def _chat_loop(
@@ -81,6 +98,11 @@ def main(
     stderr = stderr or sys.stderr
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.list_tools:
+        _print_tools(stdout)
+        return 0
+    if not args.query:
+        parser.error("query is required unless --list-tools is set")
     if not 1 <= args.num_agent <= 4:
         parser.error("--num-agent must be between 1 and 4")
     if args.max_iter_per_agent < 1:

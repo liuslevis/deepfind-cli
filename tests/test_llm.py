@@ -80,7 +80,29 @@ class ResponseAgentTests(unittest.TestCase):
         calls = settings.new_client().chat.completions.calls
         self.assertEqual(calls[0]["messages"][0]["content"], "short prompt")
         self.assertEqual(calls[1]["messages"][2]["tool_calls"][0]["function"]["name"], "twitter_search")
+        self.assertEqual(calls[1]["messages"][2]["tool_calls"][0]["function"]["arguments"], '{"query":"openai"}')
         self.assertEqual(calls[1]["messages"][3]["role"], "tool")
+
+    def test_normalizes_tool_arguments_before_replaying_tool_call(self) -> None:
+        tool_call = SimpleNamespace(
+            id="call-1",
+            function=SimpleNamespace(name="twitter_search", arguments='{"query":"openai"} trailing'),
+        )
+        settings = FakeSettings(
+            [
+                message_response("", tool_calls=[tool_call]),
+                message_response('{"summary":"ok","facts":[],"gaps":[]}'),
+            ]
+        )
+        tools = FakeTools()
+        agent = ResponseAgent(settings=settings, tools=tools, max_iter=3)
+
+        result = agent.run("worker", "short prompt", "q=test", use_tools=True)
+
+        self.assertEqual(result.iterations, 2)
+        self.assertEqual(tools.invocations, [("twitter_search", {"query": "openai"})])
+        calls = settings.new_client().chat.completions.calls
+        self.assertEqual(calls[1]["messages"][2]["tool_calls"][0]["function"]["arguments"], '{"query":"openai"}')
 
     def test_returns_empty_output_marker(self) -> None:
         settings = FakeSettings([message_response("")])
