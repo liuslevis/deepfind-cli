@@ -27,9 +27,7 @@ uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5
 
 uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 2
 
-uv run -m deepfind.cli "帮我搜索关于 Agent 上海的岗位" --num-agent 1
-
-uv run -m deepfind.cli "搜索 Agent 岗位，过滤薪酬低于 60K 的职位；如果公司名缺失，先看职位详情，再去聊天列表里找到对应会话并私信：请问是什么公司" --num-agent 1
+uv run -m deepfind.cli "Help me search Agent jobs on Boss" --num-agent 1
 
 uv run -m deepfind.cli --list-tools
 ```
