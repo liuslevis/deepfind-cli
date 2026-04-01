@@ -53,6 +53,30 @@ body.deepfind-drawer-open {
   overflow: hidden;
 }
 
+body.deepfind-standalone {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+body.deepfind-standalone .app-shell {
+  position: fixed;
+  inset: 0;
+  min-height: 0;
+  height: auto;
+}
+
+body.deepfind-standalone .sidebar,
+body.deepfind-standalone .workspace {
+  height: 100%;
+}
+
+body.deepfind-standalone .sidebar__list,
+body.deepfind-standalone .transcript {
+  overscroll-behavior: contain;
+}
+
 a {
   color: inherit;
   text-underline-offset: 0.18em;
@@ -864,6 +888,23 @@ img {
 }
 
 @media (max-width: 760px) {
+  body.deepfind-standalone .workspace {
+    overflow: hidden;
+  }
+
+  body.deepfind-standalone .transcript {
+    padding-bottom: 28px;
+    scroll-padding-bottom: 28px;
+  }
+
+  body.deepfind-standalone .composer-wrap {
+    position: relative;
+    bottom: auto;
+    flex: 0 0 auto;
+    margin-top: 0;
+    padding-bottom: 8px;
+  }
+
   .sidebar__list {
     flex: 0 0 auto;
     min-height: auto;
