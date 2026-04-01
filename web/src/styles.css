@@ -352,6 +352,38 @@ img {
   background: rgba(4, 10, 16, 0.8);
 }
 
+.mermaid-block {
+  margin: 1rem 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(10, 19, 30, 0.96), rgba(6, 13, 21, 0.94)),
+    radial-gradient(circle at top right, rgba(93, 225, 255, 0.08), transparent 40%);
+  overflow-x: auto;
+}
+
+.mermaid-block__diagram {
+  min-width: fit-content;
+}
+
+.mermaid-block__diagram svg {
+  display: block;
+  min-width: min(640px, 100%);
+  height: auto;
+  margin: 0 auto;
+}
+
+.mermaid-block__status,
+.mermaid-block__fallback p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.mermaid-block__fallback pre {
+  margin-top: 12px;
+}
+
 .markdown table {
   display: block;
   width: 100%;
