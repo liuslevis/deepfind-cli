@@ -68,6 +68,19 @@ function storageRemoveItem(key: string): void {
   }
 }
 
+function isStandalonePwa(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
+  if (navigatorWithStandalone.standalone === true) {
+    return true;
+  }
+
+  return typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches;
+}
+
 function modeLabel(mode: ChatMode | null): string {
   if (mode === "expert") {
     return "Expert (4 agents)";
@@ -867,6 +880,14 @@ export default function App() {
       document.body.classList.remove(className);
     };
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    const className = "deepfind-standalone";
+    document.body.classList.toggle(className, isStandalonePwa());
+    return () => {
+      document.body.classList.remove(className);
+    };
+  }, []);
 
   useEffect(() => {
     selectedChatIdRef.current = selectedChatId;
