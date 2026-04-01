@@ -655,9 +655,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const modeSelectRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<TranscriptScrollTarget | null>(null);
 
   function queueTranscriptScroll(target: TranscriptScrollTarget) {
@@ -765,6 +767,33 @@ export default function App() {
       document.body.classList.remove(className);
     };
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!modeMenuOpen) {
+      return;
+    }
+
+    function handleOutsideClick(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (target && modeSelectRef.current?.contains(target)) {
+        return;
+      }
+      setModeMenuOpen(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setModeMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [modeMenuOpen]);
 
   useEffect(() => {
     if (!sidebarOpen) {
@@ -978,8 +1007,7 @@ export default function App() {
       <aside id="chat-sidebar" className="sidebar">
         <div className="sidebar__header">
           <div>
-            <p className="eyebrow">DeepFind</p>
-            <h1>Web Research Cockpit</h1>
+            <h1>DeepFind-CLI</h1>
           </div>
           <div className="sidebar__actions">
             <button className="ghost-button" type="button" onClick={handleCreateChat}>
@@ -1012,7 +1040,6 @@ export default function App() {
       <main className="workspace">
         <header className="workspace__header">
           <div className="workspace__title">
-            <p className="eyebrow">Local-first</p>
             <h2>{selectedTitle}</h2>
           </div>
           <div className="workspace__actions">
@@ -1059,27 +1086,14 @@ export default function App() {
         </section>
 
         <footer className="composer-wrap">
-          <div className="mode-toggle" aria-label="Chat mode">
-            {(["fast", "expert"] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={`mode-toggle__button${mode === option ? " mode-toggle__button--active" : ""}`}
-                onClick={() => setMode(option)}
-              >
-                {modeLabel(option)}
-              </button>
-            ))}
-          </div>
-
           <form className="composer" onSubmit={handleSubmit}>
             <label className="sr-only" htmlFor="chat-input">
               Ask DeepFind
             </label>
-            <textarea
+            <input
               id="chat-input"
               className="composer__input"
-              rows={3}
+              type="text"
               placeholder="Ask DeepFind to search, summarize, compare, or generate artifacts..."
               value={composerValue}
               onChange={(changeEvent) => setComposerValue(changeEvent.target.value)}
@@ -1090,6 +1104,41 @@ export default function App() {
                 }
               }}
             />
+            <div className="mode-select" ref={modeSelectRef}>
+              <span className="sr-only" id="mode-select-label">
+                Mode
+              </span>
+              <button
+                type="button"
+                className="mode-select__button"
+                aria-label="Mode"
+                aria-haspopup="listbox"
+                aria-expanded={modeMenuOpen}
+                aria-controls="mode-select-menu"
+                onClick={() => setModeMenuOpen((current) => !current)}
+              >
+                <span className="mode-select__value">{modeLabel(mode)}</span>
+              </button>
+              {modeMenuOpen ? (
+                <div id="mode-select-menu" className="mode-select__menu" role="listbox" aria-labelledby="mode-select-label">
+                  {(["fast", "expert"] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      role="option"
+                      className={`mode-select__option${mode === option ? " mode-select__option--active" : ""}`}
+                      aria-selected={mode === option}
+                      onClick={() => {
+                        setMode(option);
+                        setModeMenuOpen(false);
+                      }}
+                    >
+                      {modeLabel(option)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <button className="send-button" type="submit" disabled={sending}>
               {sending ? "Running..." : "Send"}
             </button>
