@@ -2,6 +2,18 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const mermaidMock = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(async () => ({
+    svg: '<svg data-testid="mermaid-svg" viewBox="0 0 10 10"><text x="1" y="9">diagram</text></svg>',
+    bindFunctions: vi.fn(),
+  })),
+}));
+
+vi.mock("mermaid", () => ({
+  default: mermaidMock,
+}));
+
 import App from "./App";
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -81,6 +93,8 @@ function createControlledStreamResponse() {
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
+    mermaidMock.initialize.mockClear();
+    mermaidMock.render.mockClear();
   });
 
   afterEach(() => {
@@ -212,6 +226,61 @@ describe("App", () => {
     await screen.findByText("Loaded from the selected chat");
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
     expect(screen.queryByText("View detailed trace")).not.toBeInTheDocument();
+  });
+
+  it("renders mermaid markdown blocks as diagrams", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_mermaid",
+              title: "Mermaid",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Diagram answer",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_mermaid" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_mermaid",
+            title: "Mermaid",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [
+              {
+                id: "msg_1",
+                role: "assistant",
+                content: "Here is the graph:\n\nflowchart TD\nA --> B\nstyle A fill:#e6f3ff,stroke:#333\n\nAfter the graph.",
+                created_at: "2026-03-22T00:02:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByLabelText("Mermaid diagram");
+    await waitFor(() => expect(mermaidMock.render).toHaveBeenCalled());
+    expect(mermaidMock.initialize).toHaveBeenCalled();
+    expect(mermaidMock.render).toHaveBeenCalledWith(
+      expect.stringMatching(/^mermaid_/),
+      "flowchart TD\nA --> B\nstyle A fill:#e6f3ff,stroke:#333",
+    );
   });
 
   it("toggles the mobile chat drawer and closes it after selecting a chat", async () => {

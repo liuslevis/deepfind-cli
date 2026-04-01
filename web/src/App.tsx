@@ -1,5 +1,5 @@
-import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { Children, isValidElement, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -16,6 +16,11 @@ import type {
 } from "./types";
 
 const STORAGE_KEY = "deepfind.web.selected-chat";
+const MERMAID_BLOCK_START =
+  /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|requirementDiagram|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|xychart-beta|sankey-beta|block-beta)\b/;
+const MERMAID_STRUCTURAL_LINE =
+  /^(subgraph|end|style|classDef|class|linkStyle|click|section|accTitle|accDescr|title|todayMarker)\b/;
+let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
 
 interface ClientMessage extends WebMessage {
   pending?: boolean;
@@ -90,6 +95,174 @@ function createClientMessageId(): string {
     return cryptoApi.randomUUID();
   }
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getMermaid() {
+  if (!mermaidPromise) {
+    mermaidPromise = import("mermaid")
+      .then(({ default: loadedMermaid }) => {
+        loadedMermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+          securityLevel: "strict",
+          fontFamily: '"IBM Plex Mono", monospace',
+        });
+        return loadedMermaid;
+      })
+      .catch((error) => {
+        mermaidPromise = null;
+        throw error;
+      });
+  }
+  return mermaidPromise;
+}
+
+function flattenNodeText(node: ReactNode): string {
+  return Children.toArray(node)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") {
+        return String(child);
+      }
+      if (isValidElement<{ children?: ReactNode }>(child)) {
+        return flattenNodeText(child.props.children ?? "");
+      }
+      return "";
+    })
+    .join("");
+}
+
+function extractMermaidChart(children: ReactNode): string | null {
+  const child = Array.isArray(children) ? children[0] : children;
+  if (!isValidElement<{ className?: string; children?: ReactNode }>(child)) {
+    return null;
+  }
+
+  const className = typeof child.props.className === "string" ? child.props.className : "";
+  const chart = flattenNodeText(child.props.children ?? "").replace(/\n$/, "");
+  if (!chart.trim()) {
+    return null;
+  }
+
+  if (/\blanguage-mermaid\b/.test(className) || MERMAID_BLOCK_START.test(chart.trimStart())) {
+    return chart;
+  }
+  return null;
+}
+
+function looksLikeMermaidContinuation(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return (
+    MERMAID_BLOCK_START.test(trimmed) ||
+    MERMAID_STRUCTURAL_LINE.test(trimmed) ||
+    /^\d{4}-\d{2}-\d{2}\s*:/.test(trimmed) ||
+    /-->|---|==>|-.->|:::/.test(trimmed)
+  );
+}
+
+function normalizeMermaidMarkdown(body: string): string {
+  if (!body.trim()) {
+    return body;
+  }
+
+  const lines = body.split("\n");
+  const normalized: string[] = [];
+  let insideFence = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      insideFence = !insideFence;
+      normalized.push(line);
+      continue;
+    }
+
+    if (!insideFence && MERMAID_BLOCK_START.test(trimmed)) {
+      const block = [line];
+      while (index + 1 < lines.length && looksLikeMermaidContinuation(lines[index + 1])) {
+        index += 1;
+        block.push(lines[index]);
+      }
+      normalized.push("```mermaid", ...block, "```");
+      continue;
+    }
+
+    normalized.push(line);
+  }
+
+  return normalized.join("\n");
+}
+
+function MermaidBlock({ chart }: { chart: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const renderIdRef = useRef(`mermaid_${createClientMessageId().replace(/[^a-zA-Z0-9_-]/g, "_")}`);
+  const [svg, setSvg] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderChart() {
+      try {
+        const mermaid = await getMermaid();
+        const { svg: nextSvg, bindFunctions } = await mermaid.render(renderIdRef.current, chart);
+        if (cancelled) {
+          return;
+        }
+        setSvg(nextSvg);
+        setError(null);
+        requestAnimationFrame(() => {
+          if (cancelled) {
+            return;
+          }
+          const container = containerRef.current;
+          if (container) {
+            bindFunctions?.(container);
+          }
+        });
+      } catch (cause) {
+        if (cancelled) {
+          return;
+        }
+        setSvg("");
+        setError(cause instanceof Error ? cause.message : "Unable to render Mermaid diagram");
+      }
+    }
+
+    void renderChart();
+    return () => {
+      cancelled = true;
+    };
+  }, [chart]);
+
+  return (
+    <figure className="mermaid-block" aria-label="Mermaid diagram">
+      {svg ? (
+        <div
+          ref={containerRef}
+          className="mermaid-block__diagram"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : null}
+      {!svg && !error ? (
+        <div className="mermaid-block__status" aria-busy="true">
+          Rendering diagram...
+        </div>
+      ) : null}
+      {error ? (
+        <div className="mermaid-block__fallback">
+          <p>Mermaid render failed: {error}</p>
+          <pre>
+            <code>{chart}</code>
+          </pre>
+        </div>
+      ) : null}
+    </figure>
+  );
 }
 
 function newClientMessage(role: "user" | "assistant", content: string, mode: ChatMode): ClientMessage {
@@ -386,6 +559,7 @@ function ActivityPanel({ activity, pending }: { activity: ProgressEvent[]; pendi
 
 function MessageCard({ message }: { message: ClientMessage }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
+  const markdownBody = normalizeMermaidMarkdown(body);
   const sourceGroups = groupSources(message.sources);
 
   return (
@@ -406,9 +580,16 @@ function MessageCard({ message }: { message: ClientMessage }) {
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+              pre: ({ children, ...props }) => {
+                const chart = extractMermaidChart(children);
+                if (chart) {
+                  return <MermaidBlock chart={chart} />;
+                }
+                return <pre {...props}>{children}</pre>;
+              },
             }}
           >
-            {body}
+            {markdownBody}
           </ReactMarkdown>
         </div>
       ) : (
