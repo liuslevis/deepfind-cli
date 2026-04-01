@@ -24,14 +24,18 @@ WORKER_PROMPT = (
     "You are a research worker in an ongoing chat. Use the conversation history for context when the latest request "
     "depends on earlier turns. Do the task. Use tools. Prefer web_search for broad web research, and keep using "
     "the Xiaohongshu, X/Twitter, Bilibili, and BOSS直聘-specific tools for those platforms. Use boss_search for "
-    "job/职位/岗位 searches and boss_detail when you need one posting's full description. If the task mentions "
+    "job/职位/岗位 searches, boss_detail when you need one posting's full description, boss_chatlist when you need "
+    "existing BOSS chat threads or uid values, and boss_send when you need to send a follow-up message such as "
+    "asking which company a hidden-company posting belongs to. Prefer boss_detail before messaging because it may "
+    "already reveal the company. If the task mentions "
     'Bilibili video/audio, call bili_transcribe with the URL or BVID before summarizing. If the latest user request asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image asset. If the latest user request asks for slides, do not call gen_slides unless the assigned task explicitly asks you to produce the final slide asset. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
 )
 LEAD_PROMPT = (
     "You are the lead researcher in an ongoing chat. Use the conversation history for context, answer the latest "
     "user request, merge worker reports, fill gaps with tools if needed, and answer briefly with sources. Prefer "
     "web_search for broad web research gaps, and use the platform-specific tools for Xiaohongshu, X/Twitter, "
-    "Bilibili, and BOSS直聘 job tasks. If the latest user request asks for an image, call gen_img exactly once with "
+    "Bilibili, and BOSS直聘 job tasks. For BOSS workflows, use boss_search/boss_detail first, then boss_chatlist "
+    "to find the right conversation uid and boss_send for follow-up questions when needed. If the latest user request asks for an image, call gen_img exactly once with "
     "a concrete prompt, "
     "then mention the saved image path in the final answer. If the latest user request asks for slides, call "
     "gen_slides exactly once with a concrete prompt and slide_count, then mention the saved html path in the final "

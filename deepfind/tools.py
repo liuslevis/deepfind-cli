@@ -79,6 +79,8 @@ class Toolset:
             "zhihu_search": self.zhihu_search,
             "boss_search": self.boss_search,
             "boss_detail": self.boss_detail,
+            "boss_chatlist": self.boss_chatlist,
+            "boss_send": self.boss_send,
             "xhs_search": self.xhs_search,
             "xhs_read": self.xhs_read,
             "xhs_search_user": self.xhs_search_user,
@@ -208,6 +210,32 @@ class Toolset:
                         "security_id": {"type": "string"},
                     },
                     "required": ["security_id"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "boss_chatlist",
+                "List BOSS直聘 chat threads. Use this to find uid values for boss_send and to check whether a conversation already exists for a job.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "page": {"type": "integer", "minimum": 1, "maximum": 50},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                        "job_id": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "boss_send",
+                "Send a BOSS直聘 chat message by uid from boss_chatlist. Prefer boss_detail first because it may already reveal the company behind a hidden-company post.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "uid": {"type": "string"},
+                        "text": {"type": "string"},
+                    },
+                    "required": ["uid", "text"],
                     "additionalProperties": False,
                 },
             ),
@@ -525,6 +553,37 @@ class Toolset:
             tool="boss_detail",
             values={"security-id": security_id},
             context={"security_id": security_id},
+        )
+
+    def boss_chatlist(
+        self,
+        page: int = 1,
+        limit: int = 20,
+        job_id: str = "0",
+    ) -> dict[str, Any]:
+        return self._opencli_command(
+            site="boss",
+            action="chatlist",
+            tool="boss_chatlist",
+            values={
+                "page": max(1, min(50, page)),
+                "limit": max(1, min(100, limit)),
+                "job-id": job_id,
+            },
+            context={
+                "page": max(1, min(50, page)),
+                "limit": max(1, min(100, limit)),
+                "job_id": job_id,
+            },
+        )
+
+    def boss_send(self, uid: str, text: str) -> dict[str, Any]:
+        return self._opencli_command(
+            site="boss",
+            action="send",
+            tool="boss_send",
+            values={"uid": uid, "text": text},
+            context={"uid": uid, "text": text},
         )
 
     def _twitter_search_impl(
