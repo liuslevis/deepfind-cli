@@ -846,13 +846,15 @@ export default function App() {
     }
   }
 
-  async function handleDeleteCurrentChat() {
-    if (!currentChat || !window.confirm(`Delete "${currentChat.title}"?`)) {
-      return;
-    }
+  async function handleDeleteChat(chat: WebChatSummary) {
+    setPageError(null);
     try {
-      await deleteChat(currentChat.id);
-      await hydrateChats(null);
+      await deleteChat(chat.id);
+      if (chat.id === currentChat?.id || chat.id === selectedChatId) {
+        await hydrateChats(null);
+        return;
+      }
+      setChats((current) => current.filter((item) => item.id !== chat.id));
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Failed to delete chat");
     }
@@ -1013,9 +1015,6 @@ export default function App() {
             <button className="ghost-button" type="button" onClick={handleCreateChat}>
               New chat
             </button>
-            <button className="ghost-button mobile-only" type="button" onClick={() => setSidebarOpen(false)}>
-              Close
-            </button>
           </div>
         </div>
 
@@ -1023,15 +1022,28 @@ export default function App() {
           {chats.length === 0 ? <p className="sidebar__empty">No saved chats yet.</p> : null}
           {chats.map((chat) => {
             return (
-              <button
+              <div
                 key={chat.id}
                 className={`chat-tile${chat.id === selectedChatId ? " chat-tile--active" : ""}`}
-                type="button"
-                onClick={() => void handleOpenChat(chat.id)}
-                title={chat.title}
               >
-                <strong className="chat-tile__title">{sidebarTitle(chat.title)}</strong>
-              </button>
+                <button
+                  className="chat-tile__open"
+                  type="button"
+                  onClick={() => void handleOpenChat(chat.id)}
+                  title={chat.title}
+                >
+                  <strong className="chat-tile__title">{sidebarTitle(chat.title)}</strong>
+                </button>
+                <button
+                  className="chat-tile__delete"
+                  type="button"
+                  aria-label={`Delete ${chat.title}`}
+                  title={`Delete ${chat.title}`}
+                  onClick={() => void handleDeleteChat(chat)}
+                >
+                  x
+                </button>
+              </div>
             );
           })}
         </div>
@@ -1044,24 +1056,16 @@ export default function App() {
           </div>
           <div className="workspace__actions">
             <button
-              className="ghost-button mobile-only"
+              className="ghost-button workspace__menu-button mobile-only"
               type="button"
               aria-controls="chat-sidebar"
               aria-expanded={sidebarOpen}
               aria-label="Open chats"
               onClick={() => setSidebarOpen((current) => !current)}
             >
-              Chats
+              <span aria-hidden="true">☰</span>
             </button>
-            {currentChat ? (
-              <button
-                className="ghost-button ghost-button--danger"
-                type="button"
-                onClick={() => void handleDeleteCurrentChat()}
-              >
-                Delete chat
-              </button>
-            ) : null}
+            <span className="workspace__mobile-title mobile-only">{selectedTitle}</span>
           </div>
         </header>
 
