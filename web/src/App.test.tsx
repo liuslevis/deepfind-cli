@@ -160,7 +160,8 @@ describe("App", () => {
 
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Expert (4 agents)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Mode" }));
+    await userEvent.click(screen.getByRole("option", { name: "Expert (4 agents)" }));
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Explain the latest AI launches");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
