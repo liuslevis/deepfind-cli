@@ -525,7 +525,7 @@ function upsertSummary(list: WebChatSummary[], next: WebChatSummary): WebChatSum
 }
 
 function sidebarTitle(title: string): string {
-  return summarize(title, 24);
+  return summarize(title, 32);
 }
 
 function ActivityPanel({ activity, pending }: { activity: ProgressEvent[]; pending: boolean }) {
@@ -1002,10 +1002,7 @@ export default function App() {
                 onClick={() => void handleOpenChat(chat.id)}
                 title={chat.title}
               >
-                <div className="chat-tile__header">
-                  <strong className="chat-tile__title">{sidebarTitle(chat.title)}</strong>
-                  <time className="chat-tile__time">{formatTime(chat.updated_at)}</time>
-                </div>
+                <strong className="chat-tile__title">{sidebarTitle(chat.title)}</strong>
               </button>
             );
           })}

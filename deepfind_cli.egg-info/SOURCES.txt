@@ -18,6 +18,7 @@ deepfind/web_api.py
 deepfind/web_models.py
 deepfind/web_progress.py
 deepfind/web_service.py
+deepfind/youtube_transcribe.py
 deepfind_cli.egg-info/PKG-INFO
 deepfind_cli.egg-info/SOURCES.txt
 deepfind_cli.egg-info/dependency_links.txt
@@ -36,3 +37,4 @@ tests/test_output.py
 tests/test_tools.py
 tests/test_web_api.py
 tests/test_web_service.py
+tests/test_youtube_transcribe.py
