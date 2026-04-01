@@ -4,6 +4,7 @@ A multi-agent research tool in both Web App and CLI, which can:
 
 - Search (no limit) in Google / Baidu / Xiaohongshu via opencli
 - Search BOSS Zhipin jobs via opencli
+- Follow up on BOSS Zhipin job chats via opencli
 - Watch video in Bilibili and summarize via opencli
 - Customize any other cli as agent tool
 
@@ -27,6 +28,8 @@ uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5
 uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 2
 
 uv run -m deepfind.cli "帮我搜索关于 Agent 上海的岗位" --num-agent 1
+
+uv run -m deepfind.cli "搜索 Agent 岗位，过滤薪酬低于 60K 的职位；如果公司名缺失，先看职位详情，再去聊天列表里找到对应会话并私信：请问是什么公司" --num-agent 1
 
 uv run -m deepfind.cli --list-tools
 ```
@@ -230,7 +233,7 @@ curl http://127.0.0.1:8000/api/health
 ## How It Works
 
 - Lead agent splits the query into a few tasks.
-- Sub-agents call local tools such as `web_search`, `boss_search`, `boss_detail`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, and `bili_transcribe`.
+- Sub-agents call local tools such as `web_search`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, and `bili_transcribe`.
 - Lead agent merges the results into one answer.
 
 Qwen is used through the OpenAI-compatible `chat.completions` API.
