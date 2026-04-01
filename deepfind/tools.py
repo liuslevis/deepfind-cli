@@ -85,6 +85,10 @@ class Toolset:
             "x_search": self.x_search,
             "twitter_read": self.twitter_read,
             "zhihu_search": self.zhihu_search,
+            "boss_search": self.boss_search,
+            "boss_detail": self.boss_detail,
+            "boss_chatlist": self.boss_chatlist,
+            "boss_send": self.boss_send,
             "xhs_search": self.xhs_search,
             "xhs_read": self.xhs_read,
             "xhs_search_user": self.xhs_search_user,
@@ -100,7 +104,7 @@ class Toolset:
         return [
             self._function_spec(
                 "web_search",
-                "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, and YouTube.",
+                "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin.",
                 {
                     "type": "object",
                     "properties": {
@@ -184,6 +188,63 @@ class Toolset:
                         "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                     },
                     "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "boss_search",
+                "Search BOSS Zhipin job postings. Returns security_id values that can be passed to boss_detail.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "city": {"type": "string"},
+                        "experience": {"type": "string"},
+                        "degree": {"type": "string"},
+                        "salary": {"type": "string"},
+                        "industry": {"type": "string"},
+                        "page": {"type": "integer", "minimum": 1, "maximum": 20},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    },
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "boss_detail",
+                "Read one BOSS Zhipin job posting by security_id from boss_search.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "security_id": {"type": "string"},
+                    },
+                    "required": ["security_id"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "boss_chatlist",
+                "List BOSS Zhipin chat threads. Use this to find uid values for boss_send and to check whether a conversation already exists for a job.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "page": {"type": "integer", "minimum": 1, "maximum": 50},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                        "job_id": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "boss_send",
+                "Send a BOSS Zhipin chat message by uid from boss_chatlist. Prefer boss_detail first because it may already reveal the company behind a hidden-company post.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "uid": {"type": "string"},
+                        "text": {"type": "string"},
+                    },
+                    "required": ["uid", "text"],
                     "additionalProperties": False,
                 },
             ),
@@ -472,6 +533,81 @@ class Toolset:
             tool="zhihu_search",
         )
 
+    def boss_search(
+        self,
+        query: str,
+        city: str = "",
+        experience: str = "",
+        degree: str = "",
+        salary: str = "",
+        industry: str = "",
+        page: int = 1,
+        limit: int = 15,
+    ) -> dict[str, Any]:
+        return self._opencli_command(
+            site="boss",
+            action="search",
+            tool="boss_search",
+            values={
+                "query": query,
+                "city": city,
+                "experience": experience,
+                "degree": degree,
+                "salary": salary,
+                "industry": industry,
+                "page": max(1, min(20, page)),
+                "limit": max(1, min(50, limit)),
+            },
+            context={
+                "query": query,
+                "city": city,
+                "experience": experience,
+                "degree": degree,
+                "salary": salary,
+                "industry": industry,
+            },
+        )
+
+    def boss_detail(self, security_id: str) -> dict[str, Any]:
+        return self._opencli_command(
+            site="boss",
+            action="detail",
+            tool="boss_detail",
+            values={"security-id": security_id},
+            context={"security_id": security_id},
+        )
+
+    def boss_chatlist(
+        self,
+        page: int = 1,
+        limit: int = 20,
+        job_id: str = "0",
+    ) -> dict[str, Any]:
+        return self._opencli_command(
+            site="boss",
+            action="chatlist",
+            tool="boss_chatlist",
+            values={
+                "page": max(1, min(50, page)),
+                "limit": max(1, min(100, limit)),
+                "job-id": job_id,
+            },
+            context={
+                "page": max(1, min(50, page)),
+                "limit": max(1, min(100, limit)),
+                "job_id": job_id,
+            },
+        )
+
+    def boss_send(self, uid: str, text: str) -> dict[str, Any]:
+        return self._opencli_command(
+            site="boss",
+            action="send",
+            tool="boss_send",
+            values={"uid": uid, "text": text},
+            context={"uid": uid, "text": text},
+        )
+
     def _twitter_search_impl(
         self,
         *,
@@ -572,6 +708,115 @@ class Toolset:
             "ok": True,
             "tool": tool,
             "query": query,
+            "command": command,
+            "data": parsed,
+        }
+
+    def _opencli_command(
+        self,
+        *,
+        site: str,
+        action: str,
+        tool: str,
+        values: dict[str, Any],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        command_prefix, resolve_error = self._opencli_command_prefix()
+        if not command_prefix:
+            return {
+                "ok": False,
+                "tool": tool,
+                **(context or {}),
+                "error_code": "missing_dependency",
+                "error": resolve_error or f"{self.settings.opencli_bin} not found",
+            }
+
+        registry_result = self._opencli_registry(command_prefix)
+        if not registry_result.get("ok"):
+            return {
+                **registry_result,
+                "tool": tool,
+                **(context or {}),
+            }
+
+        registry = registry_result["data"]
+        command_name = f"{site}/{action}"
+        command_spec = registry.get(command_name)
+        if not command_spec:
+            return {
+                "ok": False,
+                "tool": tool,
+                **(context or {}),
+                "error_code": "unsupported_command",
+                "error": f"{command_name} is not available in the current opencli registry",
+            }
+
+        command = [*command_prefix, site, action]
+        args = command_spec.get("args")
+        if isinstance(args, list):
+            for item in args:
+                if not isinstance(item, dict):
+                    continue
+                arg_name = item.get("name")
+                if not isinstance(arg_name, str) or arg_name not in values:
+                    continue
+
+                value = values[arg_name]
+                if value is None:
+                    continue
+                if isinstance(value, str):
+                    value = value.strip()
+                    if not value:
+                        continue
+                if isinstance(value, bool):
+                    if not value:
+                        continue
+                    if item.get("positional"):
+                        command.append("true")
+                    else:
+                        command.append(f"--{arg_name}")
+                    continue
+
+                if item.get("positional"):
+                    command.append(str(value))
+                else:
+                    command.extend([f"--{arg_name}", str(value)])
+
+        command.extend(["-f", "json"])
+
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=self.settings.subprocess_timeout,
+        )
+        if proc.returncode != 0:
+            return {
+                "ok": False,
+                "tool": tool,
+                **(context or {}),
+                "command": command,
+                "error_code": "command_failed",
+                "error": (proc.stderr or proc.stdout or "").strip()[:4000],
+            }
+
+        parsed = try_load_json(proc.stdout or "")
+        if parsed is None:
+            return {
+                "ok": False,
+                "tool": tool,
+                **(context or {}),
+                "command": command,
+                "error_code": "invalid_json",
+                "error": "opencli returned non-JSON output",
+            }
+
+        return {
+            "ok": True,
+            "tool": tool,
+            **(context or {}),
             "command": command,
             "data": parsed,
         }

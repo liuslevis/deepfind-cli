@@ -3,8 +3,10 @@
 A multi-agent research tool in both Web App and CLI, which can:
 
 - Search (no limit) in Google / Baidu / Xiaohongshu via opencli
-- Watch video in Bilibili / YouTube and summarize
-- Customize any cli as agent tool
+- Search BOSS Zhipin jobs via opencli
+- Follow up on BOSS Zhipin job chats via opencli
+- Watch video in Bilibili / YouTube and summarize via opencli
+- Customize any other cli as agent tool
 
 
 ## Web App Usage
@@ -28,6 +30,10 @@ uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5
 uv run -m deepfind.cli "Help me summarize this YouTube talk https://www.youtube.com/watch?v=dQw4w9WgXcQ" --num-agent 1
 
 uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 2
+
+uv run -m deepfind.cli "Help me search Agent jobs on Boss" --num-agent 1
+
+uv run -m deepfind.cli --list-tools
 ```
 
 
@@ -38,7 +44,8 @@ python3 -m pip install -e .
 ```
 
 Install `opencli` as an optional dependency when you want broad web search through
-`web_search` or YouTube transcript support through `youtube_transcribe`:
+`web_search`, YouTube transcript support through `youtube_transcribe`, or BOSS
+Zhipin workflows through `boss_search` / `boss_detail` / `boss_chatlist` / `boss_send`:
 
 ```bash
 npm install -g @jackwener/opencli
@@ -109,11 +116,12 @@ uv run -m deepfind.cli "same query"
 
 Flags:
 
-- `query`: required
+- `query`: required unless using `--list-tools`
 - `--num-agent`: `1..4`
 - `--max-iter-per-agent`: default `50`
 - `--quiet`: disable formatted progress output
 - `--once`: always exit after the first answer
+- `--list-tools`: print built-in tool names/descriptions and exit
 
 ## Chat Mode
 
@@ -146,7 +154,8 @@ Generate 3 HTML slides from that summary and save them under tmp/
 ## Web App
 
 The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
-live run activity, and a mode switch for `Fast (1 agent)` and `Expert (4 agents)`.
+live run activity, an iPhone-friendly mobile drawer, and a mode switch for
+`Fast (1 agent)` and `Expert (4 agents)`.
 
 Backend:
 
@@ -165,10 +174,70 @@ npm run dev
 Open the Vite URL during development, or run `npm run build` so `deepfind-web` can
 serve `web/dist` directly.
 
+The production shell now includes a web manifest, touch icon, and iPhone Safari
+safe-area handling so it works cleanly in Safari and when added to the Home
+Screen.
+
+## Deploy To Raspberry Pi
+
+The repo includes deployment scripts for a Raspberry Pi 5 running Ubuntu at
+`david@192.168.0.205`.
+
+One-time SSH key bootstrap from your local machine:
+
+```bash
+./scripts/bootstrap_rpi_ssh_key.sh
+```
+
+Notes:
+
+- The bootstrap script is now key-only. It verifies passwordless SSH access and, if access is missing, tells you which public key to install on the Pi.
+- It uses your existing `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub` by default.
+- Override `PUBKEY_PATH`, `RPI_HOST`, `RPI_USER`, or `RPI_SSH_PORT` if needed.
+
+Deploy the app after SSH keys are working:
+
+```bash
+./scripts/deploy_rpi.sh
+```
+
+What the deploy script does:
+
+- Syncs the repo to `/home/david/apps/deepfind-cli`
+- Copies the local `.env` file to the Pi
+- Installs `uv` if it is missing
+- Runs `uv sync --frozen`, `npm ci`, and `npm run build` on the Pi
+- Installs and restarts a user-level `deepfind-web` systemd service with `systemctl --user`
+
+No-password deploy requirements:
+
+- Passwordless SSH to the Pi must already work for `david@<host>`.
+- The Pi already needs `python3` 3.11+, `curl`, `tar`, and `systemd`.
+- `deploy_rpi.sh` will install a user-local Node.js 20.x automatically when `node`/`npm` are missing or too old.
+- `deploy_rpi.sh` will also install `@jackwener/opencli` under the same user so `web_search` works after deploy.
+- Boot persistence for the user service requires a one-time admin command on the Pi:
+
+```bash
+sudo loginctl enable-linger david
+```
+
+Default LAN URL after deployment:
+
+```text
+http://192.168.0.205:8000
+```
+
+Useful checks on the Pi:
+
+```bash
+systemctl --user status deepfind-web
+curl http://127.0.0.1:8000/api/health
+```
+
 ## How It Works
 
 - Lead agent splits the query into a few tasks.
-- Sub-agents call local tools such as `web_search`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
+- Sub-agents call local tools such as `web_search`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
 - Lead agent merges the results into one answer.
 
 Qwen is used through the OpenAI-compatible `chat.completions` API.

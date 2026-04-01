@@ -32,6 +32,10 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("arxiv_search", names)
         self.assertIn("x_search", names)
         self.assertIn("zhihu_search", names)
+        self.assertIn("boss_search", names)
+        self.assertIn("boss_detail", names)
+        self.assertIn("boss_chatlist", names)
+        self.assertIn("boss_send", names)
         self.assertIn("bili_transcribe", names)
         self.assertIn("youtube_transcribe", names)
         self.assertIn("gen_img", names)
@@ -196,11 +200,21 @@ class ToolsetTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(
             run_mock.call_args_list[0][0][0],
-            ["/usr/bin/node", "\\tmp\\opencli\\dist\\main.js", "list", "-f", "json"],
+            ["/usr/bin/node", str(Path("/tmp/opencli/dist/main.js")), "list", "-f", "json"],
         )
         self.assertEqual(
             run_mock.call_args_list[1][0][0],
-            ["/usr/bin/node", "\\tmp\\opencli\\dist\\main.js", "bing", "search", "topic", "--limit", "3", "-f", "json"],
+            [
+                "/usr/bin/node",
+                str(Path("/tmp/opencli/dist/main.js")),
+                "bing",
+                "search",
+                "topic",
+                "--limit",
+                "3",
+                "-f",
+                "json",
+            ],
         )
 
     def test_missing_binary_returns_error(self) -> None:
@@ -308,6 +322,153 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(
             run_mock.call_args_list[1][0][0],
             ["/usr/bin/opencli", "arxiv", "search", "transformer", "--limit", "4", "-f", "json"],
+        )
+
+    def test_boss_search_uses_supported_flags(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=(
+                                '[{"command":"boss/search","args":['
+                                '{"name":"query","positional":true},'
+                                '{"name":"city","positional":false},'
+                                '{"name":"experience","positional":false},'
+                                '{"name":"degree","positional":false},'
+                                '{"name":"salary","positional":false},'
+                                '{"name":"industry","positional":false},'
+                                '{"name":"page","positional":false},'
+                                '{"name":"limit","positional":false}'
+                                ']}]'
+                            ),
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=0, stdout='[{"name":"Agent Engineer"}]', stderr=""),
+                    ],
+                ) as run_mock:
+                    result = toolset.boss_search("Agent", city="Shanghai", salary="30-50K", limit=5)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "boss_search")
+        self.assertEqual(result["query"], "Agent")
+        self.assertEqual(result["city"], "Shanghai")
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            [
+                "/usr/bin/opencli",
+                "boss",
+                "search",
+                "Agent",
+                "--city",
+                "Shanghai",
+                "--salary",
+                "30-50K",
+                "--page",
+                "1",
+                "--limit",
+                "5",
+                "-f",
+                "json",
+            ],
+        )
+
+    def test_boss_detail_uses_security_id_flag(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout='[{"command":"boss/detail","args":[{"name":"security-id","positional":false}]}]',
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=0, stdout='{"name":"Agent Engineer"}', stderr=""),
+                    ],
+                ) as run_mock:
+                    result = toolset.boss_detail("sec-123")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "boss_detail")
+        self.assertEqual(result["security_id"], "sec-123")
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            ["/usr/bin/opencli", "boss", "detail", "--security-id", "sec-123", "-f", "json"],
+        )
+
+    def test_boss_chatlist_uses_supported_flags(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=(
+                                '[{"command":"boss/chatlist","args":['
+                                '{"name":"page","positional":false},'
+                                '{"name":"limit","positional":false},'
+                                '{"name":"job-id","positional":false}'
+                                ']}]'
+                            ),
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=0, stdout='[{"uid":"user-1"}]', stderr=""),
+                    ],
+                ) as run_mock:
+                    result = toolset.boss_chatlist(page=2, limit=10, job_id="job-123")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "boss_chatlist")
+        self.assertEqual(result["job_id"], "job-123")
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            [
+                "/usr/bin/opencli",
+                "boss",
+                "chatlist",
+                "--page",
+                "2",
+                "--limit",
+                "10",
+                "--job-id",
+                "job-123",
+                "-f",
+                "json",
+            ],
+        )
+
+    def test_boss_send_uses_uid_and_positional_text(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=(
+                                '[{"command":"boss/send","args":['
+                                '{"name":"uid","positional":false},'
+                                '{"name":"text","positional":true}'
+                                ']}]'
+                            ),
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=0, stdout='{"status":"sent"}', stderr=""),
+                    ],
+                ) as run_mock:
+                    result = toolset.boss_send("user-1", "Which company is this job with?")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "boss_send")
+        self.assertEqual(result["uid"], "user-1")
+        self.assertEqual(result["text"], "Which company is this job with?")
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            ["/usr/bin/opencli", "boss", "send", "--uid", "user-1", "Which company is this job with?", "-f", "json"],
         )
 
     def test_xhs_search_uses_supported_flags(self) -> None:

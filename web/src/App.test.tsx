@@ -2,6 +2,18 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const mermaidMock = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(async () => ({
+    svg: '<svg data-testid="mermaid-svg" viewBox="0 0 10 10"><text x="1" y="9">diagram</text></svg>',
+    bindFunctions: vi.fn(),
+  })),
+}));
+
+vi.mock("mermaid", () => ({
+  default: mermaidMock,
+}));
+
 import App from "./App";
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -81,6 +93,8 @@ function createControlledStreamResponse() {
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
+    mermaidMock.initialize.mockClear();
+    mermaidMock.render.mockClear();
   });
 
   afterEach(() => {
@@ -212,6 +226,237 @@ describe("App", () => {
     await screen.findByText("Loaded from the selected chat");
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
     expect(screen.queryByText("View detailed trace")).not.toBeInTheDocument();
+  });
+
+  it("renders mermaid markdown blocks as diagrams", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_mermaid",
+              title: "Mermaid",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Diagram answer",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_mermaid" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_mermaid",
+            title: "Mermaid",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [
+              {
+                id: "msg_1",
+                role: "assistant",
+                content: "Here is the graph:\n\nflowchart TD\nA --> B\nstyle A fill:#e6f3ff,stroke:#333\n\nAfter the graph.",
+                created_at: "2026-03-22T00:02:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByLabelText("Mermaid diagram");
+    await waitFor(() => expect(mermaidMock.render).toHaveBeenCalled());
+    expect(mermaidMock.initialize).toHaveBeenCalled();
+    expect(mermaidMock.render).toHaveBeenCalledWith(
+      expect.stringMatching(/^mermaid_/),
+      "flowchart TD\nA --> B\nstyle A fill:#e6f3ff,stroke:#333",
+    );
+  });
+
+  it("toggles the mobile chat drawer and closes it after selecting a chat", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_a",
+              title: "Alpha",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:01:00Z",
+              preview: "Alpha preview",
+            },
+            {
+              id: "chat_b",
+              title: "Bravo",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Bravo preview",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_a" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_a",
+            title: "Alpha",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:01:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_b" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_b",
+            title: "Bravo",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Alpha" });
+
+    const openChatsButton = screen.getByRole("button", { name: "Open chats" });
+    expect(openChatsButton).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(openChatsButton);
+    expect(openChatsButton).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: /bravo/i }));
+
+    await screen.findByRole("heading", { name: "Bravo" });
+    expect(openChatsButton).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("scrolls to the latest assistant answer when opening chat history", async () => {
+    const scrollTargets: Element[] = [];
+    vi.spyOn(window.HTMLElement.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrollTargets.push(this);
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_a",
+              title: "Alpha",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:01:00Z",
+              preview: "Alpha preview",
+            },
+            {
+              id: "chat_b",
+              title: "Bravo",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Bravo preview",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_a" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_a",
+            title: "Alpha",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:01:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_b" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_b",
+            title: "Bravo",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [
+              {
+                id: "msg_1",
+                role: "user",
+                content: "Question one",
+                created_at: "2026-03-22T00:00:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+              {
+                id: "msg_2",
+                role: "assistant",
+                content: "Earlier answer",
+                created_at: "2026-03-22T00:01:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+              {
+                id: "msg_3",
+                role: "user",
+                content: "Question two",
+                created_at: "2026-03-22T00:02:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+              {
+                id: "msg_4",
+                role: "assistant",
+                content: "Latest answer starts here",
+                created_at: "2026-03-22T00:03:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Alpha" });
+    scrollTargets.length = 0;
+
+    await userEvent.click(screen.getByRole("button", { name: /bravo/i }));
+
+    await screen.findByText("Latest answer starts here");
+
+    const assistantMessages = document.querySelectorAll('article[data-message-role="assistant"]');
+    expect(assistantMessages).toHaveLength(2);
+    expect(scrollTargets.at(-1)).toBe(assistantMessages[assistantMessages.length - 1]);
   });
 
   it("shows compact milestones, grouped sources, and a collapsed detailed trace by default", async () => {

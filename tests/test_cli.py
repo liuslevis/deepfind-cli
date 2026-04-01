@@ -20,6 +20,17 @@ class TtyStringIO(io.StringIO):
 
 
 class CliTests(unittest.TestCase):
+    def test_list_tools_prints_tools_without_initializing_app(self) -> None:
+        with patch("deepfind.cli.DeepFind") as app_cls:
+            stdout = io.StringIO()
+            code = main(["--list-tools"], stdout=stdout, stderr=io.StringIO())
+        self.assertEqual(code, 0)
+        app_cls.assert_not_called()
+        lines = stdout.getvalue().strip().splitlines()
+        self.assertTrue(any(line.startswith("web_search\t") for line in lines))
+        self.assertTrue(any(line.startswith("boss_search\t") for line in lines))
+        self.assertTrue(any(line.startswith("boss_detail\t") for line in lines))
+
     def test_main_prints_answer(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:
             session = app_cls.return_value.session.return_value
@@ -38,6 +49,10 @@ class CliTests(unittest.TestCase):
     def test_main_rejects_invalid_num_agent(self) -> None:
         with self.assertRaises(SystemExit):
             main(["test query", "--num-agent", "0"])
+
+    def test_main_requires_query_without_list_tools(self) -> None:
+        with self.assertRaises(SystemExit):
+            main([])
 
     def test_main_stays_one_shot_for_non_tty(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:
