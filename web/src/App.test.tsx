@@ -346,10 +346,77 @@ describe("App", () => {
     await userEvent.click(openChatsButton);
     expect(openChatsButton).toHaveAttribute("aria-expanded", "true");
 
-    await userEvent.click(screen.getByRole("button", { name: /bravo/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Bravo" }));
 
     await screen.findByRole("heading", { name: "Bravo" });
     expect(openChatsButton).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("deletes a chat from the sidebar without opening it or asking for confirmation", async () => {
+    let bravoOpened = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_a",
+              title: "Alpha",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:01:00Z",
+              preview: "Alpha preview",
+            },
+            {
+              id: "chat_b",
+              title: "Bravo",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Bravo preview",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_a" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_a",
+            title: "Alpha",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:01:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_b" && method === "GET") {
+        bravoOpened = true;
+        return jsonResponse({
+          chat: {
+            id: "chat_b",
+            title: "Bravo",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_b" && method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Alpha" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete Bravo" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Bravo" })).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    expect(bravoOpened).toBe(false);
   });
 
   it("scrolls to the latest assistant answer when opening chat history", async () => {
@@ -451,7 +518,7 @@ describe("App", () => {
     await screen.findByRole("heading", { name: "Alpha" });
     scrollTargets.length = 0;
 
-    await userEvent.click(screen.getByRole("button", { name: /bravo/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Bravo" }));
 
     await screen.findByText("Latest answer starts here");
 
