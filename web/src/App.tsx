@@ -594,8 +594,9 @@ function MessageCard({ message }: { message: ClientMessage }) {
     >
       <div className="message__meta">
         <span className="message__author">{message.role === "assistant" ? "DeepFind" : "You"}</span>
-        {message.mode ? <span className="message__mode">{modeLabel(message.mode)}</span> : null}
-        <span className="message__time">{formatTime(message.created_at)}</span>
+        {message.role === "assistant" && message.mode ? (
+          <span className="message__mode">{modeLabel(message.mode)}</span>
+        ) : null}
       </div>
 
       {message.role === "assistant" ? (
