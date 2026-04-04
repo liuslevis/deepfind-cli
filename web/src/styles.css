@@ -665,31 +665,22 @@ img {
   display: none;
 }
 
-.activity-list {
-  list-style: none;
-  padding: 10px 0 0;
+.activity-terminal {
   margin: 10px 0 0;
+  padding: 12px 14px;
+  overflow-x: auto;
   border-top: 1px solid rgba(93, 225, 255, 0.08);
-}
-
-.activity-list__item {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 8px 0;
-  color: var(--text-soft);
-  font-size: 0.86rem;
-}
-
-.activity-list__item + .activity-list__item {
-  border-top: 1px solid rgba(93, 225, 255, 0.06);
-}
-
-.activity-list__item time {
-  flex: 0 0 auto;
+  background: rgba(2, 7, 13, 0.88);
+  color: #d9ecff;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.78rem;
-  color: rgba(223, 236, 250, 0.48);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.activity-terminal__content {
+  display: inline-block;
+  min-width: 100%;
 }
 
 .composer-wrap {
@@ -1080,11 +1071,6 @@ img {
 
   .activity-summary__count {
     width: 100%;
-  }
-
-  .activity-list__item {
-    flex-direction: column;
-    gap: 4px;
   }
 
   .source-group,

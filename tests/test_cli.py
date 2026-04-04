@@ -28,6 +28,7 @@ class CliTests(unittest.TestCase):
         app_cls.assert_not_called()
         lines = stdout.getvalue().strip().splitlines()
         self.assertTrue(any(line.startswith("web_search\t") for line in lines))
+        self.assertTrue(any(line.startswith("web_fetch\t") for line in lines))
         self.assertTrue(any(line.startswith("boss_search\t") for line in lines))
         self.assertTrue(any(line.startswith("boss_detail\t") for line in lines))
 

@@ -4,8 +4,10 @@ Version: 0.1.0
 Summary: Lead/sub-agent web research CLI powered by Qwen.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
+Requires-Dist: beautifulsoup4>=4.12.0
 Requires-Dist: fastapi>=0.116.0
 Requires-Dist: httpx>=0.28.0
+Requires-Dist: markdownify>=1.1.0
 Requires-Dist: openai>=2.15.0
 Requires-Dist: uvicorn>=0.35.0
 Provides-Extra: media

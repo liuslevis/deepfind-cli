@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
@@ -48,6 +49,10 @@ def _tool_summary(parsed: dict[str, Any]) -> str:
             return _short(f"image={data['image_path']}", 64)
         if data.get("html_path"):
             return _short(f"html={data['html_path']}", 64)
+        if data.get("title"):
+            return _short(data["title"], 64)
+        if data.get("final_url"):
+            return _short(data["final_url"], 64)
 
     return parsed.get("tool", "")
 
@@ -57,6 +62,8 @@ class ConsoleProgress:
     enabled: bool = True
     stream: TextIO = sys.stderr
     use_color: bool | None = None
+    print_enabled: bool = True
+    line_sink: Callable[[str], None] | None = None
     _lock: Lock = field(default_factory=Lock)
 
     def __post_init__(self) -> None:
@@ -75,7 +82,10 @@ class ConsoleProgress:
         if not self.enabled:
             return
         with self._lock:
-            print(text, file=self.stream, flush=True)
+            if self.print_enabled:
+                print(text, file=self.stream, flush=True)
+            if self.line_sink:
+                self.line_sink(text)
 
     def _event(self, scope: str, action: str, detail: str = "", color: str = "36") -> None:
         prefix = f"[{self._stamp()}] {scope:<10} {action:<10}"

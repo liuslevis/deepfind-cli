@@ -96,8 +96,150 @@ function summarize(text: string, width = 56): string {
   return `${clean.slice(0, width - 1).trimEnd()}...`;
 }
 
+function readString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function describeToolCall(data: Record<string, unknown>): string {
+  const agentName = String(data.name ?? "agent");
+  const toolName = String(data.tool_name ?? "tool");
+  const argumentsValue =
+    typeof data.arguments === "object" && data.arguments !== null
+      ? (data.arguments as Record<string, unknown>)
+      : null;
+
+  if (toolName === "web_search") {
+    const query = readString(argumentsValue?.query);
+    if (query) {
+      return `${agentName} called web_search for "${summarize(query, 72)}"`;
+    }
+  }
+
+  return `${agentName} called ${toolName}`;
+}
+
+function displayAgentName(value: unknown): string {
+  const name = String(value ?? "agent");
+  switch (name) {
+    case "lead-plan":
+      return "Lead planner";
+    case "lead-synthesis":
+      return "Lead synthesis";
+    case "lead-final":
+      return "Lead agent";
+    default:
+      return name;
+  }
+}
+
+function shouldHideActivityEvent(event: ProgressEvent): boolean {
+  if (event.type !== "tool_result") {
+    return false;
+  }
+
+  const toolName = String(event.data.tool_name ?? "");
+  const status = String(event.data.status ?? "");
+  return toolName === "web_search" && status === "ok";
+}
+
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+interface AnsiStyleState {
+  color: string | null;
+  bold: boolean;
+  dim: boolean;
+}
+
+const ANSI_COLOR_STYLES: Record<number, string> = {
+  31: "#ff7b7b",
+  32: "#8ad86c",
+  33: "#ffd479",
+  34: "#7fb7ff",
+  35: "#d7a6ff",
+  36: "#7ce8ff",
+};
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function styleToCss(state: AnsiStyleState): string {
+  const parts: string[] = [];
+  if (state.color) {
+    parts.push(`color: ${state.color}`);
+  }
+  if (state.bold) {
+    parts.push("font-weight: 700");
+  }
+  if (state.dim) {
+    parts.push("opacity: 0.72");
+  }
+  return parts.join("; ");
+}
+
+function updateAnsiStyle(state: AnsiStyleState, code: number): AnsiStyleState {
+  if (code === 0) {
+    return { color: null, bold: false, dim: false };
+  }
+  if (code === 1) {
+    return { ...state, bold: true };
+  }
+  if (code === 2) {
+    return { ...state, dim: true };
+  }
+  if (code === 22) {
+    return { ...state, bold: false, dim: false };
+  }
+  if (code === 39) {
+    return { ...state, color: null };
+  }
+  if (code in ANSI_COLOR_STYLES) {
+    return { ...state, color: ANSI_COLOR_STYLES[code] };
+  }
+  return state;
+}
+
+function ansiToHtml(text: string): string {
+  const pattern = /\x1b\[([0-9;]*)m/g;
+  let cursor = 0;
+  let html = "";
+  let state: AnsiStyleState = { color: null, bold: false, dim: false };
+
+  function appendChunk(chunk: string): void {
+    if (!chunk) {
+      return;
+    }
+    const escaped = escapeHtml(chunk);
+    const css = styleToCss(state);
+    html += css ? `<span style="${css}">${escaped}</span>` : escaped;
+  }
+
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    appendChunk(text.slice(cursor, index));
+    const codes = (match[1] || "0")
+      .split(";")
+      .map((value) => Number.parseInt(value || "0", 10))
+      .filter((value) => Number.isFinite(value));
+    for (const code of codes) {
+      state = updateAnsiStyle(state, code);
+    }
+    cursor = index + match[0].length;
+  }
+
+  appendChunk(text.slice(cursor));
+  return html;
 }
 
 function messageFromServer(message: WebMessage): ClientMessage {
@@ -308,14 +450,14 @@ function describeEvent(event: ProgressEvent): string {
     case "plan_ready":
       return `Planner split the work into ${Array.isArray(data.tasks) ? data.tasks.length : 0} tasks`;
     case "worker_started":
-      return `${String(data.name ?? "worker")} started ${String(data.task ?? "research")}`;
+      return `${displayAgentName(data.name ?? "worker")} started ${String(data.task ?? "research")}`;
     case "iteration":
       if (data.status === "done") {
-        return `${String(data.name ?? "agent")} finished round ${String(data.iteration ?? "?")}`;
+        return `${displayAgentName(data.name ?? "agent")} finished round ${String(data.iteration ?? "?")}`;
       }
-      return `${String(data.name ?? "agent")} entered round ${String(data.iteration ?? "?")}`;
+      return `${displayAgentName(data.name ?? "agent")} entered round ${String(data.iteration ?? "?")}`;
     case "tool_call":
-      return `${String(data.name ?? "agent")} called ${String(data.tool_name ?? "tool")}`;
+      return describeToolCall(data);
     case "tool_result":
       return `${String(data.tool_name ?? "tool")} ${String(data.status ?? "done")}${data.summary ? `: ${String(data.summary)}` : ""}`;
     case "synthesize_started":
@@ -499,13 +641,6 @@ function buildActivitySummary(activity: ProgressEvent[]): ActivitySummary | null
   };
 }
 
-function formatTime(value: string): string {
-  return new Date(value).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function sourceLabel(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -553,30 +688,41 @@ function sidebarTitle(title: string): string {
 }
 
 function ActivityPanel({ activity, pending }: { activity: ProgressEvent[]; pending: boolean }) {
-  const summary = buildActivitySummary(activity);
+  const summaryActivity = activity.filter(
+    (event) => event.type !== "console_line" && !shouldHideActivityEvent(event),
+  );
+  const consoleLines = activity.flatMap((event) => {
+    if (event.type !== "console_line" || typeof event.data.text !== "string") {
+      return [];
+    }
+    return [event.data.text];
+  });
+  const summary = buildActivitySummary(summaryActivity);
   if (!summary) {
     return null;
   }
+  const hiddenCount = consoleLines.length > 0 ? consoleLines.length : summary.hiddenCount;
+  const consoleHtml = ansiToHtml(consoleLines.join("\n"));
 
   return (
     <div className={`activity-panel activity-panel--${summary.phase}`}>
       <div className="activity-summary" aria-live={pending ? "polite" : "off"}>
         <span className={`activity-summary__phase activity-summary__phase--${summary.phase}`}>{summary.label}</span>
         <span className="activity-summary__text">{summary.text}</span>
-        <span className="activity-summary__count">{hiddenCountLabel(summary.hiddenCount)}</span>
+        <span className="activity-summary__count">{hiddenCountLabel(hiddenCount)}</span>
       </div>
 
-      <details className="activity-trace">
-        <summary>View detailed trace</summary>
-        <ul className="activity-list">
-          {activity.map((event, index) => (
-            <li key={`${event.timestamp}-${event.type}-${index}`} className="activity-list__item">
-              <span>{describeEvent(event)}</span>
-              <time>{formatTime(event.timestamp)}</time>
-            </li>
-          ))}
-        </ul>
-      </details>
+      {consoleLines.length > 0 ? (
+        <details className="activity-trace">
+          <summary>View detailed trace</summary>
+          <pre className="activity-terminal" data-testid="activity-terminal">
+            <code
+              className="activity-terminal__content"
+              dangerouslySetInnerHTML={{ __html: consoleHtml }}
+            />
+          </pre>
+        </details>
+      ) : null}
     </div>
   );
 }
