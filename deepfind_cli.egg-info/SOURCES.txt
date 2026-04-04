@@ -15,6 +15,7 @@ deepfind/output.py
 deepfind/progress.py
 deepfind/tools.py
 deepfind/web_api.py
+deepfind/web_fetch.py
 deepfind/web_models.py
 deepfind/web_progress.py
 deepfind/web_service.py

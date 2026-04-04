@@ -59,6 +59,7 @@ class WebApiTests(unittest.TestCase):
             )
             self.assertEqual(streamed.status_code, 200)
             self.assertIn("event: run_started", streamed.text)
+            self.assertIn("event: console_line", streamed.text)
             self.assertIn("event: answer_final", streamed.text)
 
             after = client.get(f"/api/chats/{chat_id}")

@@ -47,6 +47,7 @@ class ResponseAgent:
         user_input: str,
         use_tools: bool,
         history: Sequence[Mapping[str, str]] | None = None,
+        tool_names: Sequence[str] | None = None,
     ) -> AgentResult:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": instructions},
@@ -71,9 +72,18 @@ class ResponseAgent:
                 "max_tokens": 1400,
             }
             if use_tools:
-                request["tools"] = self.tools.specs()
-                request["tool_choice"] = "auto"
-                request["parallel_tool_calls"] = True
+                tool_specs = self.tools.specs()
+                if tool_names is not None:
+                    allowed = set(tool_names)
+                    tool_specs = [
+                        spec
+                        for spec in tool_specs
+                        if spec.get("function", {}).get("name") in allowed
+                    ]
+                if tool_specs:
+                    request["tools"] = tool_specs
+                    request["tool_choice"] = "auto"
+                    request["parallel_tool_calls"] = True
 
             response = self.client.chat.completions.create(**request)
             choice = response.choices[0]

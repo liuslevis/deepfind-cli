@@ -576,19 +576,66 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     stream.push({ type: "run_started", data: { num_agent: 1 } });
+    stream.push({
+      type: "console_line",
+      data: { text: "\u001b[2m+------------------------------------------------------------------------------+\u001b[0m" },
+    });
     await screen.findByText("Planning");
 
     stream.push({ type: "plan_ready", data: { tasks: ["core facts", "sources"] } });
+    stream.push({
+      type: "console_line",
+      data: { text: "\u001b[1;36m| PLAN                                                                         |\u001b[0m" },
+    });
     await screen.findByText("2 tasks outlined for 1 agent");
-    expect(screen.getByText("Planner split the work into 2 tasks")).not.toBeVisible();
+    expect(screen.queryByText("Planner split the work into 2 tasks")).not.toBeInTheDocument();
 
     stream.push({ type: "worker_started", data: { name: "researcher", task: "core facts" } });
-    stream.push({ type: "tool_call", data: { name: "researcher", tool_name: "web_search" } });
+    stream.push({
+      type: "console_line",
+      data: { text: "\u001b[35m[12:00:00] RESEARCHER start      core facts\u001b[0m" },
+    });
+    stream.push({
+      type: "tool_call",
+      data: {
+        name: "researcher",
+        tool_name: "web_search",
+        arguments: { engine: "google", query: "atlas ai funding" },
+      },
+    });
+    stream.push({
+      type: "console_line",
+      data: {
+        text: "\u001b[33m[12:00:00] RESEARCHER tool 1     web_search {'engine': 'google', 'query': 'atlas ai funding'}\u001b[0m",
+      },
+    });
+    stream.push({
+      type: "tool_result",
+      data: { name: "researcher", tool_name: "web_search", status: "ok", summary: "web_search" },
+    });
+    stream.push({
+      type: "console_line",
+      data: { text: "\u001b[32m[12:00:00] RESEARCHER ok         web_search items=1\u001b[0m" },
+    });
     await screen.findByText("Researching");
 
     stream.push({ type: "synthesize_started", data: { report_count: 2 } });
+    stream.push({
+      type: "console_line",
+      data: { text: "\u001b[36m[12:00:00] LEAD       merge      2 worker reports\u001b[0m" },
+    });
     await screen.findByText("Synthesizing");
     expect(screen.getByText("Merging 2 reports into the final answer")).toBeInTheDocument();
+    stream.push({ type: "iteration", data: { name: "lead-synthesis", iteration: 2, status: "done" } });
+    stream.push({
+      type: "console_line",
+      data: { text: '\u001b[32m[12:00:00] LEAD-SYNTHESIS done       2 rounds | {"summary":"merged"}\u001b[0m' },
+    });
+    stream.push({ type: "iteration", data: { name: "lead-final", iteration: 3, status: "done" } });
+    stream.push({
+      type: "console_line",
+      data: { text: "\u001b[32m[12:00:00] LEAD-FINAL done       3 rounds | Final streamed answer\u001b[0m" },
+    });
 
     stream.push({ type: "answer_delta", data: { delta: "Final streamed " } });
     stream.push({
@@ -616,19 +663,98 @@ describe("App", () => {
 
     await screen.findAllByText("Final streamed answer");
     expect(screen.getByText("Complete")).toBeInTheDocument();
-    expect(screen.getByText("7 updates hidden")).toBeInTheDocument();
-    expect(screen.getByText("researcher called web_search")).not.toBeVisible();
+    expect(screen.getByText("8 updates hidden")).toBeInTheDocument();
+    expect(screen.queryByText('researcher called web_search for "atlas ai funding"')).not.toBeInTheDocument();
     expect(screen.getAllByText("zhihu.com")).toHaveLength(1);
     expect(screen.getByText("baidu.com")).toBeInTheDocument();
 
     await userEvent.click(screen.getByText("View detailed trace"));
 
-    expect(screen.getByText("Planner split the work into 2 tasks")).toBeVisible();
-    expect(screen.getByText("researcher called web_search")).toBeVisible();
+    const terminal = screen.getByTestId("activity-terminal");
+    expect(terminal.textContent).toContain("PLAN");
+    expect(terminal.textContent).toContain("RESEARCHER tool 1     web_search {'engine': 'google', 'query': 'atlas ai funding'}");
+    expect(terminal.textContent).toContain("RESEARCHER ok         web_search items=1");
+    expect(terminal.textContent).toContain('LEAD-SYNTHESIS done       2 rounds | {"summary":"merged"}');
+    expect(terminal.textContent).toContain("LEAD-FINAL done       3 rounds | Final streamed answer");
+    expect(terminal.innerHTML).toContain("color: #ffd479");
     expect(screen.getByRole("link", { name: "zhihu.com source 1" })).toHaveAttribute("href", "https://zhihu.com/question/1");
     expect(screen.getByRole("link", { name: "zhihu.com source 2" })).toHaveAttribute("href", "https://zhihu.com/question/2");
     expect(screen.getByRole("link", { name: "baidu.com source 1" })).toHaveAttribute("href", "https://baidu.com/s?wd=atlas");
     expect(screen.getByRole("link", { name: /deck.html/i })).toHaveAttribute("href", "/api/files?path=deck");
+  });
+
+  it("shows raw cli error lines in the detailed trace", async () => {
+    let chatsRequestCount = 0;
+    const stream = createControlledStreamResponse();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        chatsRequestCount += 1;
+        if (chatsRequestCount === 1) {
+          return jsonResponse({ chats: [] });
+        }
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_err",
+              title: "Search error",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:05:00Z",
+              preview: "Search error",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_err",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_err/messages/stream") {
+        return stream.response;
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Show me search failures");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    stream.push({ type: "run_started", data: { num_agent: 1 } });
+    stream.push({
+      type: "tool_result",
+      data: { name: "researcher", tool_name: "web_search", status: "error", summary: "timeout" },
+    });
+    stream.push({
+      type: "console_line",
+      data: { text: "\u001b[31m[12:00:00] RESEARCHER err        web_search timeout\u001b[0m" },
+    });
+    stream.push({
+      type: "answer_final",
+      data: {
+        answer_markdown: "Done",
+        sources: [],
+        artifacts: [],
+        mode: "fast",
+      },
+    });
+    stream.push({ type: "done", data: { chat_id: "chat_err" } });
+    stream.close();
+
+    await screen.findByText("Done");
+    await userEvent.click(screen.getByText("View detailed trace"));
+    expect(screen.getByTestId("activity-terminal").textContent).toContain("RESEARCHER err        web_search timeout");
   });
 
   it("recovers after a streamed error and allows the next turn", async () => {

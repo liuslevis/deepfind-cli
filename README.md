@@ -236,9 +236,10 @@ curl http://127.0.0.1:8000/api/health
 
 ## How It Works
 
-- Lead agent splits the query into a few tasks.
-- Sub-agents call local tools such as `web_search`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
-- Lead agent merges the results into one answer.
+- Lead planner can use tools before task split, usually with a `web_search -> web_fetch` flow on the most promising URLs.
+- Sub-agents call local tools such as `web_search`, `web_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
+- Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` pass when evidence is weak or conflicting.
+- Lead final answer turns the synthesis into the user-facing response, and only uses asset tools for final image/slide requests.
 
 Qwen is used through the OpenAI-compatible `chat.completions` API.
 

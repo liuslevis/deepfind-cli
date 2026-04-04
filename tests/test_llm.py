@@ -112,6 +112,21 @@ class ResponseAgentTests(unittest.TestCase):
 
         self.assertIn("empty_output", result.text)
 
+    def test_filters_tools_when_tool_names_are_provided(self) -> None:
+        settings = FakeSettings([message_response('{"summary":"ok","facts":[],"gaps":[]}')])
+        agent = ResponseAgent(settings=settings, tools=FakeTools(), max_iter=1)
+
+        agent.run(
+            "lead",
+            "prompt",
+            "q=test",
+            use_tools=True,
+            tool_names=["missing_tool"],
+        )
+
+        calls = settings.new_client().chat.completions.calls
+        self.assertNotIn("tools", calls[0])
+
     def test_includes_history_messages_before_latest_input(self) -> None:
         settings = FakeSettings([message_response('{"summary":"ok","facts":[],"gaps":[]}')])
         agent = ResponseAgent(settings=settings, tools=FakeTools(), max_iter=1)

@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
+
 from deepfind.bili_transcribe import (
     BiliDownloadError,
     InvalidBiliIdError,
@@ -16,6 +18,54 @@ from deepfind.config import Settings
 from deepfind.gen_slides import SlideGenerationError
 from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
 from deepfind.tools import Toolset
+from deepfind.web_fetch import WEB_FETCH_MAX_MARKDOWN_CHARS, WEB_FETCH_MODEL
+
+
+def message_response(text: str):
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=text,
+                    tool_calls=[],
+                )
+            )
+        ]
+    )
+
+
+class FakeChatCompletionsAPI:
+    def __init__(self, items):
+        self.items = list(items)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.items.pop(0)
+
+
+class FakeOpenAIClient:
+    def __init__(self, items):
+        self.chat = SimpleNamespace(completions=FakeChatCompletionsAPI(items))
+
+
+class FakeHttpClient:
+    def __init__(self, response=None, exc: Exception | None = None):
+        self.response = response
+        self.exc = exc
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def get(self, url: str):
+        self.calls.append(url)
+        if self.exc is not None:
+            raise self.exc
+        return self.response
 
 
 class ToolsetTests(unittest.TestCase):
@@ -29,6 +79,7 @@ class ToolsetTests(unittest.TestCase):
         toolset = Toolset(Settings(api_key="x"))
         names = [item["function"]["name"] for item in toolset.specs()]
         self.assertIn("web_search", names)
+        self.assertIn("web_fetch", names)
         self.assertIn("arxiv_search", names)
         self.assertIn("x_search", names)
         self.assertIn("zhihu_search", names)
@@ -49,6 +100,106 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["tool"], "web_search")
         self.assertEqual(result["error_code"], "missing_dependency")
         self.assertEqual(result["error"], "opencli not found")
+
+    def test_web_fetch_html_returns_summary_and_metadata(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text=(
+                "<html><head><title>Example Title</title></head>"
+                "<body><nav>skip</nav><main><h1>Hello</h1><p>World</p></main></body></html>"
+            ),
+            request=httpx.Request("GET", "https://example.com/final"),
+        )
+        fake_http = FakeHttpClient(response=response)
+        fake_client = FakeOpenAIClient([message_response("Focused summary")])
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=fake_http):
+            with patch.object(Settings, "new_client", return_value=fake_client):
+                result = toolset.web_fetch("https://example.com/start", "Summarize the page")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "web_fetch")
+        self.assertEqual(result["data"]["url"], "https://example.com/start")
+        self.assertEqual(result["data"]["final_url"], "https://example.com/final")
+        self.assertEqual(result["data"]["title"], "Example Title")
+        self.assertEqual(result["data"]["summary"], "Focused summary")
+        self.assertEqual(result["data"]["content_type"], "text/html")
+        self.assertFalse(result["data"]["truncated"])
+        self.assertGreater(result["data"]["markdown_chars"], 0)
+        calls = fake_client.chat.completions.calls
+        self.assertEqual(calls[0]["model"], WEB_FETCH_MODEL)
+        self.assertIn("Example Title", calls[0]["messages"][1]["content"])
+        self.assertEqual(fake_http.calls, ["https://example.com/start"])
+
+    def test_web_fetch_truncates_long_content_before_summary(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        long_text = ("line " * (WEB_FETCH_MAX_MARKDOWN_CHARS // 2)) + "TAIL_MARKER"
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/plain"},
+            text=long_text,
+            request=httpx.Request("GET", "https://example.com/long"),
+        )
+        fake_client = FakeOpenAIClient([message_response("Short summary")])
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=FakeHttpClient(response=response)):
+            with patch.object(Settings, "new_client", return_value=fake_client):
+                result = toolset.web_fetch("https://example.com/long", "Extract the main idea")
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["data"]["truncated"])
+        self.assertGreater(result["data"]["markdown_chars"], WEB_FETCH_MAX_MARKDOWN_CHARS)
+        user_prompt = fake_client.chat.completions.calls[0]["messages"][1]["content"]
+        self.assertNotIn("TAIL_MARKER", user_prompt)
+
+    def test_web_fetch_supports_plain_text_content(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/plain"},
+            text="alpha\nbeta\n",
+            request=httpx.Request("GET", "https://example.com/plain"),
+        )
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=FakeHttpClient(response=response)):
+            with patch.object(
+                Settings,
+                "new_client",
+                return_value=FakeOpenAIClient([message_response("Plain summary")]),
+            ):
+                result = toolset.web_fetch("https://example.com/plain", "Summarize")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["content_type"], "text/plain")
+        self.assertEqual(result["data"]["title"], "")
+        self.assertEqual(result["data"]["summary"], "Plain summary")
+
+    def test_web_fetch_returns_http_error_for_bad_status(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        response = httpx.Response(
+            404,
+            headers={"content-type": "text/html"},
+            text="missing",
+            request=httpx.Request("GET", "https://example.com/missing"),
+        )
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=FakeHttpClient(response=response)):
+            result = toolset.web_fetch("https://example.com/missing", "Summarize")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "http_error")
+
+    def test_web_fetch_returns_timeout_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        timeout = httpx.ReadTimeout("slow", request=httpx.Request("GET", "https://example.com/slow"))
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=FakeHttpClient(exc=timeout)):
+            result = toolset.web_fetch("https://example.com/slow", "Summarize")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "timeout")
 
     def test_web_search_success_uses_limit_when_supported(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

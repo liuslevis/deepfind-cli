@@ -9,8 +9,10 @@ description = "Lead/sub-agent web research CLI powered by Qwen."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "beautifulsoup4>=4.12.0",
   "fastapi>=0.116.0",
   "httpx>=0.28.0",
+  "markdownify>=1.1.0",
   "openai>=2.15.0",
   "uvicorn>=0.35.0",
 ]

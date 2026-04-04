@@ -126,6 +126,43 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(len(result.artifacts), 2)
         self.assertTrue(result.artifacts[0].url.startswith("/api/files?path="))
 
+    def test_build_turn_result_collects_web_fetch_urls(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(store=ChatStore(Path(temp_dir)))
+            result = service._build_turn_result(
+                answer="Final answer",
+                reports=[],
+                observations=[
+                    ToolObservation(
+                        tool_name="web_fetch",
+                        output=json.dumps(
+                            {
+                                "ok": True,
+                                "tool": "web_fetch",
+                                "data": {
+                                    "url": "https://example.com/start",
+                                    "final_url": "https://example.com/final",
+                                    "title": "Example",
+                                    "summary": "summary",
+                                    "content_type": "text/html",
+                                    "truncated": False,
+                                    "markdown_chars": 123,
+                                },
+                            }
+                        ),
+                    )
+                ],
+                mode="fast",
+            )
+
+        self.assertEqual(
+            result.sources,
+            [
+                "https://example.com/start",
+                "https://example.com/final",
+            ],
+        )
+
     def test_stream_message_emits_ordered_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(
@@ -138,6 +175,7 @@ class WebServiceTests(unittest.TestCase):
 
         self.assertEqual(events[0].type, "run_started")
         self.assertIn("plan_ready", [event.type for event in events])
+        self.assertIn("console_line", [event.type for event in events])
         self.assertEqual(events[-2].type, "answer_final")
         self.assertEqual(events[-1].type, "done")
         self.assertEqual(saved_chat.messages[-1].role, "assistant")

@@ -18,6 +18,11 @@ from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
 from .json_utils import dump_json, try_load_json
+from .web_fetch import (
+    WebFetchError,
+    fetch_web_document,
+    summarize_web_document,
+)
 from .youtube_transcribe import (
     InvalidYouTubeIdError,
     load_cached_youtube_transcript,
@@ -80,6 +85,7 @@ class Toolset:
         self.settings = settings
         self._functions = {
             "web_search": self.web_search,
+            "web_fetch": self.web_fetch,
             "arxiv_search": self.arxiv_search,
             "twitter_search": self.twitter_search,
             "x_search": self.x_search,
@@ -116,6 +122,19 @@ class Toolset:
                         "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                     },
                     "required": ["engine", "query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "web_fetch",
+                "Fetch one web page URL, convert it to Markdown, and return a targeted summary for the provided prompt. Prefer this after web_search when a result looks important.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "prompt": {"type": "string"},
+                    },
+                    "required": ["url", "prompt"],
                     "additionalProperties": False,
                 },
             ),
@@ -481,6 +500,42 @@ class Toolset:
             "query": query,
             "command": command,
             "data": parsed,
+        }
+
+    def web_fetch(self, url: str, prompt: str) -> dict[str, Any]:
+        clean_url = url.strip()
+        clean_prompt = prompt.strip()
+        try:
+            document = fetch_web_document(clean_url, timeout=self.settings.subprocess_timeout)
+            summary = summarize_web_document(
+                self.settings.new_client(),
+                prompt=clean_prompt,
+                document=document,
+            )
+        except WebFetchError as exc:
+            return {
+                "ok": False,
+                "tool": "web_fetch",
+                "url": clean_url,
+                "prompt": clean_prompt,
+                "error_code": exc.error_code,
+                "error": str(exc),
+            }
+
+        return {
+            "ok": True,
+            "tool": "web_fetch",
+            "url": clean_url,
+            "prompt": clean_prompt,
+            "data": {
+                "url": document.url,
+                "final_url": document.final_url,
+                "title": document.title,
+                "summary": summary,
+                "content_type": document.content_type,
+                "truncated": document.truncated,
+                "markdown_chars": document.markdown_chars,
+            },
         }
 
     def arxiv_search(
