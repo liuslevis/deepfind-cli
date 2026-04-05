@@ -3,11 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import deepfind.bili_transcribe as bili_transcribe
 from deepfind.bili_transcribe import (
     InvalidBiliIdError,
     ensure_segments,
+    gpu_asr_slot,
     parse_bili_id,
     resolve_audio_root,
     transcribe_bili_audio,
@@ -102,3 +104,50 @@ class BiliTranscribeTests(unittest.TestCase):
         self.assertEqual(result["transcript_path"], str(cached_path))
         ensure_mock.assert_not_called()
         load_model_mock.assert_not_called()
+
+    def test_transcribe_bili_audio_uses_gpu_queue_slot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            seg1 = tmp_path / "seg_001.mp3"
+            seg1.write_bytes(b"a")
+
+            slot = MagicMock()
+            slot.__enter__.return_value = None
+            slot.__exit__.return_value = False
+
+            with patch("deepfind.bili_transcribe.ensure_segments", return_value=[seg1]):
+                with patch("deepfind.bili_transcribe.gpu_asr_slot", return_value=slot) as slot_mock:
+                    with patch(
+                        "deepfind.bili_transcribe.load_model",
+                        return_value=("qwen3_asr", object(), None, "cpu"),
+                    ):
+                        with patch("deepfind.bili_transcribe.transcribe_audio", return_value="line one"):
+                            transcribe_bili_audio(
+                                "BV1cgPSzeEj5",
+                                audio_dir=tmpdir,
+                                asr_model="Qwen/Qwen3-ASR-1.7B",
+                                bili_bin="bili",
+                                timeout=30,
+                            )
+
+        slot_mock.assert_called_once()
+        slot.__enter__.assert_called_once()
+        slot.__exit__.assert_called_once()
+
+    def test_gpu_asr_slot_skips_semaphore_without_gpu(self) -> None:
+        semaphore = MagicMock()
+        with patch("deepfind.bili_transcribe._gpu_available", return_value=False):
+            with patch.object(bili_transcribe, "_GPU_ASR_SEMAPHORE", semaphore):
+                with gpu_asr_slot():
+                    pass
+        semaphore.acquire.assert_not_called()
+        semaphore.release.assert_not_called()
+
+    def test_gpu_asr_slot_acquires_and_releases_with_gpu(self) -> None:
+        semaphore = MagicMock()
+        with patch("deepfind.bili_transcribe._gpu_available", return_value=True):
+            with patch.object(bili_transcribe, "_GPU_ASR_SEMAPHORE", semaphore):
+                with gpu_asr_slot():
+                    pass
+        semaphore.acquire.assert_called_once()
+        semaphore.release.assert_called_once()

@@ -1,5 +1,5 @@
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { Children, isValidElement, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -721,7 +721,13 @@ function sidebarTitle(title: string): string {
   return summarize(title, 32);
 }
 
-function ActivityPanel({ activity, pending }: { activity: ProgressEvent[]; pending: boolean }) {
+const ActivityPanel = memo(function ActivityPanel({
+  activity,
+  pending,
+}: {
+  activity: ProgressEvent[];
+  pending: boolean;
+}) {
   const summaryActivity = activity.filter(
     (event) => event.type !== "console_line" && !shouldHideActivityEvent(event),
   );
@@ -759,9 +765,11 @@ function ActivityPanel({ activity, pending }: { activity: ProgressEvent[]; pendi
       ) : null}
     </div>
   );
-}
+});
 
-function MessageCard({ message }: { message: ClientMessage }) {
+ActivityPanel.displayName = "ActivityPanel";
+
+const MessageCard = memo(function MessageCard({ message }: { message: ClientMessage }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
   const markdownBody = normalizeMermaidMarkdown(body);
   const sourceGroups = groupSources(message.sources);
@@ -785,6 +793,11 @@ function MessageCard({ message }: { message: ClientMessage }) {
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+              table: ({ children, ...props }) => (
+                <div className="markdown-table-scroll">
+                  <table {...props}>{children}</table>
+                </div>
+              ),
               pre: ({ children, ...props }) => {
                 const chart = extractMermaidChart(children);
                 if (chart) {
@@ -848,7 +861,9 @@ function MessageCard({ message }: { message: ClientMessage }) {
       ) : null}
     </article>
   );
-}
+});
+
+MessageCard.displayName = "MessageCard";
 
 export default function App() {
   const [mode, setMode] = useState<ChatMode>("fast");
