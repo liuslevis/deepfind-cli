@@ -102,6 +102,73 @@ describe("App", () => {
     vi.restoreAllMocks();
   });
 
+  it("shows slash command autocomplete and resolves / to /list-tool on submit", async () => {
+    let capturedBody = "";
+    let chatsRequestCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        chatsRequestCount += 1;
+        if (chatsRequestCount === 1) {
+          return jsonResponse({ chats: [] });
+        }
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_cmd",
+              title: "/list-tool",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Available tools",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_cmd",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_cmd/messages/stream") {
+        capturedBody = String(init?.body ?? "");
+        return streamResponse([
+          {
+            type: "answer_final",
+            data: {
+              answer_markdown: "Available tools:\n\n- `web_search`: Search the web.",
+              sources: [],
+              artifacts: [],
+              mode: "fast",
+            },
+          },
+          { type: "done", data: { chat_id: "chat_cmd" } },
+        ]);
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "/");
+    expect(screen.getByText("/list-tool")).toBeInTheDocument();
+    expect(screen.getByText("List all available tools and their descriptions.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findByText("Available tools:");
+    expect(JSON.parse(capturedBody)).toMatchObject({ content: "/list-tool", mode: "fast" });
+  });
+
   it("sends the selected mode in the stream request", async () => {
     let capturedBody = "";
     let chatsRequestCount = 0;
@@ -681,6 +748,60 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "zhihu.com source 2" })).toHaveAttribute("href", "https://zhihu.com/question/2");
     expect(screen.getByRole("link", { name: "baidu.com source 1" })).toHaveAttribute("href", "https://baidu.com/s?wd=atlas");
     expect(screen.getByRole("link", { name: /deck.html/i })).toHaveAttribute("href", "/api/files?path=deck");
+  });
+
+  it("uses instant bottom scrolling while a response is streaming", async () => {
+    const scrollCalls: Array<ScrollIntoViewOptions | boolean | undefined> = [];
+    vi.spyOn(window.HTMLElement.prototype, "scrollIntoView").mockImplementation(function (
+      this: Element,
+      arg?: ScrollIntoViewOptions | boolean,
+    ) {
+      if (this instanceof HTMLDivElement) {
+        scrollCalls.push(arg);
+      }
+    });
+
+    const stream = createControlledStreamResponse();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({ chats: [] });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_scroll",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_scroll/messages/stream") {
+        return stream.response;
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Stream me something");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(
+        scrollCalls.some(
+          (call) => typeof call === "object" && call !== null && call.behavior === "auto" && call.block === "end",
+        ),
+      ).toBe(true),
+    );
+
+    stream.close();
   });
 
   it("shows raw cli error lines in the detailed trace", async () => {

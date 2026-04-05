@@ -191,3 +191,18 @@ class WebServiceTests(unittest.TestCase):
 
         self.assertEqual(events[-2].type, "error")
         self.assertEqual(events[-1].type, "done")
+
+    def test_stream_message_list_tool_returns_catalog_without_research_events(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(store=ChatStore(Path(temp_dir)))
+            chat = service.create_chat()
+            events = list(service.stream_message(chat.id, "/list-tool", "fast"))
+            saved_chat = service.get_chat(chat.id)
+
+        self.assertEqual([event.type for event in events], ["answer_final", "done"])
+        answer = events[0].data["answer_markdown"]
+        self.assertIn("Available tools:", answer)
+        self.assertIn("- `web_search`:", answer)
+        self.assertIn("- `gen_slides`:", answer)
+        self.assertEqual(saved_chat.messages[0].content, "/list-tool")
+        self.assertEqual(saved_chat.messages[1].content, answer)

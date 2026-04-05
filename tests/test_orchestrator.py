@@ -30,6 +30,8 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("bili_search", WORKER_PROMPT)
         self.assertIn("bili_get_user_videos", WORKER_PROMPT)
         self.assertIn("bili_transcribe", WORKER_PROMPT)
+        self.assertIn("bili_transcribe_full", WORKER_PROMPT)
+        self.assertIn("short query", WORKER_PROMPT)
         self.assertIn("youtube_transcribe", WORKER_PROMPT)
         self.assertIn("web_fetch", WORKER_PROMPT)
         self.assertIn("Bilibili", WORKER_PROMPT)

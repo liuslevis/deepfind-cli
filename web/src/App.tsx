@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { Children, isValidElement, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -43,6 +43,40 @@ interface SourceGroup {
 type TranscriptScrollTarget = "bottom" | "last-assistant-head";
 
 const RESEARCH_EVENT_TYPES = ["worker_started", "iteration", "tool_call", "tool_result"] as const;
+
+interface SlashCommandOption {
+  command: string;
+  description: string;
+}
+
+const SLASH_COMMANDS: SlashCommandOption[] = [
+  {
+    command: "/list-tool",
+    description: "List all available tools and their descriptions.",
+  },
+];
+
+function normalizeSlashValue(value: string): string {
+  return value.trimStart().toLowerCase();
+}
+
+function matchSlashCommands(value: string): SlashCommandOption[] {
+  const normalized = normalizeSlashValue(value);
+  if (!normalized.startsWith("/")) {
+    return [];
+  }
+  return SLASH_COMMANDS.filter((item) => item.command.startsWith(normalized));
+}
+
+function resolveSlashCommand(value: string, matches: SlashCommandOption[], selectedIndex: number): string {
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase();
+  const exactMatch = matches.find((item) => item.command === normalized);
+  if (exactMatch) {
+    return exactMatch.command;
+  }
+  return matches[Math.min(selectedIndex, matches.length - 1)]?.command ?? trimmed;
+}
 
 function storageGetItem(key: string): string | null {
   try {
@@ -829,12 +863,16 @@ export default function App() {
   const [pageError, setPageError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const modeSelectRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<TranscriptScrollTarget | null>(null);
   const selectedChatIdRef = useRef<string | null>(selectedChatId);
+  const [slashCommandIndex, setSlashCommandIndex] = useState(0);
   const activeRuntime = selectedChatId ? chatRuntimeById[selectedChatId] : null;
   const activeMessages = activeRuntime?.messages ?? [];
   const sending = activeRuntime?.pending ?? false;
+  const slashMatches = matchSlashCommands(composerValue);
+  const showSlashAutocomplete = slashMatches.length > 0;
 
   function queueTranscriptScroll(target: TranscriptScrollTarget) {
     pendingScrollTargetRef.current = target;
@@ -1013,7 +1051,7 @@ export default function App() {
     }
 
     if (pendingTarget === "bottom" || sending) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      bottomRef.current?.scrollIntoView({ behavior: sending ? "auto" : "smooth", block: "end" });
       if (!sending) {
         pendingScrollTargetRef.current = null;
       }
@@ -1039,6 +1077,14 @@ export default function App() {
   useEffect(() => {
     selectedChatIdRef.current = selectedChatId;
   }, [selectedChatId]);
+
+  useEffect(() => {
+    if (!showSlashAutocomplete) {
+      setSlashCommandIndex(0);
+      return;
+    }
+    setSlashCommandIndex((current) => Math.min(current, slashMatches.length - 1));
+  }, [showSlashAutocomplete, slashMatches.length]);
 
   useEffect(() => {
     if (!modeMenuOpen) {
@@ -1202,13 +1248,51 @@ export default function App() {
     }));
   }
 
+  function selectSlashCommand(command: string) {
+    setComposerValue(command);
+    setSlashCommandIndex(0);
+    composerInputRef.current?.focus();
+  }
+
+  function handleComposerKeyDown(keyEvent: ReactKeyboardEvent<HTMLInputElement>) {
+    if (showSlashAutocomplete) {
+      if (keyEvent.key === "ArrowDown") {
+        keyEvent.preventDefault();
+        setSlashCommandIndex((current) => (current + 1) % slashMatches.length);
+        return;
+      }
+      if (keyEvent.key === "ArrowUp") {
+        keyEvent.preventDefault();
+        setSlashCommandIndex((current) => (current - 1 + slashMatches.length) % slashMatches.length);
+        return;
+      }
+      if (keyEvent.key === "Tab") {
+        const selected = slashMatches[slashCommandIndex];
+        if (selected) {
+          keyEvent.preventDefault();
+          selectSlashCommand(selected.command);
+        }
+        return;
+      }
+    }
+
+    if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
+      keyEvent.preventDefault();
+      keyEvent.currentTarget.form?.requestSubmit();
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (sending || !composerValue.trim()) {
+    let content = composerValue.trim();
+    if (slashMatches.length > 0) {
+      content = resolveSlashCommand(content, slashMatches, slashCommandIndex);
+    }
+
+    if (sending || !content) {
       return;
     }
 
-    const content = composerValue.trim();
     setComposerValue("");
     setPageError(null);
 
@@ -1432,23 +1516,49 @@ export default function App() {
         </section>
 
         <footer className="composer-wrap">
+          {showSlashAutocomplete ? (
+            <div id="slash-command-menu" className="composer-autocomplete" role="listbox" aria-label="Slash commands">
+              <div className="composer-autocomplete__label">Slash commands</div>
+              <div className="composer-autocomplete__list">
+                {slashMatches.map((command, index) => (
+                  <button
+                    key={command.command}
+                    type="button"
+                    role="option"
+                    className={`composer-autocomplete__option${
+                      index === slashCommandIndex ? " composer-autocomplete__option--active" : ""
+                    }`}
+                    aria-selected={index === slashCommandIndex}
+                    onMouseEnter={() => setSlashCommandIndex(index)}
+                    onMouseDown={(mouseEvent) => {
+                      mouseEvent.preventDefault();
+                      selectSlashCommand(command.command);
+                    }}
+                  >
+                    <span className="composer-autocomplete__command">{command.command}</span>
+                    <span className="composer-autocomplete__description">{command.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <form className="composer" onSubmit={handleSubmit}>
             <label className="sr-only" htmlFor="chat-input">
               Ask DeepFind
             </label>
             <input
+              ref={composerInputRef}
               id="chat-input"
               className="composer__input"
               type="text"
               placeholder="Ask DeepFind to search, summarize, compare, or generate artifacts..."
+              aria-autocomplete="list"
+              aria-controls={showSlashAutocomplete ? "slash-command-menu" : undefined}
+              aria-expanded={showSlashAutocomplete}
               value={composerValue}
               onChange={(changeEvent) => setComposerValue(changeEvent.target.value)}
-              onKeyDown={(keyEvent) => {
-                if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
-                  keyEvent.preventDefault();
-                  keyEvent.currentTarget.form?.requestSubmit();
-                }
-              }}
+              onKeyDown={handleComposerKeyDown}
             />
             <div className="mode-select" ref={modeSelectRef}>
               <span className="sr-only" id="mode-select-label">
