@@ -17,6 +17,7 @@ from deepfind.bili_transcribe import (
 from deepfind.config import Settings
 from deepfind.gen_slides import SlideGenerationError
 from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
+from deepfind.transcript_summary import BILI_TRANSCRIPT_SUMMARY_MODEL
 from deepfind.tools import Toolset
 from deepfind.web_fetch import WEB_FETCH_MAX_MARKDOWN_CHARS, WEB_FETCH_MODEL
 
@@ -90,9 +91,16 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("bili_search", names)
         self.assertIn("bili_get_user_videos", names)
         self.assertIn("bili_transcribe", names)
+        self.assertIn("bili_transcribe_full", names)
         self.assertIn("youtube_transcribe", names)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
+
+    def test_bili_transcribe_spec_requires_query(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        spec = next(item for item in toolset.specs() if item["function"]["name"] == "bili_transcribe")
+        self.assertEqual(spec["function"]["parameters"]["required"], ["bili_id", "query"])
+        self.assertIn("query", spec["function"]["parameters"]["properties"])
 
     def test_web_search_missing_binary_returns_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -758,6 +766,30 @@ class ToolsetTests(unittest.TestCase):
 
     def test_bili_transcribe_success_payload(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
+        fake_client = FakeOpenAIClient([message_response("condensed summary")])
+        with patch(
+            "deepfind.tools.transcribe_bili_audio",
+            return_value={
+                "bili_id": "BV1cgPSzeEj5",
+                "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                "transcript": "line one\nline two",
+            },
+        ):
+            with patch.object(Settings, "new_client", return_value=fake_client):
+                result = toolset.bili_transcribe(
+                    "https://www.bilibili.com/video/BV1cgPSzeEj5",
+                    "总结覆盖户数、毛利率和盈利判断",
+                )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "bili_transcribe")
+        self.assertEqual(result["data"]["bili_id"], "BV1cgPSzeEj5")
+        self.assertEqual(result["data"]["summary"], "condensed summary")
+        self.assertEqual(result["data"]["transcript"], "condensed summary")
+        self.assertEqual(result["data"]["summary_model"], BILI_TRANSCRIPT_SUMMARY_MODEL)
+        self.assertEqual(fake_client.chat.completions.calls[0]["model"], BILI_TRANSCRIPT_SUMMARY_MODEL)
+
+    def test_bili_transcribe_full_success_payload(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
         with patch(
             "deepfind.tools.transcribe_bili_audio",
             return_value={
@@ -766,39 +798,60 @@ class ToolsetTests(unittest.TestCase):
                 "transcript": "line one",
             },
         ):
-            result = toolset.bili_transcribe("https://www.bilibili.com/video/BV1cgPSzeEj5")
+            result = toolset.bili_transcribe_full("https://www.bilibili.com/video/BV1cgPSzeEj5")
         self.assertTrue(result["ok"])
-        self.assertEqual(result["tool"], "bili_transcribe")
-        self.assertEqual(result["data"]["bili_id"], "BV1cgPSzeEj5")
+        self.assertEqual(result["tool"], "bili_transcribe_full")
         self.assertEqual(result["data"]["transcript"], "line one")
 
     def test_bili_transcribe_invalid_bili_id_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch("deepfind.tools.transcribe_bili_audio", side_effect=InvalidBiliIdError("bad id")):
-            result = toolset.bili_transcribe("not a video")
+            result = toolset.bili_transcribe("not a video", "总结这个视频")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "invalid_bili_id")
 
     def test_bili_transcribe_missing_dependency_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch("deepfind.tools.transcribe_bili_audio", side_effect=MissingDependencyError("missing")):
-            result = toolset.bili_transcribe("BV1cgPSzeEj5")
+            result = toolset.bili_transcribe("BV1cgPSzeEj5", "总结这个视频")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "missing_dependency")
 
     def test_bili_transcribe_download_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch("deepfind.tools.transcribe_bili_audio", side_effect=BiliDownloadError("failed")):
-            result = toolset.bili_transcribe("BV1cgPSzeEj5")
+            result = toolset.bili_transcribe("BV1cgPSzeEj5", "总结这个视频")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "download_failed")
 
     def test_bili_transcribe_transcription_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch("deepfind.tools.transcribe_bili_audio", side_effect=TranscriptionError("failed")):
-            result = toolset.bili_transcribe("BV1cgPSzeEj5")
+            result = toolset.bili_transcribe("BV1cgPSzeEj5", "总结这个视频")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "transcription_failed")
+
+    def test_bili_transcribe_rejects_empty_query(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        result = toolset.bili_transcribe("BV1cgPSzeEj5", "   ")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_query")
+
+    def test_bili_transcribe_summary_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        fake_client = FakeOpenAIClient([message_response("")])
+        with patch(
+            "deepfind.tools.transcribe_bili_audio",
+            return_value={
+                "bili_id": "BV1cgPSzeEj5",
+                "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                "transcript": "line one",
+            },
+        ):
+            with patch.object(Settings, "new_client", return_value=fake_client):
+                result = toolset.bili_transcribe("BV1cgPSzeEj5", "总结这个视频")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "summary_failed")
 
     def test_youtube_transcribe_success_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

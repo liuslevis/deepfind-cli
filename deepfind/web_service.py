@@ -1,20 +1,27 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 from threading import Thread
 from urllib.parse import quote
 from uuid import uuid4
 
 from .chat_store import ChatStore, repo_root, summarize_text, utc_now
+from .config import Settings
 from .json_utils import try_load_json
 from .models import ChatMessage, WorkerReport
 from .orchestrator import DeepFind
+from .tools import Toolset
 from .web_models import ArtifactKind, ArtifactLink, ChatMode, TurnResult, WebChatDetail, WebMessage
 from .web_progress import ToolObservation, WebProgress
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _DEFAULT_MAX_ITER_PER_AGENT = 50
+_LIST_TOOL_COMMAND = "/list-tool"
+_SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
+    (_LIST_TOOL_COMMAND, "List all available tools and their descriptions."),
+)
 
 
 def mode_to_agent_count(mode: ChatMode) -> int:
@@ -70,6 +77,39 @@ def _path_from_value(value: object, key: str) -> list[str]:
     return found
 
 
+@lru_cache(maxsize=1)
+def _tool_catalog() -> tuple[tuple[str, str], ...]:
+    catalog: list[tuple[str, str]] = []
+    for item in Toolset(Settings(api_key="web")).specs():
+        if not isinstance(item, dict):
+            continue
+        function_spec = item.get("function")
+        if not isinstance(function_spec, dict):
+            continue
+        name = str(function_spec.get("name", "")).strip()
+        description = str(function_spec.get("description", "")).strip()
+        if name and description:
+            catalog.append((name, description))
+    return tuple(catalog)
+
+
+def _tool_catalog_markdown() -> str:
+    tools = _tool_catalog()
+    if not tools:
+        return "No tools are currently available."
+    lines = [f"- `{name}`: {description}" for name, description in tools]
+    return "Available tools:\n\n" + "\n".join(lines)
+
+
+def _unknown_command_markdown(query: str) -> str:
+    lines = [f"- `{name}`: {description}" for name, description in _SLASH_COMMANDS]
+    return (
+        f"Unknown slash command `{query}`.\n\n"
+        "Available slash commands:\n\n"
+        + "\n".join(lines)
+    )
+
+
 class DeepFindWebService:
     def __init__(
         self,
@@ -115,6 +155,20 @@ class DeepFindWebService:
         updated_chat.updated_at = user_message.created_at
         self.store.save_chat(updated_chat)
 
+        command_result = self._build_slash_command_result(query, mode)
+        if command_result is not None:
+            assistant_message = self._save_assistant_message(chat_id, command_result)
+            progress = WebProgress()
+            progress.emit_answer_final(command_result)
+            progress.emit_done(
+                {
+                    "chat_id": chat_id,
+                    "assistant_message_id": assistant_message.id,
+                }
+            )
+            progress.close()
+            return progress.iter_events()
+
         progress = WebProgress()
 
         def run_turn() -> None:
@@ -132,19 +186,7 @@ class DeepFindWebService:
                     observations=list(progress.tool_outputs),
                     mode=mode,
                 )
-                assistant_message = WebMessage(
-                    id=f"msg_{uuid4().hex}",
-                    role="assistant",
-                    content=turn_result.answer_markdown,
-                    created_at=utc_now(),
-                    mode=mode,
-                    sources=turn_result.sources,
-                    artifacts=turn_result.artifacts,
-                )
-                latest_chat = self.get_chat(chat_id).model_copy(deep=True)
-                latest_chat.messages.append(assistant_message)
-                latest_chat.updated_at = assistant_message.created_at
-                self.store.save_chat(latest_chat)
+                assistant_message = self._save_assistant_message(chat_id, turn_result)
 
                 for delta in chunk_text(turn_result.answer_markdown):
                     progress.emit_answer_delta(delta)
@@ -163,6 +205,36 @@ class DeepFindWebService:
 
         Thread(target=run_turn, daemon=True).start()
         return progress.iter_events()
+
+    def _build_slash_command_result(self, query: str, mode: ChatMode) -> TurnResult | None:
+        if not query.startswith("/"):
+            return None
+        if query.lower() == _LIST_TOOL_COMMAND:
+            answer = _tool_catalog_markdown()
+        else:
+            answer = _unknown_command_markdown(query)
+        return TurnResult(
+            answer_markdown=answer,
+            sources=[],
+            artifacts=[],
+            mode=mode,
+        )
+
+    def _save_assistant_message(self, chat_id: str, turn_result: TurnResult) -> WebMessage:
+        assistant_message = WebMessage(
+            id=f"msg_{uuid4().hex}",
+            role="assistant",
+            content=turn_result.answer_markdown,
+            created_at=utc_now(),
+            mode=turn_result.mode,
+            sources=turn_result.sources,
+            artifacts=turn_result.artifacts,
+        )
+        latest_chat = self.get_chat(chat_id).model_copy(deep=True)
+        latest_chat.messages.append(assistant_message)
+        latest_chat.updated_at = assistant_message.created_at
+        self.store.save_chat(latest_chat)
+        return assistant_message
 
     def _build_turn_result(
         self,

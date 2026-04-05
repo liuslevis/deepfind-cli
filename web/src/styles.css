@@ -695,6 +695,70 @@ img {
   background: linear-gradient(180deg, rgba(4, 7, 13, 0), rgba(4, 7, 13, 0.96) 22%);
 }
 
+.composer-autocomplete {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid rgba(93, 225, 255, 0.16);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(11, 18, 28, 0.96), rgba(7, 12, 19, 0.92)),
+    radial-gradient(circle at top right, rgba(93, 225, 255, 0.12), transparent 42%);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
+}
+
+.composer-autocomplete__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.composer-autocomplete__list {
+  display: grid;
+  gap: 8px;
+}
+
+.composer-autocomplete__option {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  background: rgba(7, 13, 21, 0.76);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.composer-autocomplete__option:hover,
+.composer-autocomplete__option:focus-visible,
+.composer-autocomplete__option--active {
+  transform: translateY(-1px);
+  border-color: rgba(93, 225, 255, 0.28);
+  background: rgba(12, 22, 34, 0.94);
+}
+
+.composer-autocomplete__option:focus-visible {
+  outline: 2px solid rgba(93, 225, 255, 0.32);
+  outline-offset: 2px;
+}
+
+.composer-autocomplete__command {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.composer-autocomplete__description {
+  color: var(--text-soft);
+  font-size: 0.86rem;
+}
+
 .mode-select__button,
 .ghost-button,
 .send-button {
@@ -1096,6 +1160,11 @@ img {
     gap: 10px 12px;
     padding: 12px;
     border-radius: 22px;
+  }
+
+  .composer-autocomplete {
+    padding: 10px;
+    border-radius: 18px;
   }
 
   .composer__input {

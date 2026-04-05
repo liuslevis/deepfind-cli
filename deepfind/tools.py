@@ -18,6 +18,11 @@ from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
 from .json_utils import dump_json, try_load_json
+from .transcript_summary import (
+    BILI_TRANSCRIPT_SUMMARY_MODEL,
+    TranscriptSummaryError,
+    summarize_transcript_for_query,
+)
 from .web_fetch import (
     WebFetchError,
     fetch_web_document,
@@ -103,6 +108,7 @@ class Toolset:
             "bili_search": self.bili_search,
             "bili_get_user_videos": self.bili_get_user_videos,
             "bili_transcribe": self.bili_transcribe,
+            "bili_transcribe_full": self.bili_transcribe_full,
             "youtube_transcribe": self.youtube_transcribe,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
@@ -377,7 +383,20 @@ class Toolset:
             ),
             self._function_spec(
                 "bili_transcribe",
-                "Transcribe Bilibili video audio by URL or BVID.",
+                "Transcribe Bilibili video audio by URL or BVID, then summarize it for the research query with qwen-plus.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "bili_id": {"type": "string"},
+                        "query": {"type": "string"},
+                    },
+                    "required": ["bili_id", "query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "bili_transcribe_full",
+                "Transcribe Bilibili video audio by URL or BVID and return the full transcript.",
                 {
                     "type": "object",
                     "properties": {
@@ -1082,54 +1101,124 @@ class Toolset:
             },
         )
 
-    def bili_transcribe(self, bili_id: str) -> dict[str, Any]:
-        try:
-            data = transcribe_bili_audio(
-                bili_id,
-                bili_bin=self.settings.bili_bin,
-                asr_model=self.settings.asr_model,
-                audio_dir=self.settings.audio_dir,
-                timeout=self.settings.subprocess_timeout,
-            )
-        except InvalidBiliIdError as exc:
+    def _transcribe_bili_audio_data(self, bili_id: str) -> dict[str, str]:
+        return transcribe_bili_audio(
+            bili_id,
+            bili_bin=self.settings.bili_bin,
+            asr_model=self.settings.asr_model,
+            audio_dir=self.settings.audio_dir,
+            timeout=self.settings.subprocess_timeout,
+        )
+
+    def _bili_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
+        if isinstance(exc, InvalidBiliIdError):
             return {
                 "ok": False,
-                "tool": "bili_transcribe",
+                "tool": tool_name,
                 "error_code": "invalid_bili_id",
                 "error": str(exc),
             }
-        except MissingDependencyError as exc:
+        if isinstance(exc, MissingDependencyError):
             return {
                 "ok": False,
-                "tool": "bili_transcribe",
+                "tool": tool_name,
                 "error_code": "missing_dependency",
                 "error": str(exc),
             }
-        except BiliDownloadError as exc:
+        if isinstance(exc, BiliDownloadError):
             return {
                 "ok": False,
-                "tool": "bili_transcribe",
+                "tool": tool_name,
                 "error_code": "download_failed",
                 "error": str(exc),
             }
-        except TranscriptionError as exc:
+        if isinstance(exc, TranscriptionError):
             return {
                 "ok": False,
-                "tool": "bili_transcribe",
+                "tool": tool_name,
                 "error_code": "transcription_failed",
                 "error": str(exc),
             }
-        except BiliTranscribeError as exc:
+        if isinstance(exc, TranscriptSummaryError):
             return {
                 "ok": False,
-                "tool": "bili_transcribe",
+                "tool": tool_name,
+                "error_code": "summary_failed",
+                "error": str(exc),
+            }
+        if isinstance(exc, BiliTranscribeError):
+            return {
+                "ok": False,
+                "tool": tool_name,
                 "error_code": "transcription_error",
                 "error": str(exc),
             }
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "error_code": "unknown_error",
+            "error": str(exc),
+        }
+
+    def bili_transcribe(self, bili_id: str, query: str) -> dict[str, Any]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            return {
+                "ok": False,
+                "tool": "bili_transcribe",
+                "error_code": "invalid_query",
+                "error": "query cannot be empty",
+            }
+        try:
+            data = self._transcribe_bili_audio_data(bili_id)
+            summary, chunk_count = summarize_transcript_for_query(
+                self.settings.new_client(),
+                transcript=data["transcript"],
+                query=normalized_query,
+                transcript_path=data["transcript_path"],
+            )
+        except (
+            InvalidBiliIdError,
+            MissingDependencyError,
+            BiliDownloadError,
+            TranscriptionError,
+            TranscriptSummaryError,
+            BiliTranscribeError,
+        ) as exc:
+            return self._bili_transcribe_error("bili_transcribe", exc)
 
         return {
             "ok": True,
             "tool": "bili_transcribe",
+            "data": {
+                "bili_id": data["bili_id"],
+                "query": normalized_query,
+                "summary_model": BILI_TRANSCRIPT_SUMMARY_MODEL,
+                "transcript_path": data["transcript_path"],
+                "transcript_kind": "summary",
+                "transcript_chars": len(data["transcript"]),
+                "chunk_count": chunk_count,
+                "summary": summary,
+                "summary_chars": len(summary),
+                "transcript": summary,
+            },
+        }
+
+    def bili_transcribe_full(self, bili_id: str) -> dict[str, Any]:
+        try:
+            data = self._transcribe_bili_audio_data(bili_id)
+        except (
+            InvalidBiliIdError,
+            MissingDependencyError,
+            BiliDownloadError,
+            TranscriptionError,
+            BiliTranscribeError,
+        ) as exc:
+            return self._bili_transcribe_error("bili_transcribe_full", exc)
+
+        return {
+            "ok": True,
+            "tool": "bili_transcribe_full",
             "data": {
                 "bili_id": data["bili_id"],
                 "transcript_path": data["transcript_path"],
