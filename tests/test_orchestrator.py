@@ -25,8 +25,10 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(tasks[0], "one task")
         self.assertTrue(agent_cls.return_value.run.call_args.kwargs["use_tools"])
 
-    def test_worker_prompt_mentions_bili_transcribe(self) -> None:
+    def test_worker_prompt_mentions_bilibili_tools(self) -> None:
         self.assertIn("boss_search", WORKER_PROMPT)
+        self.assertIn("bili_search", WORKER_PROMPT)
+        self.assertIn("bili_get_user_videos", WORKER_PROMPT)
         self.assertIn("bili_transcribe", WORKER_PROMPT)
         self.assertIn("youtube_transcribe", WORKER_PROMPT)
         self.assertIn("web_fetch", WORKER_PROMPT)

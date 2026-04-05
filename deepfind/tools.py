@@ -100,6 +100,8 @@ class Toolset:
             "xhs_search_user": self.xhs_search_user,
             "xhs_user": self.xhs_user,
             "xhs_user_posts": self.xhs_user_posts,
+            "bili_search": self.bili_search,
+            "bili_get_user_videos": self.bili_get_user_videos,
             "bili_transcribe": self.bili_transcribe,
             "youtube_transcribe": self.youtube_transcribe,
             "gen_img": self.gen_img,
@@ -334,6 +336,42 @@ class Toolset:
                         "cursor": {"type": "string"},
                     },
                     "required": ["user_id"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "bili_search",
+                "Search Bilibili videos or users via opencli.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "search_type": {
+                            "type": "string",
+                            "enum": ["video", "user"],
+                        },
+                        "page": {"type": "integer", "minimum": 1, "maximum": 50},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    },
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "bili_get_user_videos",
+                "List a Bilibili user's uploaded videos by UID or username via opencli bilibili user-videos.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "uid": {"type": "string"},
+                        "order": {
+                            "type": "string",
+                            "enum": ["pubdate", "click", "stow"],
+                        },
+                        "page": {"type": "integer", "minimum": 1, "maximum": 50},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    },
+                    "required": ["uid"],
                     "additionalProperties": False,
                 },
             ),
@@ -982,6 +1020,66 @@ class Toolset:
             self.settings.xhs_bin,
             args,
             "xhs_user_posts",
+        )
+
+    def bili_search(
+        self,
+        query: str,
+        search_type: str = "video",
+        page: int = 1,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        normalized_type = search_type.strip().lower() or "video"
+        if normalized_type not in {"video", "user"}:
+            normalized_type = "video"
+        safe_page = max(1, min(50, page))
+        safe_limit = max(1, min(50, limit))
+        return self._opencli_command(
+            site="bilibili",
+            action="search",
+            tool="bili_search",
+            values={
+                "query": query,
+                "type": normalized_type,
+                "page": safe_page,
+                "limit": safe_limit,
+            },
+            context={
+                "query": query,
+                "search_type": normalized_type,
+                "page": safe_page,
+                "limit": safe_limit,
+            },
+        )
+
+    def bili_get_user_videos(
+        self,
+        uid: str,
+        order: str = "pubdate",
+        page: int = 1,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        normalized_order = order.strip().lower() or "pubdate"
+        if normalized_order not in {"pubdate", "click", "stow"}:
+            normalized_order = "pubdate"
+        safe_page = max(1, min(50, page))
+        safe_limit = max(1, min(50, limit))
+        return self._opencli_command(
+            site="bilibili",
+            action="user-videos",
+            tool="bili_get_user_videos",
+            values={
+                "uid": uid,
+                "order": normalized_order,
+                "page": safe_page,
+                "limit": safe_limit,
+            },
+            context={
+                "uid": uid,
+                "order": normalized_order,
+                "page": safe_page,
+                "limit": safe_limit,
+            },
         )
 
     def bili_transcribe(self, bili_id: str) -> dict[str, Any]:

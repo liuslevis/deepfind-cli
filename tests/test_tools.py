@@ -75,7 +75,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(spec["type"], "function")
         self.assertEqual(spec["function"]["name"], "web_search")
 
-    def test_specs_include_bili_transcribe(self) -> None:
+    def test_specs_include_bilibili_and_media_tools(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         names = [item["function"]["name"] for item in toolset.specs()]
         self.assertIn("web_search", names)
@@ -87,6 +87,8 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("boss_detail", names)
         self.assertIn("boss_chatlist", names)
         self.assertIn("boss_send", names)
+        self.assertIn("bili_search", names)
+        self.assertIn("bili_get_user_videos", names)
         self.assertIn("bili_transcribe", names)
         self.assertIn("youtube_transcribe", names)
         self.assertIn("gen_img", names)
@@ -662,6 +664,97 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(last, ["/usr/bin/xhs", "search", "--sort", "general", "--type", "all", "--page", "3", "keyword", "--json"])
         self.assertEqual(result["data"]["pages_requested"], 3)
         self.assertEqual(result["data"]["pages_fetched"], 3)
+
+    def test_bili_search_uses_supported_flags(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=(
+                                '[{"command":"bilibili/search","args":['
+                                '{"name":"query","positional":true},'
+                                '{"name":"type","positional":false},'
+                                '{"name":"page","positional":false},'
+                                '{"name":"limit","positional":false}'
+                                ']}]'
+                            ),
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=0, stdout='[{"title":"video"}]', stderr=""),
+                    ],
+                ) as run_mock:
+                    result = toolset.bili_search("deep research", search_type="user", page=2, limit=5)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "bili_search")
+        self.assertEqual(result["query"], "deep research")
+        self.assertEqual(result["search_type"], "user")
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            [
+                "/usr/bin/opencli",
+                "bilibili",
+                "search",
+                "deep research",
+                "--type",
+                "user",
+                "--page",
+                "2",
+                "--limit",
+                "5",
+                "-f",
+                "json",
+            ],
+        )
+
+    def test_bili_get_user_videos_uses_supported_flags(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=(
+                                '[{"command":"bilibili/user-videos","args":['
+                                '{"name":"uid","positional":false},'
+                                '{"name":"limit","positional":false},'
+                                '{"name":"order","positional":false},'
+                                '{"name":"page","positional":false}'
+                                ']}]'
+                            ),
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=0, stdout='[{"title":"upload"}]', stderr=""),
+                    ],
+                ) as run_mock:
+                    result = toolset.bili_get_user_videos("946974", order="click", page=3, limit=8)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "bili_get_user_videos")
+        self.assertEqual(result["uid"], "946974")
+        self.assertEqual(result["order"], "click")
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            [
+                "/usr/bin/opencli",
+                "bilibili",
+                "user-videos",
+                "--uid",
+                "946974",
+                "--limit",
+                "8",
+                "--order",
+                "click",
+                "--page",
+                "3",
+                "-f",
+                "json",
+            ],
+        )
 
     def test_bili_transcribe_success_payload(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
