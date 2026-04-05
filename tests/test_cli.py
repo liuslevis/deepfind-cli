@@ -31,6 +31,8 @@ class CliTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("web_fetch\t") for line in lines))
         self.assertTrue(any(line.startswith("boss_search\t") for line in lines))
         self.assertTrue(any(line.startswith("boss_detail\t") for line in lines))
+        self.assertTrue(any(line.startswith("bili_search\t") for line in lines))
+        self.assertTrue(any(line.startswith("bili_get_user_videos\t") for line in lines))
 
     def test_main_prints_answer(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:
