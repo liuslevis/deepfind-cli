@@ -4,7 +4,9 @@ import os
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
+from threading import Semaphore
 from typing import Any
 
 
@@ -13,6 +15,7 @@ SEGMENT_SECONDS = 300
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac"}
 BVID_PATTERN = re.compile(r"(BV[0-9A-Za-z]{10})")
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_GPU_ASR_SEMAPHORE = Semaphore(1)
 
 
 class BiliTranscribeError(RuntimeError):
@@ -33,6 +36,29 @@ class BiliDownloadError(BiliTranscribeError):
 
 class TranscriptionError(BiliTranscribeError):
     """Raised when ASR model loading or transcription fails."""
+
+
+def _gpu_available() -> bool:
+    try:
+        import torch
+    except ImportError:
+        return False
+    return bool(torch.cuda.is_available())
+
+
+@contextmanager
+def gpu_asr_slot():
+    if not _gpu_available():
+        yield
+        return
+
+    # Serialize GPU ASR jobs so concurrent requests queue instead of competing
+    # for VRAM and model-load resources.
+    _GPU_ASR_SEMAPHORE.acquire()
+    try:
+        yield
+    finally:
+        _GPU_ASR_SEMAPHORE.release()
 
 
 def parse_bili_id(value: str) -> str:
@@ -306,18 +332,19 @@ def transcribe_bili_audio(
         bili_bin=bili_bin,
         timeout=timeout,
     )
-    backend, model, processor, device = load_model(asr_model)
+    with gpu_asr_slot():
+        backend, model, processor, device = load_model(asr_model)
 
-    transcripts: list[str] = []
-    for segment in segments:
-        try:
-            segment_text = transcribe_audio(segment, backend, model, processor, device)
-        except BiliTranscribeError:
-            raise
-        except Exception as exc:
-            raise TranscriptionError(f"Failed transcribing {segment.name}: {exc}") from exc
-        if segment_text:
-            transcripts.append(segment_text)
+        transcripts: list[str] = []
+        for segment in segments:
+            try:
+                segment_text = transcribe_audio(segment, backend, model, processor, device)
+            except BiliTranscribeError:
+                raise
+            except Exception as exc:
+                raise TranscriptionError(f"Failed transcribing {segment.name}: {exc}") from exc
+            if segment_text:
+                transcripts.append(segment_text)
 
     transcript = "\n".join(transcripts).strip()
     if not transcript:

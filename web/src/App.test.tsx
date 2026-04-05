@@ -351,6 +351,57 @@ describe("App", () => {
     );
   });
 
+  it("wraps markdown tables in a horizontal scroll container", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_table",
+              title: "Table",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Table answer",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_table" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_table",
+            title: "Table",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [
+              {
+                id: "msg_1",
+                role: "assistant",
+                content:
+                  "| A | B | C | D | E |\n| --- | --- | --- | --- | --- |\n| 1 | 2 | 3 | 4 | 5 |",
+                created_at: "2026-03-22T00:02:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const table = await screen.findByRole("table");
+    expect(table.closest(".markdown-table-scroll")).toBeInTheDocument();
+  });
+
   it("toggles the mobile chat drawer and closes it after selecting a chat", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
