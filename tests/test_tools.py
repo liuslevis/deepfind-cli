@@ -765,21 +765,22 @@ class ToolsetTests(unittest.TestCase):
         )
 
     def test_bili_transcribe_success_payload(self) -> None:
-        toolset = Toolset(Settings(api_key="x"))
-        fake_client = FakeOpenAIClient([message_response("condensed summary")])
-        with patch(
-            "deepfind.tools.transcribe_bili_audio",
-            return_value={
-                "bili_id": "BV1cgPSzeEj5",
-                "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
-                "transcript": "line one\nline two",
-            },
-        ):
-            with patch.object(Settings, "new_client", return_value=fake_client):
-                result = toolset.bili_transcribe(
-                    "https://www.bilibili.com/video/BV1cgPSzeEj5",
-                    "总结覆盖户数、毛利率和盈利判断",
-                )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            fake_client = FakeOpenAIClient([message_response("condensed summary")])
+            with patch(
+                "deepfind.tools.transcribe_bili_audio",
+                return_value={
+                    "bili_id": "BV1cgPSzeEj5",
+                    "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                    "transcript": "line one\nline two",
+                },
+            ):
+                with patch.object(Settings, "new_client", return_value=fake_client):
+                    result = toolset.bili_transcribe(
+                        "https://www.bilibili.com/video/BV1cgPSzeEj5",
+                        "summarize coverage, gross margin, and profitability",
+                    )
         self.assertTrue(result["ok"])
         self.assertEqual(result["tool"], "bili_transcribe")
         self.assertEqual(result["data"]["bili_id"], "BV1cgPSzeEj5")
@@ -787,6 +788,38 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["data"]["transcript"], "condensed summary")
         self.assertEqual(result["data"]["summary_model"], BILI_TRANSCRIPT_SUMMARY_MODEL)
         self.assertEqual(fake_client.chat.completions.calls[0]["model"], BILI_TRANSCRIPT_SUMMARY_MODEL)
+
+    def test_bili_transcribe_uses_cache_for_same_bili_id_and_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            first_client = FakeOpenAIClient([message_response("cached summary body")])
+            with patch(
+                "deepfind.tools.transcribe_bili_audio",
+                return_value={
+                    "bili_id": "BV1cgPSzeEj5",
+                    "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                    "transcript": "line one\nline two",
+                },
+            ) as first_transcribe_mock:
+                with patch.object(Settings, "new_client", return_value=first_client):
+                    first = toolset.bili_transcribe("BV1cgPSzeEj5", "summarize this video")
+            second_client = FakeOpenAIClient([message_response("should not be used")])
+            with patch("deepfind.tools.transcribe_bili_audio") as second_transcribe_mock:
+                with patch.object(Settings, "new_client", return_value=second_client):
+                    second = toolset.bili_transcribe(
+                        "https://www.bilibili.com/video/BV1cgPSzeEj5",
+                        "  summarize this video  ",
+                    )
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(first["data"]["summary"], "cached summary body")
+        self.assertEqual(second["data"]["summary"], "cached summary body")
+        self.assertEqual(first["data"]["query"], "summarize this video")
+        self.assertEqual(second["data"]["query"], "summarize this video")
+        first_transcribe_mock.assert_called_once()
+        second_transcribe_mock.assert_not_called()
+        self.assertEqual(len(first_client.chat.completions.calls), 1)
+        self.assertEqual(second_client.chat.completions.calls, [])
 
     def test_bili_transcribe_full_success_payload(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -838,18 +871,19 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["error_code"], "invalid_query")
 
     def test_bili_transcribe_summary_error(self) -> None:
-        toolset = Toolset(Settings(api_key="x"))
-        fake_client = FakeOpenAIClient([message_response("")])
-        with patch(
-            "deepfind.tools.transcribe_bili_audio",
-            return_value={
-                "bili_id": "BV1cgPSzeEj5",
-                "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
-                "transcript": "line one",
-            },
-        ):
-            with patch.object(Settings, "new_client", return_value=fake_client):
-                result = toolset.bili_transcribe("BV1cgPSzeEj5", "总结这个视频")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            fake_client = FakeOpenAIClient([message_response("")])
+            with patch(
+                "deepfind.tools.transcribe_bili_audio",
+                return_value={
+                    "bili_id": "BV1cgPSzeEj5",
+                    "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                    "transcript": "line one",
+                },
+            ):
+                with patch.object(Settings, "new_client", return_value=fake_client):
+                    result = toolset.bili_transcribe("BV1cgPSzeEj5", "summarize this video")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "summary_failed")
 
