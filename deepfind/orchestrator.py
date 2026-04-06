@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
+import re
 from typing import Any, Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -57,6 +58,23 @@ LEAD_PROMPT = (
     "lead overview, mention uncertainty when the synthesis still has gaps, and rely on the provided synthesis instead "
     "of adding new facts."
 )
+LONG_REPORT_LEAD_PROMPT = (
+    "You are the lead researcher in an ongoing chat. Use the conversation history for context and answer the latest "
+    "user request using the provided synthesis JSON. Do not do more research in this stage. If tools are available, "
+    "they are only for final asset creation: call gen_img exactly once when the latest user request explicitly asks "
+    "for the final image asset, and call gen_slides exactly once when it explicitly asks for the final slide deck. "
+    "Do not claim an asset exists unless the corresponding tool succeeds. Write Thesis-like Markdown that serves as the "
+    "lead overview, including ## Abstract and ## Reference. In Reference, list only URLs that already appear in the "
+    "synthesis JSON citations and do not invent or fetch new links."
+)
+FORMAT_FOLLOWUP_PROMPT = (
+    "You are the lead editor in an ongoing chat. The user is asking you to transform the prior assistant answer into "
+    "a new presentation format. Work only from the provided prior assistant answer and the latest user request. Do "
+    "not do new research, do not call tools, and do not add facts that are not already present in the provided "
+    "answer. Preserve links, names, and numbers when possible. If the user asks for a table, output a Markdown "
+    "table. If the user asks for translation, translate only the provided content. If the prior answer lacks enough "
+    "detail for the requested transformation, say that briefly instead of inventing content."
+)
 
 _TRACKING_QUERY_KEYS = frozenset(
     {
@@ -73,6 +91,64 @@ _TRACKING_QUERY_KEYS = frozenset(
     }
 )
 _ALLOWED_CONFIDENCE = frozenset({"high", "medium", "low"})
+_DEFAULT_MAX_TOKENS = 1400
+_LONG_REPORT_LEAD_MAX_TOKENS = 3200
+_REFERENCE_SECTION_RE = re.compile(r"(?im)^\s{0,3}(?:#{1,6}\s*)?(?:Reference|references)\s*$")
+_QUERY_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+_FORMAT_FOLLOWUP_MARKERS = (
+    "表格",
+    "表",
+    "table",
+    "markdown table",
+    "列表",
+    "清单",
+    "list",
+    "bullet",
+    "要点",
+    "提纲",
+    "outline",
+    "翻译",
+    "translate",
+    "英文版",
+    "中文版",
+    "改写",
+    "重写",
+    "rewrite",
+    "rephrase",
+    "润色",
+    "polish",
+    "精简",
+    "简化",
+    "shorten",
+    "simplify",
+    "扩写",
+    "expand",
+    "整理",
+    "归纳",
+    "格式化",
+    "format",
+    "改成",
+    "转成",
+    "转为",
+    "json",
+    "yaml",
+    "csv",
+)
+_FORMAT_FOLLOWUP_DISQUALIFIERS = (
+    "搜索",
+    "查一下",
+    "查询",
+    "research",
+    "search",
+    "find",
+    "latest",
+    "news",
+    "最新",
+    "今天",
+    "today",
+    "重新研究",
+    "再搜",
+)
 
 
 def _fallback_tasks(query: str, count: int) -> list[str]:
@@ -103,6 +179,16 @@ def _synthesis_payload(query: str, reports: str) -> str:
 
 def _lead_payload(query: str, synthesis: str) -> str:
     return f"d={date.today().isoformat()}\nlatest_user_request={query}\nsynthesis={synthesis}"
+
+
+def _format_followup_payload(query: str, prior_answer: str, prior_user_request: str = "") -> str:
+    payload = {
+        "d": date.today().isoformat(),
+        "latest_user_request": query,
+        "prior_user_request": prior_user_request,
+        "prior_assistant_answer": prior_answer,
+    }
+    return dump_json(payload)
 
 
 def _normalize_task(item: object) -> str:
@@ -252,6 +338,7 @@ def _query_requests_slides(query: str) -> bool:
     lowered = query.lower()
     return any(token in lowered for token in ("slides", "slide deck", "\u5e7b\u706f", "\u5e7b\u706f\u7247"))
 
+
 def _lead_tool_names(query: str) -> list[str]:
     tools: list[str] = []
     if _query_requests_image(query):
@@ -259,6 +346,28 @@ def _lead_tool_names(query: str) -> list[str]:
     if _query_requests_slides(query):
         tools.append("gen_slides")
     return tools
+
+
+def _latest_message_content(transcript: Sequence[ChatMessage], role: str) -> str:
+    for message in reversed(transcript):
+        if message.role == role and message.content.strip():
+            return message.content.strip()
+    return ""
+
+
+def _should_shortcut_format_follow_up(query: str, transcript: Sequence[ChatMessage]) -> bool:
+    normalized = " ".join(query.lower().split())
+    if not normalized or len(normalized) > 160:
+        return False
+    if _query_requests_image(query) or _query_requests_slides(query):
+        return False
+    if _QUERY_URL_RE.search(query):
+        return False
+    if not _latest_message_content(transcript, "assistant"):
+        return False
+    if any(marker in normalized for marker in _FORMAT_FOLLOWUP_DISQUALIFIERS):
+        return False
+    return any(marker in normalized for marker in _FORMAT_FOLLOWUP_MARKERS)
 
 
 def _parse_report(agent_id: str, task: str, text: str, citations: list[str]) -> WorkerReport:
@@ -279,6 +388,49 @@ def _answer_from_envelope(envelope: dict[str, Any]) -> str:
     if isinstance(lead, dict):
         return str(lead.get("overview_md") or "").strip()
     return ""
+
+
+def _lead_instructions(long_report_mode: bool) -> str:
+    return LONG_REPORT_LEAD_PROMPT if long_report_mode else LEAD_PROMPT
+
+
+def _lead_max_tokens(long_report_mode: bool) -> int:
+    return _LONG_REPORT_LEAD_MAX_TOKENS if long_report_mode else _DEFAULT_MAX_TOKENS
+
+
+def _has_reference_section(text: str) -> bool:
+    return bool(_REFERENCE_SECTION_RE.search(text or ""))
+
+
+def _reference_urls_from_envelope(envelope: dict[str, Any]) -> list[str]:
+    citations = envelope.get("citations_dedup")
+    if not isinstance(citations, list):
+        return []
+    urls: list[str] = []
+    for item in citations:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("canonical_url") or item.get("url") or "").strip()
+        if url:
+            urls.append(url)
+    return _dedupe_keep_order(urls)
+
+
+def _finalize_turn_envelope(envelope: dict[str, Any], *, long_report_mode: bool) -> dict[str, Any]:
+    if not long_report_mode:
+        return envelope
+    lead = envelope.get("lead")
+    if not isinstance(lead, dict):
+        return envelope
+    overview = str(lead.get("overview_md") or "").strip()
+    if _has_reference_section(overview):
+        return envelope
+    reference_urls = _reference_urls_from_envelope(envelope)
+    if not reference_urls:
+        return envelope
+    reference_block = "## Reference\n\n" + "\n".join(f"- {url}" for url in reference_urls)
+    lead["overview_md"] = f"{overview}\n\n{reference_block}".strip() if overview else reference_block
+    return envelope
 
 
 def _is_tracking_query_key(key: str) -> bool:
@@ -472,19 +624,37 @@ class DeepFind:
         self.tools = Toolset(self.settings)
         self.progress = progress
 
-    def session(self, num_agent: int, max_iter_per_agent: int) -> "ChatSession":
+    def session(
+        self,
+        num_agent: int,
+        max_iter_per_agent: int,
+        long_report_mode: bool = False,
+    ) -> "ChatSession":
         num_agent, max_iter_per_agent = self._validated_run_args(num_agent, max_iter_per_agent)
         return ChatSession(
             app=self,
             num_agent=num_agent,
             max_iter_per_agent=max_iter_per_agent,
+            long_report_mode=long_report_mode,
         )
 
-    def run(self, query: str, num_agent: int, max_iter_per_agent: int) -> str:
-        return self.session(num_agent, max_iter_per_agent).ask(query)
+    def run(
+        self,
+        query: str,
+        num_agent: int,
+        max_iter_per_agent: int,
+        long_report_mode: bool = False,
+    ) -> str:
+        return self.session(num_agent, max_iter_per_agent, long_report_mode=long_report_mode).ask(query)
 
-    def run_detailed(self, query: str, num_agent: int, max_iter_per_agent: int) -> dict[str, Any]:
-        return self.session(num_agent, max_iter_per_agent).ask_detailed(query)
+    def run_detailed(
+        self,
+        query: str,
+        num_agent: int,
+        max_iter_per_agent: int,
+        long_report_mode: bool = False,
+    ) -> dict[str, Any]:
+        return self.session(num_agent, max_iter_per_agent, long_report_mode=long_report_mode).ask_detailed(query)
 
     def _validated_run_args(self, num_agent: int, max_iter_per_agent: int) -> tuple[int, int]:
         if not 1 <= num_agent <= 4:
@@ -499,12 +669,14 @@ class DeepFind:
         transcript: Sequence[ChatMessage],
         num_agent: int,
         max_iter_per_agent: int,
+        long_report_mode: bool = False,
     ) -> str:
         envelope, _ = self._run_turn_structured(
             query=query,
             transcript=transcript,
             num_agent=num_agent,
             max_iter_per_agent=max_iter_per_agent,
+            long_report_mode=long_report_mode,
         )
         return _answer_from_envelope(envelope)
 
@@ -514,12 +686,14 @@ class DeepFind:
         transcript: Sequence[ChatMessage],
         num_agent: int,
         max_iter_per_agent: int,
+        long_report_mode: bool = False,
     ) -> tuple[str, list[WorkerReport]]:
         envelope, reports = self._run_turn_structured(
             query=query,
             transcript=transcript,
             num_agent=num_agent,
             max_iter_per_agent=max_iter_per_agent,
+            long_report_mode=long_report_mode,
         )
         return _answer_from_envelope(envelope), reports
 
@@ -529,13 +703,28 @@ class DeepFind:
         transcript: Sequence[ChatMessage],
         num_agent: int,
         max_iter_per_agent: int,
+        long_report_mode: bool = False,
     ) -> tuple[dict[str, Any], list[WorkerReport]]:
         if self.progress:
             self.progress.run_started(query, num_agent, max_iter_per_agent)
+        if _should_shortcut_format_follow_up(query, transcript):
+            envelope = self._format_follow_up(
+                query,
+                transcript,
+                num_agent=num_agent,
+                max_iter=max_iter_per_agent,
+            )
+            return envelope, []
         tasks = self._plan(query, transcript, num_agent, max_iter_per_agent)
         reports = self._run_workers(query, transcript, tasks, max_iter_per_agent)
         synthesis = self._synthesize(query, transcript, reports, max_iter_per_agent)
-        lead_overview = self._lead(query, transcript, synthesis, max_iter_per_agent).strip()
+        lead_overview = self._lead(
+            query,
+            transcript,
+            synthesis,
+            max_iter_per_agent,
+            long_report_mode=long_report_mode,
+        ).strip()
         envelope = _build_turn_envelope(
             query=query,
             lead_overview=lead_overview,
@@ -544,7 +733,44 @@ class DeepFind:
             num_agent=num_agent,
             max_iter_per_agent=max_iter_per_agent,
         )
+        _finalize_turn_envelope(envelope, long_report_mode=long_report_mode)
         return envelope, reports
+
+    def _format_follow_up(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        *,
+        num_agent: int,
+        max_iter: int,
+    ) -> dict[str, Any]:
+        prior_answer = _latest_message_content(transcript, "assistant")
+        prior_user_request = _latest_message_content(transcript, "user")
+        agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
+        result = agent.run(
+            name="lead-format",
+            instructions=FORMAT_FOLLOWUP_PROMPT,
+            user_input=_format_followup_payload(query, prior_answer, prior_user_request),
+            use_tools=False,
+            max_tokens=_DEFAULT_MAX_TOKENS,
+        )
+        synthesis = {
+            "overview_md": prior_answer,
+            "key_points": [],
+            "disagreements": [],
+            "gaps": [],
+            "next_steps": [],
+        }
+        envelope = _build_turn_envelope(
+            query=query,
+            lead_overview=result.text.strip(),
+            synthesis=synthesis,
+            reports=[],
+            num_agent=num_agent,
+            max_iter_per_agent=max_iter,
+        )
+        envelope["meta"]["shortcut"] = "format_follow_up"
+        return envelope
 
     def _plan(
         self,
@@ -619,17 +845,19 @@ class DeepFind:
         transcript: Sequence[ChatMessage],
         synthesis: dict[str, Any],
         max_iter: int,
+        long_report_mode: bool = False,
     ) -> str:
         history = _history_messages(transcript)
         agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
         tool_names = _lead_tool_names(query)
         result = agent.run(
             name="lead-final",
-            instructions=LEAD_PROMPT,
+            instructions=_lead_instructions(long_report_mode),
             user_input=_lead_payload(query, dump_json(synthesis)),
             use_tools=bool(tool_names),
             history=history,
             tool_names=tool_names or None,
+            max_tokens=_lead_max_tokens(long_report_mode),
         )
         return result.text
 
@@ -676,6 +904,7 @@ class ChatSession:
     app: DeepFind
     num_agent: int
     max_iter_per_agent: int
+    long_report_mode: bool = False
     transcript: list[ChatMessage] = field(default_factory=list)
 
     def _run_and_store(self, query: str) -> dict[str, Any]:
@@ -685,6 +914,7 @@ class ChatSession:
             transcript=transcript,
             num_agent=self.num_agent,
             max_iter_per_agent=self.max_iter_per_agent,
+            long_report_mode=self.long_report_mode,
         )
         answer = _answer_from_envelope(envelope)
         self.transcript.extend(

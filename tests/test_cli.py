@@ -47,9 +47,32 @@ class CliTests(unittest.TestCase):
         app_cls.return_value.session.assert_called_once_with(
             num_agent=3,
             max_iter_per_agent=7,
+            long_report_mode=False,
         )
         session.ask.assert_called_once_with("test query")
         session.ask_detailed.assert_not_called()
+
+    def test_main_passes_long_report_mode_to_session(self) -> None:
+        with patch("deepfind.cli.DeepFind") as app_cls:
+            session = app_cls.return_value.session.return_value
+            session.ask.return_value = "long report"
+            stdout = io.StringIO()
+
+            code = main(
+                ["benchmark query", "--long-report-mode"],
+                stdin=NonTtyStringIO(),
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "long report")
+        app_cls.return_value.session.assert_called_once_with(
+            num_agent=2,
+            max_iter_per_agent=50,
+            long_report_mode=True,
+        )
+        session.ask.assert_called_once_with("benchmark query")
 
     def test_main_prints_structured_json_when_requested(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:
@@ -82,6 +105,11 @@ class CliTests(unittest.TestCase):
                 "citations_dedup": [],
                 "meta": {},
             },
+        )
+        app_cls.return_value.session.assert_called_once_with(
+            num_agent=2,
+            max_iter_per_agent=50,
+            long_report_mode=False,
         )
         session.ask_detailed.assert_called_once_with("test query")
         session.ask.assert_not_called()
