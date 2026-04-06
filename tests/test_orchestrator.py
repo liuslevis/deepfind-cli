@@ -333,6 +333,45 @@ class OrchestratorTests(unittest.TestCase):
 
         self.assertEqual(envelope["lead"]["overview_md"], lead_text)
 
+    def test_run_turn_structured_uses_raw_report_citations_for_long_report_references(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        fake_reports = [
+            WorkerReport(
+                task="task",
+                text="worker markdown that was not valid json",
+                citations=["https://example.com/source?utm_source=news"],
+                parsed={
+                    "summary": "worker markdown that was not valid json",
+                    "claims": [],
+                    "gaps": ["non_json_output"],
+                },
+                agent_id="sub-1",
+            )
+        ]
+        fake_synthesis = {
+            "overview_md": "draft overview",
+            "key_points": [],
+            "disagreements": [],
+            "gaps": ["non_json_output"],
+            "next_steps": [],
+        }
+        with patch.object(app, "_plan", return_value=["task"]):
+            with patch.object(app, "_run_workers", return_value=fake_reports):
+                with patch.object(app, "_synthesize", return_value=fake_synthesis):
+                    with patch.object(app, "_lead", return_value="## Conclusion\n\nLead text"):
+                        envelope, _ = app._run_turn_structured(
+                            "topic",
+                            transcript=[],
+                            num_agent=1,
+                            max_iter_per_agent=2,
+                            long_report_mode=True,
+                        )
+
+        self.assertIn("## Reference", envelope["lead"]["overview_md"])
+        self.assertIn("- https://example.com/source", envelope["lead"]["overview_md"])
+        self.assertEqual(envelope["citations_dedup"][0]["canonical_url"], "https://example.com/source")
+
     def test_chat_session_keeps_full_successful_transcript(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)

@@ -48,13 +48,14 @@ class FakeSettings:
 class FakeTools:
     def __init__(self):
         self.invocations = []
+        self.output = '{"ok":true}'
 
     def specs(self):
         return [{"type": "function", "function": {"name": "twitter_search"}}]
 
     def call(self, name, arguments):
         self.invocations.append((name, arguments))
-        return '{"ok":true}'
+        return self.output
 
 
 class ResponseAgentTests(unittest.TestCase):
@@ -112,6 +113,27 @@ class ResponseAgentTests(unittest.TestCase):
         result = agent.run("lead", "prompt", "q=test", use_tools=False)
 
         self.assertIn("empty_output", result.text)
+
+    def test_collects_citations_from_tool_outputs(self) -> None:
+        tool_call = SimpleNamespace(
+            id="call-1",
+            function=SimpleNamespace(name="twitter_search", arguments='{"query":"openai"}'),
+        )
+        settings = FakeSettings(
+            [
+                message_response("", tool_calls=[tool_call]),
+                message_response('{"summary":"ok","facts":[],"gaps":[]}'),
+            ]
+        )
+        tools = FakeTools()
+        tools.output = (
+            '{"ok":true,"tool":"web_search","data":[{"url":"https://example.com/article","title":"Example"}]}'
+        )
+        agent = ResponseAgent(settings=settings, tools=tools, max_iter=3)
+
+        result = agent.run("worker", "short prompt", "q=test", use_tools=True)
+
+        self.assertEqual(result.citations, ["https://example.com/article"])
 
     def test_filters_tools_when_tool_names_are_provided(self) -> None:
         settings = FakeSettings([message_response('{"summary":"ok","facts":[],"gaps":[]}')])
