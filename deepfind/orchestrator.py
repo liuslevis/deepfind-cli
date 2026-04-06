@@ -40,13 +40,15 @@ WORKER_PROMPT = (
     "video/audio, call youtube_transcribe with the URL or video ID before summarizing. If the latest user request "
     "asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image "
     "asset. If the latest user request asks for slides, do not call gen_slides unless the assigned task explicitly "
-    'asks you to produce the final slide asset. JSON only: {"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}.'
+    "asks you to produce the final slide asset. When a claim is backed by a tool result, include the exact source URL "
+    'in claim.citations and keep the most relevant 1-3 URLs. JSON only: {"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}.'
 )
 SYNTHESIS_PROMPT = (
     "You are the lead synthesis coordinator in an ongoing research chat. Use the conversation history when needed, "
     "merge the worker reports, identify the strongest evidence, and fill gaps with tools when the reports are "
     "incomplete or conflicting. For broad web research, prefer the two-step flow: web_search first, then web_fetch "
-    "for deep reading. Keep platform-specific work on the matching tools. JSON only: "
+    "for deep reading. Keep platform-specific work on the matching tools. Preserve exact source URLs from worker "
+    "claims and report citations in each key point whenever evidence is available. JSON only: "
     '{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}.'
 )
 LEAD_PROMPT = (
@@ -63,9 +65,9 @@ LONG_REPORT_LEAD_PROMPT = (
     "user request using the provided synthesis JSON. Do not do more research in this stage. If tools are available, "
     "they are only for final asset creation: call gen_img exactly once when the latest user request explicitly asks "
     "for the final image asset, and call gen_slides exactly once when it explicitly asks for the final slide deck. "
-    "Do not claim an asset exists unless the corresponding tool succeeds. Write Thesis-like Markdown that serves as the "
-    "lead overview, including ## Abstract and ## Reference. In Reference, list only URLs that already appear in the "
-    "synthesis JSON citations and do not invent or fetch new links."
+    "Do not claim an asset exists unless the corresponding tool succeeds. Write Thesis-like Markdown in the current "
+    "language that serves as the lead overview, including ## Conclusion and ## Reference. In Reference, "
+    "list only URLs that already appear in the synthesis JSON citations and do not invent or fetch new links."
 )
 FORMAT_FOLLOWUP_PROMPT = (
     "You are the lead editor in an ongoing chat. The user is asking you to transform the prior assistant answer into "
@@ -577,6 +579,13 @@ def _build_turn_envelope(
             source_agent=source_agent,
             source_section="claim",
         )
+        for index, raw_url in enumerate(_dedupe_keep_order(report.citations), start=1):
+            collector.record(
+                raw_url,
+                source_agent=source_agent,
+                source_section="report",
+                source_index=index,
+            )
         agents.append(
             {
                 "agent_id": source_agent,
@@ -931,4 +940,3 @@ class ChatSession:
 
     def ask_detailed(self, query: str) -> dict[str, Any]:
         return self._run_and_store(query)
-
