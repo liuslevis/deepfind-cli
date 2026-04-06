@@ -17,6 +17,7 @@ class WorkerReport:
     text: str
     citations: list[str]
     parsed: dict
+    agent_id: str = ""
 
 
 @dataclass(frozen=True)

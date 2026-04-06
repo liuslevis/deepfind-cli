@@ -11,6 +11,8 @@ from deepfind.orchestrator import (
     PLAN_PROMPT,
     SYNTHESIS_PROMPT,
     WORKER_PROMPT,
+    _canonicalize_url,
+    _parse_report,
 )
 
 
@@ -25,28 +27,22 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(tasks[0], "one task")
         self.assertTrue(agent_cls.return_value.run.call_args.kwargs["use_tools"])
 
-    def test_worker_prompt_mentions_bilibili_tools(self) -> None:
+    def test_worker_prompt_mentions_claims_schema(self) -> None:
         self.assertIn("boss_search", WORKER_PROMPT)
         self.assertIn("bili_search", WORKER_PROMPT)
-        self.assertIn("bili_get_user_videos", WORKER_PROMPT)
         self.assertIn("bili_transcribe", WORKER_PROMPT)
-        self.assertIn("bili_transcribe_full", WORKER_PROMPT)
-        self.assertIn("short query", WORKER_PROMPT)
         self.assertIn("youtube_transcribe", WORKER_PROMPT)
-        self.assertIn("web_fetch", WORKER_PROMPT)
-        self.assertIn("Bilibili", WORKER_PROMPT)
-        self.assertIn("BOSS Zhipin", WORKER_PROMPT)
-        self.assertIn("YouTube", WORKER_PROMPT)
-        self.assertIn("web_search", WORKER_PROMPT)
-        self.assertIn("gen_img", WORKER_PROMPT)
-        self.assertIn("gen_slides", WORKER_PROMPT)
+        self.assertIn('"claims"', WORKER_PROMPT)
+        self.assertIn('"citations"', WORKER_PROMPT)
+        self.assertIn('"confidence"', WORKER_PROMPT)
 
-    def test_synthesis_prompt_mentions_web_fetch(self) -> None:
+    def test_synthesis_prompt_mentions_key_points(self) -> None:
         self.assertIn("web_search", SYNTHESIS_PROMPT)
         self.assertIn("web_fetch", SYNTHESIS_PROMPT)
-        self.assertIn("JSON only", SYNTHESIS_PROMPT)
+        self.assertIn('"overview_md"', SYNTHESIS_PROMPT)
+        self.assertIn('"key_points"', SYNTHESIS_PROMPT)
 
-    def test_lead_prompt_mentions_gen_img(self) -> None:
+    def test_lead_prompt_mentions_asset_tools(self) -> None:
         self.assertIn("gen_img", LEAD_PROMPT)
         self.assertIn("gen_slides", LEAD_PROMPT)
         self.assertIn("synthesis", LEAD_PROMPT)
@@ -58,6 +54,14 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("BOSS Zhipin", PLAN_PROMPT)
         self.assertIn("YouTube", PLAN_PROMPT)
 
+    def test_parse_report_non_json_does_not_fabricate_citations(self) -> None:
+        report = _parse_report("sub-1", "task", "plain text result", ["https://example.com/source"])
+
+        self.assertEqual(report.agent_id, "sub-1")
+        self.assertEqual(report.parsed["summary"], "plain text result")
+        self.assertEqual(report.parsed["claims"], [])
+        self.assertEqual(report.parsed["gaps"], ["non_json_output"])
+
     def test_synthesize_falls_back_when_output_is_not_json(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
@@ -68,39 +72,121 @@ class OrchestratorTests(unittest.TestCase):
                 citations=["https://example.com/source"],
                 parsed={
                     "summary": "worker summary",
-                    "facts": [{"point": "fact", "source": "https://example.com/source"}],
+                    "claims": [
+                        {
+                            "text": "fact",
+                            "citations": ["https://example.com/source"],
+                            "confidence": "high",
+                        }
+                    ],
                     "gaps": ["missing_data"],
                 },
+                agent_id="sub-1",
             )
         ]
         with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
             agent_cls.return_value.run.return_value.text = "not json"
             synthesis = app._synthesize("topic", transcript=[], reports=reports, max_iter=2)
-        self.assertEqual(synthesis["summary"], "worker summary")
-        self.assertEqual(synthesis["sources"], ["https://example.com/source"])
+        self.assertEqual(synthesis["overview_md"], "worker summary")
+        self.assertEqual(synthesis["key_points"][0]["text"], "fact")
+        self.assertEqual(synthesis["key_points"][0]["citations"], ["https://example.com/source"])
         self.assertIn("Investigate gap: missing_data", synthesis["next_steps"])
 
-    def test_run_turn_detailed_passes_synthesis_to_lead(self) -> None:
+    def test_run_turn_structured_builds_citation_occurrences_and_dedup(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
-        fake_reports = []
-        fake_synthesis = {"summary": "syn", "evidence": [], "gaps": [], "sources": [], "next_steps": []}
-        with patch.object(app, "_plan", return_value=["task"]) as plan:
+        fake_reports = [
+            WorkerReport(
+                task="task a",
+                text="worker a",
+                citations=[],
+                parsed={
+                    "summary": "summary a",
+                    "claims": [
+                        {
+                            "text": "claim a",
+                            "citations": [
+                                "https://EXAMPLE.com/report?utm_source=news#top",
+                                "https://example.com/report",
+                            ],
+                            "confidence": "high",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-1",
+            ),
+            WorkerReport(
+                task="task b",
+                text="worker b",
+                citations=[],
+                parsed={
+                    "summary": "summary b",
+                    "claims": [
+                        {
+                            "text": "claim b",
+                            "citations": ["https://example.com/report?utm_medium=social"],
+                            "confidence": "medium",
+                        }
+                    ],
+                    "gaps": ["missing"],
+                },
+                agent_id="sub-2",
+            ),
+        ]
+        fake_synthesis = {
+            "overview_md": "draft overview",
+            "key_points": [
+                {
+                    "text": "lead point",
+                    "citations": ["https://example.com/report?utm_campaign=launch"],
+                    "confidence": "low",
+                }
+            ],
+            "disagreements": ["workers differ on size"],
+            "gaps": ["missing"],
+            "next_steps": ["check primary source"],
+        }
+        with patch.object(app, "_plan", return_value=["task a", "task b"]) as plan:
             with patch.object(app, "_run_workers", return_value=fake_reports) as run_workers:
                 with patch.object(app, "_synthesize", return_value=fake_synthesis) as synthesize:
-                    with patch.object(app, "_lead", return_value="final answer") as lead:
-                        answer, reports = app._run_turn_detailed("topic", transcript=[], num_agent=1, max_iter_per_agent=2)
-        self.assertEqual(answer, "final answer")
+                    with patch.object(app, "_lead", return_value="final lead overview") as lead:
+                        envelope, reports = app._run_turn_structured(
+                            "topic",
+                            transcript=[],
+                            num_agent=2,
+                            max_iter_per_agent=2,
+                        )
+
         self.assertEqual(reports, fake_reports)
+        self.assertEqual(envelope["lead"]["overview_md"], "final lead overview")
+        self.assertEqual(envelope["agents"][0]["claims"][0]["citation_ids"], ["c1"])
+        self.assertEqual(envelope["agents"][1]["claims"][0]["citation_ids"], ["c1"])
+        self.assertEqual(envelope["lead"]["key_points"][0]["citation_ids"], ["c1"])
+        self.assertEqual(len(envelope["citations"]), 4)
+        self.assertEqual(len(envelope["citations_dedup"]), 1)
+        self.assertEqual(envelope["citations_dedup"][0]["canonical_url"], "https://example.com/report")
+        self.assertEqual(
+            [item["source_agent"] for item in envelope["citations"]],
+            ["sub-1", "sub-1", "sub-2", "lead"],
+        )
+        self.assertEqual(
+            [item["source_section"] for item in envelope["citations"]],
+            ["claim", "claim", "claim", "key_point"],
+        )
+        self.assertEqual(envelope["lead"]["disagreements"], ["workers differ on size"])
+        self.assertEqual(envelope["lead"]["next_steps"], ["check primary source"])
+        self.assertEqual(envelope["meta"]["num_agents"], 2)
+        self.assertEqual(envelope["meta"]["max_iter_per_agent"], 2)
         plan.assert_called_once()
         run_workers.assert_called_once()
         synthesize.assert_called_once()
-        self.assertEqual(lead.call_args.args[2], fake_synthesis)
+        lead.assert_called_once()
 
     def test_lead_uses_only_asset_tools_when_requested(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
-        synthesis = {"summary": "syn", "evidence": [], "gaps": [], "sources": [], "next_steps": []}
+        synthesis = {"overview_md": "syn", "key_points": [], "disagreements": [], "gaps": [], "next_steps": []}
         with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
             agent_cls.return_value.run.return_value.text = "answer"
             app._lead("Generate slides from this summary", transcript=[], synthesis=synthesis, max_iter=2)
@@ -110,7 +196,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_lead_skips_tools_for_normal_research_answer(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
-        synthesis = {"summary": "syn", "evidence": [], "gaps": [], "sources": [], "next_steps": []}
+        synthesis = {"overview_md": "syn", "key_points": [], "disagreements": [], "gaps": [], "next_steps": []}
         with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
             agent_cls.return_value.run.return_value.text = "answer"
             app._lead("Summarize the findings", transcript=[], synthesis=synthesis, max_iter=2)
@@ -121,7 +207,14 @@ class OrchestratorTests(unittest.TestCase):
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
         session = app.session(num_agent=1, max_iter_per_agent=2)
-        with patch.object(app, "_run_turn", side_effect=["first answer", "second answer"]) as run_turn:
+        with patch.object(
+            app,
+            "_run_turn_structured",
+            side_effect=[
+                ({"lead": {"overview_md": "first answer"}}, []),
+                ({"lead": {"overview_md": "second answer"}}, []),
+            ],
+        ) as run_turn:
             session.ask("first question")
             session.ask("follow up")
         self.assertEqual(run_turn.call_args_list[0].kwargs["transcript"], [])
@@ -131,4 +224,35 @@ class OrchestratorTests(unittest.TestCase):
                 ChatMessage(role="user", content="first question"),
                 ChatMessage(role="assistant", content="first answer"),
             ],
+        )
+
+    def test_chat_session_ask_detailed_returns_envelope_and_updates_transcript(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        session = app.session(num_agent=1, max_iter_per_agent=2)
+        envelope = {
+            "version": "research.v1",
+            "lead": {"overview_md": "overview"},
+            "agents": [],
+            "citations": [],
+            "citations_dedup": [],
+            "meta": {},
+        }
+        with patch.object(app, "_run_turn_structured", return_value=(envelope, [])) as run_turn:
+            result = session.ask_detailed("question")
+
+        self.assertIs(result, envelope)
+        self.assertEqual(
+            session.transcript,
+            [
+                ChatMessage(role="user", content="question"),
+                ChatMessage(role="assistant", content="overview"),
+            ],
+        )
+        run_turn.assert_called_once()
+
+    def test_canonicalize_url_normalizes_host_and_tracking(self) -> None:
+        self.assertEqual(
+            _canonicalize_url("HTTPS://Example.com/report?utm_source=news&utm_medium=social#frag"),
+            "https://example.com/report",
         )
