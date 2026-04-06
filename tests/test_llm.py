@@ -79,6 +79,7 @@ class ResponseAgentTests(unittest.TestCase):
         self.assertEqual(result.text, '{"summary":"ok","facts":[],"gaps":[]}')
         calls = settings.new_client().chat.completions.calls
         self.assertEqual(calls[0]["messages"][0]["content"], "short prompt")
+        self.assertEqual(calls[0]["max_tokens"], 1400)
         self.assertEqual(calls[1]["messages"][2]["tool_calls"][0]["function"]["name"], "twitter_search")
         self.assertEqual(calls[1]["messages"][2]["tool_calls"][0]["function"]["arguments"], '{"query":"openai"}')
         self.assertEqual(calls[1]["messages"][3]["role"], "tool")
@@ -146,3 +147,12 @@ class ResponseAgentTests(unittest.TestCase):
         self.assertEqual(messages[1], {"role": "user", "content": "q=previous"})
         self.assertEqual(messages[2], {"role": "assistant", "content": "a=previous"})
         self.assertEqual(messages[3], {"role": "user", "content": "q=current"})
+
+    def test_respects_max_tokens_override(self) -> None:
+        settings = FakeSettings([message_response('{"summary":"ok","facts":[],"gaps":[]}')])
+        agent = ResponseAgent(settings=settings, tools=FakeTools(), max_iter=1)
+
+        agent.run("lead", "prompt", "q=test", use_tools=False, max_tokens=3200)
+
+        calls = settings.new_client().chat.completions.calls
+        self.assertEqual(calls[0]["max_tokens"], 3200)

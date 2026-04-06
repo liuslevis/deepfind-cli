@@ -7,12 +7,16 @@ from deepfind.config import Settings
 from deepfind.models import ChatMessage, WorkerReport
 from deepfind.orchestrator import (
     DeepFind,
+    FORMAT_FOLLOWUP_PROMPT,
     LEAD_PROMPT,
+    LONG_REPORT_LEAD_PROMPT,
     PLAN_PROMPT,
     SYNTHESIS_PROMPT,
     WORKER_PROMPT,
+    _LONG_REPORT_LEAD_MAX_TOKENS,
     _canonicalize_url,
     _parse_report,
+    _should_shortcut_format_follow_up,
 )
 
 
@@ -46,6 +50,11 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("gen_img", LEAD_PROMPT)
         self.assertIn("gen_slides", LEAD_PROMPT)
         self.assertIn("synthesis", LEAD_PROMPT)
+
+    def test_long_report_prompt_mentions_required_sections(self) -> None:
+        self.assertIn("## Conclusion", LONG_REPORT_LEAD_PROMPT)
+        self.assertIn("## Reference", LONG_REPORT_LEAD_PROMPT)
+        self.assertIn("current language", LONG_REPORT_LEAD_PROMPT)
 
     def test_plan_prompt_mentions_slides(self) -> None:
         self.assertIn("slides", PLAN_PROMPT)
@@ -192,6 +201,7 @@ class OrchestratorTests(unittest.TestCase):
             app._lead("Generate slides from this summary", transcript=[], synthesis=synthesis, max_iter=2)
         self.assertTrue(agent_cls.return_value.run.call_args.kwargs["use_tools"])
         self.assertEqual(agent_cls.return_value.run.call_args.kwargs["tool_names"], ["gen_slides"])
+        self.assertEqual(agent_cls.return_value.run.call_args.kwargs["max_tokens"], 1400)
 
     def test_lead_skips_tools_for_normal_research_answer(self) -> None:
         settings = Settings(api_key="x")
@@ -202,6 +212,126 @@ class OrchestratorTests(unittest.TestCase):
             app._lead("Summarize the findings", transcript=[], synthesis=synthesis, max_iter=2)
         self.assertFalse(agent_cls.return_value.run.call_args.kwargs["use_tools"])
         self.assertIsNone(agent_cls.return_value.run.call_args.kwargs["tool_names"])
+
+    def test_lead_uses_long_report_prompt_and_more_tokens(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        synthesis = {"overview_md": "syn", "key_points": [], "disagreements": [], "gaps": [], "next_steps": []}
+        with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
+            agent_cls.return_value.run.return_value.text = "answer"
+            app._lead("Write a benchmark report", transcript=[], synthesis=synthesis, max_iter=2, long_report_mode=True)
+        self.assertEqual(agent_cls.return_value.run.call_args.kwargs["instructions"], LONG_REPORT_LEAD_PROMPT)
+        self.assertEqual(agent_cls.return_value.run.call_args.kwargs["max_tokens"], _LONG_REPORT_LEAD_MAX_TOKENS)
+
+    def test_run_turn_structured_appends_reference_links_in_long_report_mode(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        fake_reports = [
+            WorkerReport(
+                task="task a",
+                text="worker a",
+                citations=[],
+                parsed={
+                    "summary": "summary a",
+                    "claims": [
+                        {
+                            "text": "claim a",
+                            "citations": [
+                                "https://EXAMPLE.com/report?utm_source=news#top",
+                                "https://example.com/report",
+                            ],
+                            "confidence": "high",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-1",
+            ),
+            WorkerReport(
+                task="task b",
+                text="worker b",
+                citations=[],
+                parsed={
+                    "summary": "summary b",
+                    "claims": [
+                        {
+                            "text": "claim b",
+                            "citations": ["https://example.com/report?utm_medium=social"],
+                            "confidence": "medium",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-2",
+            ),
+        ]
+        fake_synthesis = {
+            "overview_md": "draft overview",
+            "key_points": [
+                {
+                    "text": "lead point",
+                    "citations": ["https://example.com/report?utm_campaign=launch"],
+                    "confidence": "low",
+                }
+            ],
+            "disagreements": [],
+            "gaps": [],
+            "next_steps": [],
+        }
+        with patch.object(app, "_plan", return_value=["task a", "task b"]):
+            with patch.object(app, "_run_workers", return_value=fake_reports):
+                with patch.object(app, "_synthesize", return_value=fake_synthesis):
+                    with patch.object(app, "_lead", return_value="## Conclusion\n\nLong Report Text"):
+                        envelope, _ = app._run_turn_structured(
+                            "topic",
+                            transcript=[],
+                            num_agent=2,
+                            max_iter_per_agent=2,
+                            long_report_mode=True,
+                        )
+
+        self.assertIn("## Reference", envelope["lead"]["overview_md"])
+        self.assertEqual(envelope["lead"]["overview_md"].count("## Reference"), 1)
+        self.assertIn("- https://example.com/report", envelope["lead"]["overview_md"])
+        self.assertNotIn("utm_", envelope["lead"]["overview_md"])
+
+    def test_run_turn_structured_keeps_existing_reference_section_in_long_report_mode(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        fake_reports = [
+            WorkerReport(
+                task="task",
+                text="worker",
+                citations=[],
+                parsed={
+                    "summary": "summary",
+                    "claims": [
+                        {
+                            "text": "claim",
+                            "citations": ["https://example.com/report?utm_source=news"],
+                            "confidence": "high",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-1",
+            )
+        ]
+        fake_synthesis = {"overview_md": "draft", "key_points": [], "disagreements": [], "gaps": [], "next_steps": []}
+        lead_text = "## Conclusion\n\nText\n\n## Reference\n\n- https://example.com/already"
+        with patch.object(app, "_plan", return_value=["task"]):
+            with patch.object(app, "_run_workers", return_value=fake_reports):
+                with patch.object(app, "_synthesize", return_value=fake_synthesis):
+                    with patch.object(app, "_lead", return_value=lead_text):
+                        envelope, _ = app._run_turn_structured(
+                            "topic",
+                            transcript=[],
+                            num_agent=1,
+                            max_iter_per_agent=2,
+                            long_report_mode=True,
+                        )
+
+        self.assertEqual(envelope["lead"]["overview_md"], lead_text)
 
     def test_chat_session_keeps_full_successful_transcript(self) -> None:
         settings = Settings(api_key="x")
@@ -256,3 +386,52 @@ class OrchestratorTests(unittest.TestCase):
             _canonicalize_url("HTTPS://Example.com/report?utm_source=news&utm_medium=social#frag"),
             "https://example.com/report",
         )
+
+    def test_should_shortcut_format_follow_up_requires_prior_assistant_answer(self) -> None:
+        self.assertFalse(_should_shortcut_format_follow_up("Generate Table", []))
+        self.assertFalse(
+            _should_shortcut_format_follow_up(
+                "Generate Table",
+                [ChatMessage(role="user", content="first question")],
+            )
+        )
+
+    def test_should_shortcut_format_follow_up_rejects_new_research_queries(self) -> None:
+        transcript = [
+            ChatMessage(role="user", content="Summarize this video"),
+            ChatMessage(role="assistant", content="Here is the summary."),
+        ]
+        self.assertFalse(_should_shortcut_format_follow_up("Search Latest Progress and Generate Table", transcript))
+        self.assertFalse(_should_shortcut_format_follow_up("Generate a table for https://example.com", transcript))
+
+    def test_run_turn_structured_shortcuts_format_follow_up_without_research(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        transcript = [
+            ChatMessage(role="user", content="Summarize this Bilibili interview"),
+            ChatMessage(role="assistant", content="Summary line 1\n\nSummary line 2"),
+        ]
+        with patch.object(app, "_plan") as plan:
+            with patch.object(app, "_run_workers") as run_workers:
+                with patch.object(app, "_synthesize") as synthesize:
+                    with patch.object(app, "_lead") as lead:
+                        with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
+                            agent_cls.return_value.run.return_value.text = "| Topic | Detail |\n| --- | --- |\n| A | B |"
+                            envelope, reports = app._run_turn_structured(
+                                "Generate Table",
+                                transcript=transcript,
+                                num_agent=1,
+                                max_iter_per_agent=2,
+                            )
+
+        self.assertEqual(reports, [])
+        self.assertEqual(envelope["lead"]["overview_md"], "| Topic | Detail |\n| --- | --- |\n| A | B |")
+        self.assertEqual(envelope["agents"], [])
+        self.assertEqual(envelope["meta"]["shortcut"], "format_follow_up")
+        plan.assert_not_called()
+        run_workers.assert_not_called()
+        synthesize.assert_not_called()
+        lead.assert_not_called()
+        self.assertEqual(agent_cls.return_value.run.call_args.kwargs["name"], "lead-format")
+        self.assertEqual(agent_cls.return_value.run.call_args.kwargs["instructions"], FORMAT_FOLLOWUP_PROMPT)
+        self.assertFalse(agent_cls.return_value.run.call_args.kwargs["use_tools"])

@@ -41,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print structured research JSON instead of human-readable Markdown",
     )
+    parser.add_argument(
+        "--long-report-mode",
+        action="store_true",
+        help="use long-form final report output instead of the default concise overview",
+    )
     return parser
 
 
@@ -118,6 +123,7 @@ def main(
         session = app.session(
             num_agent=args.num_agent,
             max_iter_per_agent=args.max_iter_per_agent,
+            long_report_mode=args.long_report_mode,
         )
         answer = session.ask_detailed(args.query) if args.json else session.ask(args.query)
     except Exception as exc:

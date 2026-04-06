@@ -33,6 +33,8 @@ uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 
 
 uv run -m deepfind.cli "Help me search Agent jobs on Boss" --num-agent 1
 
+uv run -m deepfind.cli "help me survey robotics arms industry" --num-agent 3 --long-report-mode --once
+
 uv run -m deepfind.cli --list-tools
 ```
 
@@ -121,7 +123,11 @@ Flags:
 - `--max-iter-per-agent`: default `50`
 - `--quiet`: disable formatted progress output
 - `--once`: always exit after the first answer
+- `--json`: print structured research JSON
+- `--long-report-mode`: switch the final lead response from a concise overview to a long-form report
 - `--list-tools`: print built-in tool names/descriptions and exit
+
+`--long-report-mode` is explicit only. It does not auto-detect benchmark tasks, so turn it on when you want a long-form benchmark-style report.
 
 ## Chat Mode
 

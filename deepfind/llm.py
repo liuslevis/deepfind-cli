@@ -48,6 +48,7 @@ class ResponseAgent:
         use_tools: bool,
         history: Sequence[Mapping[str, str]] | None = None,
         tool_names: Sequence[str] | None = None,
+        max_tokens: int = 1400,
     ) -> AgentResult:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": instructions},
@@ -69,7 +70,7 @@ class ResponseAgent:
             request: dict[str, Any] = {
                 "model": self.settings.model,
                 "messages": messages,
-                "max_tokens": 1400,
+                "max_tokens": max_tokens,
             }
             if use_tools:
                 tool_specs = self.tools.specs()
