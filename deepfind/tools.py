@@ -39,7 +39,7 @@ from .youtube_transcribe import (
     store_youtube_transcript,
 )
 
-_WEB_SEARCH_ENGINES = frozenset({"google", "bing", "baidu"})
+_WEB_SEARCH_ENGINES = frozenset({"google"}) # "bing", "baidu"
 _OPENCLI_REGISTRY_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 _OPENCLI_REGISTRY_LOCK = Lock()
 
