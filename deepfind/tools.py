@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,6 +13,7 @@ from .bili_transcribe import (
     InvalidBiliIdError,
     MissingDependencyError,
     TranscriptionError,
+    parse_bili_id,
     transcribe_bili_audio,
 )
 from .config import Settings
@@ -1110,6 +1112,88 @@ class Toolset:
             timeout=self.settings.subprocess_timeout,
         )
 
+    def _bili_summary_cache_path(self, audio_root: Path, bili_id: str, query: str) -> Path:
+        digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
+        return audio_root / "transcripts" / "bili_summary" / bili_id / f"{digest}.json"
+
+    def _load_cached_bili_summary(
+        self,
+        audio_root: Path,
+        bili_id: str,
+        query: str,
+    ) -> dict[str, Any] | None:
+        cache_path = self._bili_summary_cache_path(audio_root, bili_id, query)
+        if not cache_path.is_file():
+            return None
+
+        try:
+            raw = cache_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+
+        payload = try_load_json(raw)
+        if not isinstance(payload, dict):
+            return None
+
+        cached_query = payload.get("query")
+        summary = payload.get("summary")
+        transcript_path = payload.get("transcript_path")
+        if payload.get("bili_id") != bili_id:
+            return None
+        if not isinstance(cached_query, str) or cached_query != query:
+            return None
+        if not isinstance(summary, str) or not summary.strip():
+            return None
+        if not isinstance(transcript_path, str) or not transcript_path.strip():
+            return None
+
+        chunk_count = payload.get("chunk_count")
+        transcript_chars = payload.get("transcript_chars")
+        summary_chars = payload.get("summary_chars")
+        if not isinstance(chunk_count, int) or chunk_count < 1:
+            chunk_count = 1
+        if not isinstance(transcript_chars, int) or transcript_chars < 0:
+            transcript_chars = 0
+        if not isinstance(summary_chars, int) or summary_chars < 0:
+            summary_chars = len(summary)
+
+        return {
+            "bili_id": bili_id,
+            "query": query,
+            "summary_model": BILI_TRANSCRIPT_SUMMARY_MODEL,
+            "transcript_path": transcript_path,
+            "transcript_kind": "summary",
+            "transcript_chars": transcript_chars,
+            "chunk_count": chunk_count,
+            "summary": summary,
+            "summary_chars": summary_chars,
+            "transcript": summary,
+        }
+
+    def _store_cached_bili_summary(
+        self,
+        audio_root: Path,
+        bili_id: str,
+        query: str,
+        data: dict[str, Any],
+    ) -> None:
+        cache_path = self._bili_summary_cache_path(audio_root, bili_id, query)
+        payload = {
+            "bili_id": bili_id,
+            "query": query,
+            "summary_model": BILI_TRANSCRIPT_SUMMARY_MODEL,
+            "transcript_path": data.get("transcript_path", ""),
+            "transcript_chars": data.get("transcript_chars", 0),
+            "chunk_count": data.get("chunk_count", 1),
+            "summary": data.get("summary", ""),
+            "summary_chars": data.get("summary_chars", 0),
+        }
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(dump_json(payload), encoding="utf-8")
+        except OSError:
+            return
+
     def _bili_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
         if isinstance(exc, InvalidBiliIdError):
             return {
@@ -1170,7 +1254,17 @@ class Toolset:
                 "error": "query cannot be empty",
             }
         try:
-            data = self._transcribe_bili_audio_data(bili_id)
+            resolved_id = parse_bili_id(bili_id)
+            audio_root = resolve_audio_root(self.settings.audio_dir)
+            cached = self._load_cached_bili_summary(audio_root, resolved_id, normalized_query)
+            if cached is not None:
+                return {
+                    "ok": True,
+                    "tool": "bili_transcribe",
+                    "data": cached,
+                }
+
+            data = self._transcribe_bili_audio_data(resolved_id)
             summary, chunk_count = summarize_transcript_for_query(
                 self.settings.new_client(),
                 transcript=data["transcript"],
@@ -1187,21 +1281,23 @@ class Toolset:
         ) as exc:
             return self._bili_transcribe_error("bili_transcribe", exc)
 
+        result_data = {
+            "bili_id": data["bili_id"],
+            "query": normalized_query,
+            "summary_model": BILI_TRANSCRIPT_SUMMARY_MODEL,
+            "transcript_path": data["transcript_path"],
+            "transcript_kind": "summary",
+            "transcript_chars": len(data["transcript"]),
+            "chunk_count": chunk_count,
+            "summary": summary,
+            "summary_chars": len(summary),
+            "transcript": summary,
+        }
+        self._store_cached_bili_summary(audio_root, data["bili_id"], normalized_query, result_data)
         return {
             "ok": True,
             "tool": "bili_transcribe",
-            "data": {
-                "bili_id": data["bili_id"],
-                "query": normalized_query,
-                "summary_model": BILI_TRANSCRIPT_SUMMARY_MODEL,
-                "transcript_path": data["transcript_path"],
-                "transcript_kind": "summary",
-                "transcript_chars": len(data["transcript"]),
-                "chunk_count": chunk_count,
-                "summary": summary,
-                "summary_chars": len(summary),
-                "transcript": summary,
-            },
+            "data": result_data,
         }
 
     def bili_transcribe_full(self, bili_id: str) -> dict[str, Any]:
