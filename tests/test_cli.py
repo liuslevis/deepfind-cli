@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import unittest
 from contextlib import redirect_stdout
 from itertools import count
@@ -48,6 +49,42 @@ class CliTests(unittest.TestCase):
             max_iter_per_agent=7,
         )
         session.ask.assert_called_once_with("test query")
+        session.ask_detailed.assert_not_called()
+
+    def test_main_prints_structured_json_when_requested(self) -> None:
+        with patch("deepfind.cli.DeepFind") as app_cls:
+            session = app_cls.return_value.session.return_value
+            session.ask_detailed.return_value = {
+                "version": "research.v1",
+                "lead": {"overview_md": "structured"},
+                "agents": [],
+                "citations": [],
+                "citations_dedup": [],
+                "meta": {},
+            }
+            stdout = io.StringIO()
+
+            code = main(
+                ["test query", "--json"],
+                stdin=NonTtyStringIO(),
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            json.loads(stdout.getvalue()),
+            {
+                "version": "research.v1",
+                "lead": {"overview_md": "structured"},
+                "agents": [],
+                "citations": [],
+                "citations_dedup": [],
+                "meta": {},
+            },
+        )
+        session.ask_detailed.assert_called_once_with("test query")
+        session.ask.assert_not_called()
 
     def test_main_rejects_invalid_num_agent(self) -> None:
         with self.assertRaises(SystemExit):
@@ -88,6 +125,31 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(stdout.getvalue().strip(), "final answer")
         session.ask.assert_called_once_with("test query")
+
+    def test_main_json_stays_one_shot_in_tty(self) -> None:
+        def fake_input(_: str) -> str:
+            raise AssertionError("chat mode should be disabled for --json")
+
+        with patch("deepfind.cli.DeepFind") as app_cls:
+            session = app_cls.return_value.session.return_value
+            session.ask_detailed.return_value = {
+                "version": "research.v1",
+                "lead": {"overview_md": "structured"},
+                "agents": [],
+                "citations": [],
+                "citations_dedup": [],
+                "meta": {},
+            }
+            code = main(
+                ["test query", "--json"],
+                stdin=TtyStringIO(),
+                stdout=TtyStringIO(),
+                stderr=io.StringIO(),
+                input_fn=fake_input,
+            )
+
+        self.assertEqual(code, 0)
+        session.ask_detailed.assert_called_once_with("test query")
 
     def test_main_enters_chat_mode_and_handles_follow_up(self) -> None:
         prompts = []

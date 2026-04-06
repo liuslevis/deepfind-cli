@@ -6,7 +6,7 @@ from typing import Callable, TextIO
 
 from .config import Settings
 from .orchestrator import ChatSession, DeepFind
-from .output import render_answer
+from .output import render_answer, render_json_answer
 from .progress import ConsoleProgress
 from .tools import Toolset
 
@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="list available deepfind tools and exit",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="print structured research JSON instead of human-readable Markdown",
+    )
     return parser
 
 
@@ -44,7 +49,7 @@ def _isatty(stream: TextIO) -> bool:
 
 
 def _should_enter_chat_mode(args: argparse.Namespace, stdin: TextIO, stdout: TextIO) -> bool:
-    return not args.once and _isatty(stdin) and _isatty(stdout)
+    return not args.once and not args.json and _isatty(stdin) and _isatty(stdout)
 
 
 def _print_tools(stdout: TextIO) -> None:
@@ -114,12 +119,15 @@ def main(
             num_agent=args.num_agent,
             max_iter_per_agent=args.max_iter_per_agent,
         )
-        answer = session.ask(args.query)
+        answer = session.ask_detailed(args.query) if args.json else session.ask(args.query)
     except Exception as exc:
         print(f"error: {exc}", file=stderr)
         return 1
 
-    render_answer(answer, stream=stdout)
+    if args.json:
+        render_json_answer(answer, stream=stdout)
+    else:
+        render_answer(answer, stream=stdout)
     if not _should_enter_chat_mode(args, stdin, stdout):
         return 0
     return _chat_loop(session, stdout=stdout, stderr=stderr, input_fn=input_fn)

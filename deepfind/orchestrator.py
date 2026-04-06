@@ -1,10 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Sequence
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .chat_store import utc_now
 from .config import Settings
 from .json_utils import dump_json, try_load_json
 from .llm import ResponseAgent
@@ -37,23 +39,40 @@ WORKER_PROMPT = (
     "video/audio, call youtube_transcribe with the URL or video ID before summarizing. If the latest user request "
     "asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image "
     "asset. If the latest user request asks for slides, do not call gen_slides unless the assigned task explicitly "
-    'asks you to produce the final slide asset. JSON only: {"summary":"","facts":[{"point":"","source":""}],"gaps":[]}.'
+    'asks you to produce the final slide asset. JSON only: {"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}.'
 )
 SYNTHESIS_PROMPT = (
     "You are the lead synthesis coordinator in an ongoing research chat. Use the conversation history when needed, "
     "merge the worker reports, identify the strongest evidence, and fill gaps with tools when the reports are "
     "incomplete or conflicting. For broad web research, prefer the two-step flow: web_search first, then web_fetch "
     "for deep reading. Keep platform-specific work on the matching tools. JSON only: "
-    '{"summary":"","evidence":[{"point":"","source":""}],"gaps":[],"sources":[],"next_steps":[]}.'
+    '{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}.'
 )
 LEAD_PROMPT = (
     "You are the lead researcher in an ongoing chat. Use the conversation history for context and answer the latest "
     "user request using the provided synthesis JSON. Do not do more research in this stage. If tools are available, "
     "they are only for final asset creation: call gen_img exactly once when the latest user request explicitly asks "
     "for the final image asset, and call gen_slides exactly once when it explicitly asks for the final slide deck. "
-    "Do not claim an asset exists unless the corresponding tool succeeds. Answer briefly with sources and mention "
-    "uncertainty when the synthesis still has gaps."
+    "Do not claim an asset exists unless the corresponding tool succeeds. Write concise Markdown that serves as the "
+    "lead overview, mention uncertainty when the synthesis still has gaps, and rely on the provided synthesis instead "
+    "of adding new facts."
 )
+
+_TRACKING_QUERY_KEYS = frozenset(
+    {
+        "fbclid",
+        "gclid",
+        "gbraid",
+        "wbraid",
+        "igshid",
+        "mc_cid",
+        "mc_eid",
+        "msclkid",
+        "ref_src",
+        "srsltid",
+    }
+)
+_ALLOWED_CONFIDENCE = frozenset({"high", "medium", "low"})
 
 
 def _fallback_tasks(query: str, count: int) -> list[str]:
@@ -94,6 +113,17 @@ def _normalize_task(item: object) -> str:
     return str(item).strip()
 
 
+def _dedupe_keep_order(items: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
+
+
 def _normalize_string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -108,86 +138,109 @@ def _normalize_string_list(value: object) -> list[str]:
     return _dedupe_keep_order(items)
 
 
-def _normalize_evidence(value: object) -> list[dict[str, str]]:
+def _normalize_confidence(value: object) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _ALLOWED_CONFIDENCE:
+            return normalized
+    return "medium"
+
+
+def _normalize_url_list(value: object) -> list[str]:
+    urls: list[str] = []
+    if not isinstance(value, list):
+        return urls
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            urls.append(item.strip())
+        elif isinstance(item, dict):
+            candidate = item.get("url") or item.get("source") or item.get("value")
+            if isinstance(candidate, str) and candidate.strip():
+                urls.append(candidate.strip())
+    return urls
+
+
+def _normalize_claims(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
-    evidence: list[dict[str, str]] = []
+    claims: list[dict[str, Any]] = []
     for item in value:
         if isinstance(item, dict):
-            point = str(item.get("point") or item.get("summary") or "").strip()
-            source = str(item.get("source") or "").strip()
+            text = str(item.get("text") or item.get("point") or item.get("summary") or "").strip()
+            raw_citations = item.get("citations") or item.get("sources")
+            citations = _normalize_url_list(raw_citations)
+            source = item.get("source")
+            if not citations and isinstance(source, str) and source.strip():
+                citations = [source.strip()]
+            confidence = _normalize_confidence(item.get("confidence"))
         else:
-            point = str(item).strip()
-            source = ""
-        if point or source:
-            evidence.append({"point": point, "source": source})
-    return evidence
+            text = str(item).strip()
+            citations = []
+            confidence = "medium"
+        if text:
+            claims.append(
+                {
+                    "text": text,
+                    "citations": citations,
+                    "confidence": confidence,
+                }
+            )
+    return claims
 
 
-def _dedupe_keep_order(items: Sequence[str]) -> list[str]:
-    seen: set[str] = set()
-    unique: list[str] = []
-    for item in items:
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        unique.append(item)
-    return unique
+def _normalize_worker_payload(parsed: dict[str, Any], text: str) -> dict[str, Any]:
+    summary = str(parsed.get("summary") or "").strip()
+    claims = _normalize_claims(parsed.get("claims") or parsed.get("facts"))[:5]
+    gaps = _normalize_string_list(parsed.get("gaps"))[:3]
+    if not summary and not claims and text.strip():
+        summary = text.strip()
+    return {
+        "summary": summary,
+        "claims": claims,
+        "gaps": gaps,
+    }
 
 
 def _fallback_synthesis(reports: Sequence[WorkerReport]) -> dict[str, Any]:
     summaries: list[str] = []
-    evidence: list[dict[str, str]] = []
+    key_points: list[dict[str, Any]] = []
     gaps: list[str] = []
-    sources: list[str] = []
 
     for report in reports:
         summary = str(report.parsed.get("summary", "")).strip()
         if summary:
             summaries.append(summary)
-        report_evidence = _normalize_evidence(report.parsed.get("facts", []))
-        evidence.extend(report_evidence)
+        key_points.extend(_normalize_claims(report.parsed.get("claims") or report.parsed.get("facts")))
         gaps.extend(_normalize_string_list(report.parsed.get("gaps", [])))
-        sources.extend(
-            source
-            for source in [item.get("source", "").strip() for item in report_evidence]
-            if source
-        )
-        sources.extend(url for url in report.citations if url)
 
     unique_gaps = _dedupe_keep_order(gaps)
-    unique_sources = _dedupe_keep_order(sources)
     next_steps = [f"Investigate gap: {gap}" for gap in unique_gaps[:5]]
+    overview_md = "\n\n".join(summaries).strip()
+    if not overview_md and key_points:
+        overview_md = "\n".join(f"- {claim['text']}" for claim in key_points[:5])
     return {
-        "summary": "\n".join(summaries).strip(),
-        "evidence": evidence[:12],
+        "overview_md": overview_md,
+        "key_points": key_points[:8],
+        "disagreements": [],
         "gaps": unique_gaps,
-        "sources": unique_sources,
         "next_steps": next_steps,
     }
 
 
 def _normalize_synthesis(parsed: dict[str, Any], reports: Sequence[WorkerReport]) -> dict[str, Any]:
     fallback = _fallback_synthesis(reports)
-    normalized = {
-        "summary": str(parsed.get("summary", "")).strip() or fallback["summary"],
-        "evidence": _normalize_evidence(parsed.get("evidence") or parsed.get("facts")) or fallback["evidence"],
+    next_steps = _normalize_string_list(parsed.get("next_steps"))
+    return {
+        "overview_md": str(parsed.get("overview_md") or parsed.get("summary") or "").strip()
+        or fallback["overview_md"],
+        "key_points": _normalize_claims(
+            parsed.get("key_points") or parsed.get("claims") or parsed.get("evidence") or parsed.get("facts")
+        )[:8]
+        or fallback["key_points"],
+        "disagreements": _normalize_string_list(parsed.get("disagreements"))[:5],
         "gaps": _normalize_string_list(parsed.get("gaps")) or fallback["gaps"],
-        "sources": _normalize_string_list(parsed.get("sources")),
-        "next_steps": _normalize_string_list(parsed.get("next_steps")),
+        "next_steps": next_steps[:5] or fallback["next_steps"],
     }
-    if not normalized["sources"]:
-        normalized["sources"] = _dedupe_keep_order(
-            [
-                source
-                for source in [item.get("source", "").strip() for item in normalized["evidence"]]
-                if source
-            ]
-            + fallback["sources"]
-        )
-    if not normalized["next_steps"] and normalized["gaps"]:
-        normalized["next_steps"] = [f"Investigate gap: {gap}" for gap in normalized["gaps"][:5]]
-    return normalized
 
 
 def _query_requests_image(query: str) -> bool:
@@ -199,7 +252,6 @@ def _query_requests_slides(query: str) -> bool:
     lowered = query.lower()
     return any(token in lowered for token in ("slides", "slide deck", "\u5e7b\u706f", "\u5e7b\u706f\u7247"))
 
-
 def _lead_tool_names(query: str) -> list[str]:
     tools: list[str] = []
     if _query_requests_image(query):
@@ -209,17 +261,206 @@ def _lead_tool_names(query: str) -> list[str]:
     return tools
 
 
-def _parse_report(task: str, text: str, citations: list[str]) -> WorkerReport:
+def _parse_report(agent_id: str, task: str, text: str, citations: list[str]) -> WorkerReport:
     parsed = try_load_json(text)
     if not isinstance(parsed, dict):
-        parsed = {"summary": text.strip(), "facts": [], "gaps": ["non_json_output"]}
-    if citations:
-        for url in citations:
-            if url not in text:
-                parsed.setdefault("facts", [])
-                parsed["facts"].append({"point": "citation", "source": url})
-    return WorkerReport(task=task, text=text, citations=citations, parsed=parsed)
+        parsed = {
+            "summary": text.strip(),
+            "claims": [],
+            "gaps": ["non_json_output"],
+        }
+    else:
+        parsed = _normalize_worker_payload(parsed, text)
+    return WorkerReport(task=task, text=text, citations=citations, parsed=parsed, agent_id=agent_id)
 
+
+def _answer_from_envelope(envelope: dict[str, Any]) -> str:
+    lead = envelope.get("lead")
+    if isinstance(lead, dict):
+        return str(lead.get("overview_md") or "").strip()
+    return ""
+
+
+def _is_tracking_query_key(key: str) -> bool:
+    lowered = key.strip().lower()
+    return lowered.startswith("utm_") or lowered in _TRACKING_QUERY_KEYS
+
+
+def _canonicalize_url(url: str) -> str:
+    raw = url.strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return raw
+    if not parsed.scheme or not parsed.netloc:
+        return raw
+
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return raw
+
+    auth = ""
+    if parsed.username:
+        auth = parsed.username
+        if parsed.password:
+            auth = f"{auth}:{parsed.password}"
+        auth = f"{auth}@"
+
+    netloc = f"{auth}{host}"
+    port = parsed.port
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        netloc = f"{netloc}:{port}"
+
+    path = parsed.path or "/"
+    filtered_query = urlencode(
+        [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not _is_tracking_query_key(key)
+        ],
+        doseq=True,
+    )
+    return urlunsplit((scheme, netloc, path, filtered_query, ""))
+
+
+@dataclass
+class _CitationCollector:
+    dedup_by_canonical: dict[str, dict[str, str]] = field(default_factory=dict)
+    citations: list[dict[str, Any]] = field(default_factory=list)
+    next_raw_id: int = 1
+    next_dedup_id: int = 1
+
+    def record(
+        self,
+        raw_url: str,
+        *,
+        source_agent: str,
+        source_section: str,
+        source_index: int,
+    ) -> str:
+        cleaned = raw_url.strip()
+        if not cleaned:
+            return ""
+        canonical = _canonicalize_url(cleaned)
+        if not canonical:
+            return ""
+        citation = self.dedup_by_canonical.get(canonical)
+        if citation is None:
+            citation = {
+                "id": f"c{self.next_dedup_id}",
+                "canonical_url": canonical,
+                "url": cleaned,
+                "title": "",
+                "publisher": "",
+            }
+            self.dedup_by_canonical[canonical] = citation
+            self.next_dedup_id += 1
+        self.citations.append(
+            {
+                "id": f"r{self.next_raw_id}",
+                "dedup_id": citation["id"],
+                "url": cleaned,
+                "title": citation["title"],
+                "publisher": citation["publisher"],
+                "source_agent": source_agent,
+                "source_section": source_section,
+                "source_index": source_index,
+            }
+        )
+        self.next_raw_id += 1
+        return str(citation["id"])
+
+    def citations_dedup(self) -> list[dict[str, str]]:
+        return list(self.dedup_by_canonical.values())
+
+
+def _attach_citation_ids(
+    claims: list[dict[str, Any]],
+    collector: _CitationCollector,
+    *,
+    source_agent: str,
+    source_section: str,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, claim in enumerate(claims, start=1):
+        dedup_ids: list[str] = []
+        for raw_url in claim.get("citations", []):
+            dedup_id = collector.record(
+                str(raw_url),
+                source_agent=source_agent,
+                source_section=source_section,
+                source_index=index,
+            )
+            if dedup_id:
+                dedup_ids.append(dedup_id)
+        normalized.append(
+            {
+                "text": str(claim.get("text") or "").strip(),
+                "citation_ids": _dedupe_keep_order(dedup_ids),
+                "confidence": _normalize_confidence(claim.get("confidence")),
+            }
+        )
+    return [claim for claim in normalized if claim["text"]]
+
+
+def _build_turn_envelope(
+    query: str,
+    lead_overview: str,
+    synthesis: dict[str, Any],
+    reports: Sequence[WorkerReport],
+    num_agent: int,
+    max_iter_per_agent: int,
+) -> dict[str, Any]:
+    collector = _CitationCollector()
+    agents: list[dict[str, Any]] = []
+
+    for report in reports:
+        source_agent = report.agent_id or "worker"
+        claims = _attach_citation_ids(
+            _normalize_claims(report.parsed.get("claims") or report.parsed.get("facts")),
+            collector,
+            source_agent=source_agent,
+            source_section="claim",
+        )
+        agents.append(
+            {
+                "agent_id": source_agent,
+                "task": report.task,
+                "summary": str(report.parsed.get("summary") or "").strip(),
+                "claims": claims[:5],
+                "gaps": _normalize_string_list(report.parsed.get("gaps"))[:3],
+            }
+        )
+
+    lead = {
+        "overview_md": lead_overview.strip() or str(synthesis.get("overview_md") or "").strip(),
+        "key_points": _attach_citation_ids(
+            _normalize_claims(synthesis.get("key_points") or synthesis.get("evidence") or synthesis.get("facts"))[:8],
+            collector,
+            source_agent="lead",
+            source_section="key_point",
+        ),
+        "disagreements": _normalize_string_list(synthesis.get("disagreements"))[:5],
+        "next_steps": _normalize_string_list(synthesis.get("next_steps"))[:5],
+    }
+
+    return {
+        "version": "research.v1",
+        "query": query,
+        "lead": lead,
+        "agents": agents,
+        "citations": collector.citations,
+        "citations_dedup": collector.citations_dedup(),
+        "meta": {
+            "num_agents": num_agent,
+            "max_iter_per_agent": max_iter_per_agent,
+            "generated_at": utc_now(),
+        },
+    }
+ 
 
 class DeepFind:
     def __init__(
@@ -242,6 +483,9 @@ class DeepFind:
     def run(self, query: str, num_agent: int, max_iter_per_agent: int) -> str:
         return self.session(num_agent, max_iter_per_agent).ask(query)
 
+    def run_detailed(self, query: str, num_agent: int, max_iter_per_agent: int) -> dict[str, Any]:
+        return self.session(num_agent, max_iter_per_agent).ask_detailed(query)
+
     def _validated_run_args(self, num_agent: int, max_iter_per_agent: int) -> tuple[int, int]:
         if not 1 <= num_agent <= 4:
             raise ValueError("num_agent must be between 1 and 4")
@@ -256,13 +500,13 @@ class DeepFind:
         num_agent: int,
         max_iter_per_agent: int,
     ) -> str:
-        answer, _ = self._run_turn_detailed(
+        envelope, _ = self._run_turn_structured(
             query=query,
             transcript=transcript,
             num_agent=num_agent,
             max_iter_per_agent=max_iter_per_agent,
         )
-        return answer
+        return _answer_from_envelope(envelope)
 
     def _run_turn_detailed(
         self,
@@ -271,13 +515,36 @@ class DeepFind:
         num_agent: int,
         max_iter_per_agent: int,
     ) -> tuple[str, list[WorkerReport]]:
+        envelope, reports = self._run_turn_structured(
+            query=query,
+            transcript=transcript,
+            num_agent=num_agent,
+            max_iter_per_agent=max_iter_per_agent,
+        )
+        return _answer_from_envelope(envelope), reports
+
+    def _run_turn_structured(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        num_agent: int,
+        max_iter_per_agent: int,
+    ) -> tuple[dict[str, Any], list[WorkerReport]]:
         if self.progress:
             self.progress.run_started(query, num_agent, max_iter_per_agent)
         tasks = self._plan(query, transcript, num_agent, max_iter_per_agent)
         reports = self._run_workers(query, transcript, tasks, max_iter_per_agent)
         synthesis = self._synthesize(query, transcript, reports, max_iter_per_agent)
-        answer = self._lead(query, transcript, synthesis, max_iter_per_agent).strip()
-        return answer, reports
+        lead_overview = self._lead(query, transcript, synthesis, max_iter_per_agent).strip()
+        envelope = _build_turn_envelope(
+            query=query,
+            lead_overview=lead_overview,
+            synthesis=synthesis,
+            reports=reports,
+            num_agent=num_agent,
+            max_iter_per_agent=max_iter_per_agent,
+        )
+        return envelope, reports
 
     def _plan(
         self,
@@ -344,7 +611,7 @@ class DeepFind:
             use_tools=True,
             history=history,
         )
-        return _parse_report(task, result.text, result.citations)
+        return _parse_report(name, task, result.text, result.citations)
 
     def _lead(
         self,
@@ -380,10 +647,11 @@ class DeepFind:
         report_blob = dump_json(
             [
                 {
+                    "agent_id": report.agent_id,
                     "task": report.task,
                     "text": report.text,
                     "summary": report.parsed.get("summary", ""),
-                    "facts": report.parsed.get("facts", []),
+                    "claims": report.parsed.get("claims", []),
                     "gaps": report.parsed.get("gaps", []),
                     "citations": report.citations,
                 }
@@ -410,18 +678,27 @@ class ChatSession:
     max_iter_per_agent: int
     transcript: list[ChatMessage] = field(default_factory=list)
 
-    def ask(self, query: str) -> str:
+    def _run_and_store(self, query: str) -> dict[str, Any]:
         transcript = list(self.transcript)
-        answer = self.app._run_turn(
+        envelope, _ = self.app._run_turn_structured(
             query=query,
             transcript=transcript,
             num_agent=self.num_agent,
             max_iter_per_agent=self.max_iter_per_agent,
         )
+        answer = _answer_from_envelope(envelope)
         self.transcript.extend(
             [
                 ChatMessage(role="user", content=query),
                 ChatMessage(role="assistant", content=answer),
             ]
         )
-        return answer
+        return envelope
+
+    def ask(self, query: str) -> str:
+        envelope = self._run_and_store(query)
+        return _answer_from_envelope(envelope)
+
+    def ask_detailed(self, query: str) -> dict[str, Any]:
+        return self._run_and_store(query)
+
