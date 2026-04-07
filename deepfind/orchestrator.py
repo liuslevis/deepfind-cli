@@ -66,8 +66,8 @@ LONG_REPORT_LEAD_PROMPT = (
     "they are only for final asset creation: call gen_img exactly once when the latest user request explicitly asks "
     "for the final image asset, and call gen_slides exactly once when it explicitly asks for the final slide deck. "
     "Do not claim an asset exists unless the corresponding tool succeeds. Write Thesis-like Markdown in the current "
-    "language that serves as the lead overview, including ## Conclusion and ## Reference. In Reference, "
-    "list only URLs that already appear in the synthesis JSON citations and do not invent or fetch new links."
+    "language that serves as the lead overview, including ## Conclusion. Do not write ## Reference yourself; the "
+    "system will append it from the synthesis citations."
 )
 FORMAT_FOLLOWUP_PROMPT = (
     "You are the lead editor in an ongoing chat. The user is asking you to transform the prior assistant answer into "
@@ -95,7 +95,9 @@ _TRACKING_QUERY_KEYS = frozenset(
 _ALLOWED_CONFIDENCE = frozenset({"high", "medium", "low"})
 _DEFAULT_MAX_TOKENS = 1400
 _LONG_REPORT_LEAD_MAX_TOKENS = 3200
-_REFERENCE_SECTION_RE = re.compile(r"(?im)^\s{0,3}(?:#{1,6}\s*)?(?:Reference|references)\s*$")
+_REFERENCE_SECTION_FRAGMENT_RE = re.compile(
+    r"(?im)^\s{0,3}(?:#{1,6}\s*)?(?:ref|refe|refer|refere|referen|referenc|reference|references)\s*$"
+)
 _QUERY_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _FORMAT_FOLLOWUP_MARKERS = (
     "表格",
@@ -400,8 +402,15 @@ def _lead_max_tokens(long_report_mode: bool) -> int:
     return _LONG_REPORT_LEAD_MAX_TOKENS if long_report_mode else _DEFAULT_MAX_TOKENS
 
 
-def _has_reference_section(text: str) -> bool:
-    return bool(_REFERENCE_SECTION_RE.search(text or ""))
+def _strip_reference_tail(text: str) -> str:
+    stripped = (text or "").rstrip()
+    if not stripped:
+        return ""
+    lines = stripped.splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        if _REFERENCE_SECTION_FRAGMENT_RE.match(lines[index]):
+            return "\n".join(lines[:index]).rstrip()
+    return stripped
 
 
 def _reference_urls_from_envelope(envelope: dict[str, Any]) -> list[str]:
@@ -424,11 +433,10 @@ def _finalize_turn_envelope(envelope: dict[str, Any], *, long_report_mode: bool)
     lead = envelope.get("lead")
     if not isinstance(lead, dict):
         return envelope
-    overview = str(lead.get("overview_md") or "").strip()
-    if _has_reference_section(overview):
-        return envelope
+    overview = _strip_reference_tail(str(lead.get("overview_md") or ""))
     reference_urls = _reference_urls_from_envelope(envelope)
     if not reference_urls:
+        lead["overview_md"] = overview
         return envelope
     reference_block = "## Reference\n\n" + "\n".join(f"- {url}" for url in reference_urls)
     lead["overview_md"] = f"{overview}\n\n{reference_block}".strip() if overview else reference_block

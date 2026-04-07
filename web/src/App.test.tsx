@@ -402,6 +402,91 @@ describe("App", () => {
     expect(table.closest(".markdown-table-scroll")).toBeInTheDocument();
   });
 
+  it("renders structured key points and citations when provided by the API", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_structured",
+              title: "Structured",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Structured answer",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_structured" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_structured",
+            title: "Structured",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [
+              {
+                id: "msg_1",
+                role: "assistant",
+                content: "Overview paragraph.",
+                created_at: "2026-03-22T00:02:00Z",
+                mode: "fast",
+                sources: ["https://example.com/report"],
+                artifacts: [],
+                key_points: [
+                  {
+                    text: "A structured key point",
+                    citation_ids: ["c1"],
+                    confidence: "high",
+                  },
+                ],
+                citations: [
+                  {
+                    id: "c1",
+                    canonical_url: "https://example.com/report",
+                    url: "https://example.com/report",
+                    title: "Example Report",
+                    publisher: "Example Publisher",
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("Overview paragraph.");
+    expect(screen.getByRole("heading", { name: "Key Points" })).toBeInTheDocument();
+    expect(screen.getByText("A structured key point")).toBeInTheDocument();
+    expect(screen.getByText("High confidence")).toBeInTheDocument();
+    const keyPointsSection = screen.getByRole("heading", { name: "Key Points" }).closest("section");
+    expect(keyPointsSection).not.toBeNull();
+    if (keyPointsSection) {
+      expect(within(keyPointsSection).getByRole("link", { name: /\[1\] example\.com: Example Report/i })).toHaveAttribute(
+        "href",
+        "https://example.com/report",
+      );
+    }
+    const referencesSection = screen.getByRole("heading", { name: "References" }).closest("section");
+    expect(referencesSection).not.toBeNull();
+    if (referencesSection) {
+      expect(within(referencesSection).getByRole("link", { name: /\[1\] example\.com: Example Report/i })).toHaveAttribute(
+        "href",
+        "https://example.com/report",
+      );
+    }
+    expect(screen.queryByRole("link", { name: "example.com source 1" })).not.toBeInTheDocument();
+  });
+
   it("toggles the mobile chat drawer and closes it after selecting a chat", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();

@@ -7,6 +7,7 @@ import { createChat, deleteChat, getChat, listChats, streamChatMessage } from ".
 import type {
   ActivityPhase,
   ActivitySummary,
+  CitationLink,
   ChatMode,
   ProgressEvent,
   TurnResult,
@@ -279,6 +280,8 @@ function ansiToHtml(text: string): string {
 function messageFromServer(message: WebMessage): ClientMessage {
   return {
     ...message,
+    key_points: message.key_points ?? [],
+    citations: message.citations ?? [],
     activity: [],
     error: null,
     pending: false,
@@ -470,6 +473,8 @@ function newClientMessage(role: "user" | "assistant", content: string, mode: Cha
     mode,
     sources: [],
     artifacts: [],
+    key_points: [],
+    citations: [],
     pending: role === "assistant",
     error: null,
     activity: [],
@@ -697,6 +702,42 @@ function groupSources(sources: string[]): SourceGroup[] {
   return Array.from(grouped, ([label, urls]) => ({ label, urls }));
 }
 
+function hasReferenceSection(markdown: string): boolean {
+  return /^\s{0,3}#{1,6}\s*Reference(?:s)?\s*$/im.test(markdown);
+}
+
+function buildCitationLookup(citations: CitationLink[]): Map<string, CitationLink> {
+  return new Map(citations.map((citation) => [citation.id, citation]));
+}
+
+function citationOrdinal(citationId: string, fallbackIndex: number): string {
+  const match = citationId.match(/\d+/);
+  if (!match) {
+    return String(fallbackIndex);
+  }
+  const parsed = Number.parseInt(match[0], 10);
+  return Number.isFinite(parsed) ? String(parsed) : String(fallbackIndex);
+}
+
+function citationDisplayText(citation: CitationLink): string {
+  const hostname = sourceLabel(citation.canonical_url || citation.url);
+  if (citation.title) {
+    return `${hostname}: ${citation.title}`;
+  }
+  return hostname;
+}
+
+function pointConfidenceLabel(confidence: string): string {
+  const normalized = confidence.trim().toLowerCase();
+  if (normalized === "high") {
+    return "High confidence";
+  }
+  if (normalized === "low") {
+    return "Low confidence";
+  }
+  return "Medium confidence";
+}
+
 type ChatLike = Pick<WebChatDetail, "id" | "title" | "created_at" | "updated_at"> & {
   messages: Array<{ content: string }>;
 };
@@ -772,7 +813,12 @@ ActivityPanel.displayName = "ActivityPanel";
 const MessageCard = memo(function MessageCard({ message }: { message: ClientMessage }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
   const markdownBody = normalizeMermaidMarkdown(body);
-  const sourceGroups = groupSources(message.sources);
+  const citations = message.citations ?? [];
+  const citationLookup = buildCitationLookup(citations);
+  const citationOrdinals = new Map(citations.map((citation, index) => [citation.id, citationOrdinal(citation.id, index + 1)]));
+  const hasInlineReferences = hasReferenceSection(markdownBody);
+  const sourceGroups = citations.length === 0 ? groupSources(message.sources) : [];
+  const keyPoints = message.key_points ?? [];
 
   return (
     <article
@@ -814,7 +860,61 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
         <p className="message__body message__body--plain">{body}</p>
       )}
 
+      {message.role === "assistant" && keyPoints.length > 0 ? (
+        <section className="message__structured">
+          <h3 className="message__section-title">Key Points</h3>
+          <ol className="key-point-list">
+            {keyPoints.map((point, index) => (
+              <li key={`${point.text}_${index}`} className="key-point-card">
+                <p className="key-point-card__text">{point.text}</p>
+                <div className="key-point-card__meta">
+                  <span className="key-point-card__confidence">{pointConfidenceLabel(point.confidence)}</span>
+                  {point.citation_ids.map((citationId, citationIndex) => {
+                    const citation = citationLookup.get(citationId);
+                    if (!citation) {
+                      return null;
+                    }
+                    const ordinal = citationOrdinals.get(citationId) ?? citationOrdinal(citationId, citationIndex + 1);
+                    return (
+                      <a
+                        key={citationId}
+                        className="citation-chip"
+                        href={citation.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={citation.url}
+                      >
+                        [{ordinal}] {citationDisplayText(citation)}
+                      </a>
+                    );
+                  })}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
       {message.error ? <p className="message__error">{message.error}</p> : null}
+
+      {message.role === "assistant" && citations.length > 0 && !hasInlineReferences ? (
+        <section className="message__structured">
+          <h3 className="message__section-title">References</h3>
+          <ol className="reference-list">
+            {citations.map((citation, index) => {
+              const ordinal = citationOrdinals.get(citation.id) ?? citationOrdinal(citation.id, index + 1);
+              return (
+                <li key={citation.id} className="reference-card">
+                  <a href={citation.url} target="_blank" rel="noreferrer">
+                    [{ordinal}] {citationDisplayText(citation)}
+                  </a>
+                  <span className="reference-card__url">{citation.canonical_url}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ) : null}
 
       {sourceGroups.length > 0 ? (
         <div className="message__sources">
@@ -1255,6 +1355,8 @@ export default function App() {
               mode: turnResult.mode,
               sources: turnResult.sources,
               artifacts: turnResult.artifacts,
+              key_points: turnResult.key_points ?? [],
+              citations: turnResult.citations ?? [],
               pending: false,
               error: null,
             }

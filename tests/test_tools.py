@@ -69,6 +69,43 @@ class FakeHttpClient:
         return self.response
 
 
+class FakePdfPage:
+    def __init__(self, text: str):
+        self._text = text
+
+    def extract_text(self) -> str:
+        return self._text
+
+
+def build_minimal_pdf(text: str) -> bytes:
+    escaped_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream = f"BT\n/F1 24 Tf\n72 100 Td\n({escaped_text}) Tj\nET\n"
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        f"<< /Length {len(stream.encode('latin-1'))} >>\nstream\n{stream}endstream",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{index} 0 obj\n".encode("latin-1"))
+        pdf.extend(body.encode("latin-1"))
+        pdf.extend(b"\nendobj\n")
+
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("latin-1"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("latin-1"))
+    pdf.extend(f"trailer\n<< /Root 1 0 R /Size {len(objects) + 1} >>\n".encode("latin-1"))
+    pdf.extend(f"startxref\n{xref_offset}\n%%EOF\n".encode("latin-1"))
+    return bytes(pdf)
+
+
 class ToolsetTests(unittest.TestCase):
     def test_specs_use_chat_completion_function_shape(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -185,6 +222,87 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["data"]["content_type"], "text/plain")
         self.assertEqual(result["data"]["title"], "")
         self.assertEqual(result["data"]["summary"], "Plain summary")
+
+    def test_web_fetch_supports_pdf_content(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        response = httpx.Response(
+            200,
+            headers={"content-type": "application/pdf"},
+            content=b"%PDF-1.7 fake body",
+            request=httpx.Request("GET", "https://example.com/report.pdf"),
+        )
+        fake_http = FakeHttpClient(response=response)
+        fake_client = FakeOpenAIClient([message_response("PDF summary")])
+        fake_pdf = SimpleNamespace(
+            metadata=SimpleNamespace(title="Quarterly Report"),
+            pages=[FakePdfPage("Revenue increased"), FakePdfPage("Margins improved")],
+        )
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=fake_http) as client_cls:
+            with patch("deepfind.web_fetch.PdfReader", return_value=fake_pdf) as pdf_reader:
+                with patch.object(Settings, "new_client", return_value=fake_client):
+                    result = toolset.web_fetch("https://example.com/report.pdf", "Summarize")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["content_type"], "application/pdf")
+        self.assertEqual(result["data"]["title"], "Quarterly Report")
+        self.assertEqual(result["data"]["summary"], "PDF summary")
+        self.assertEqual(pdf_reader.call_count, 1)
+        accept = client_cls.call_args.kwargs["headers"]["Accept"]
+        self.assertIn("application/pdf", accept)
+        user_prompt = fake_client.chat.completions.calls[0]["messages"][1]["content"]
+        self.assertIn("Quarterly Report", user_prompt)
+        self.assertIn("Revenue increased", user_prompt)
+        self.assertIn("Margins improved", user_prompt)
+
+    def test_web_fetch_sniffs_pdf_from_octet_stream(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        response = httpx.Response(
+            200,
+            headers={"content-type": "application/octet-stream"},
+            content=b"%PDF-1.6 fake body",
+            request=httpx.Request("GET", "https://example.com/download?id=1"),
+        )
+        fake_pdf = SimpleNamespace(
+            metadata=SimpleNamespace(title="Binary PDF"),
+            pages=[FakePdfPage("Detected via magic header")],
+        )
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=FakeHttpClient(response=response)):
+            with patch("deepfind.web_fetch.PdfReader", return_value=fake_pdf):
+                with patch.object(
+                    Settings,
+                    "new_client",
+                    return_value=FakeOpenAIClient([message_response("Binary summary")]),
+                ):
+                    result = toolset.web_fetch("https://example.com/download?id=1", "Summarize")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["content_type"], "application/pdf")
+        self.assertEqual(result["data"]["summary"], "Binary summary")
+
+    def test_web_fetch_extracts_text_from_real_pdf_bytes(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        response = httpx.Response(
+            200,
+            headers={"content-type": "application/pdf"},
+            content=build_minimal_pdf("Hello PDF"),
+            request=httpx.Request("GET", "https://example.com/real.pdf"),
+        )
+
+        with patch("deepfind.web_fetch.httpx.Client", return_value=FakeHttpClient(response=response)):
+            with patch.object(
+                Settings,
+                "new_client",
+                return_value=FakeOpenAIClient([message_response("Real PDF summary")]),
+            ) as new_client:
+                result = toolset.web_fetch("https://example.com/real.pdf", "Summarize")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["content_type"], "application/pdf")
+        self.assertEqual(result["data"]["summary"], "Real PDF summary")
+        user_prompt = new_client.return_value.chat.completions.calls[0]["messages"][1]["content"]
+        self.assertIn("Hello PDF", user_prompt)
 
     def test_web_fetch_returns_http_error_for_bad_status(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

@@ -16,6 +16,20 @@ class ArtifactLink(BaseModel):
     url: str
 
 
+class CitationLink(BaseModel):
+    id: str
+    canonical_url: str
+    url: str
+    title: str = ""
+    publisher: str = ""
+
+
+class KeyPoint(BaseModel):
+    text: str
+    citation_ids: list[str] = Field(default_factory=list)
+    confidence: str = "medium"
+
+
 class WebMessage(BaseModel):
     id: str
     role: MessageRole
@@ -24,6 +38,8 @@ class WebMessage(BaseModel):
     mode: ChatMode | None = None
     sources: list[str] = Field(default_factory=list)
     artifacts: list[ArtifactLink] = Field(default_factory=list)
+    key_points: list[KeyPoint] = Field(default_factory=list)
+    citations: list[CitationLink] = Field(default_factory=list)
 
 
 class WebChatSummary(BaseModel):
@@ -46,6 +62,8 @@ class TurnResult(BaseModel):
     answer_markdown: str
     sources: list[str] = Field(default_factory=list)
     artifacts: list[ArtifactLink] = Field(default_factory=list)
+    key_points: list[KeyPoint] = Field(default_factory=list)
+    citations: list[CitationLink] = Field(default_factory=list)
     mode: ChatMode
 
 
