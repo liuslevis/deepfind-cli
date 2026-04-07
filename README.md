@@ -279,3 +279,103 @@ Artifacts:
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## APPENDIX
+
+### Agent Roles
+
+Runtime pipeline for a normal research turn:
+
+1. `lead-plan`
+2. `sub-1 .. sub-N`
+3. `lead-synthesis`
+4. `lead-final`
+
+When a follow-up only asks to reformat the previous answer in chat mode, the app can skip research and run `lead-format` directly.
+
+### Agent Contracts
+
+| Agent | Main task / goal | Tool policy | Output format |
+| --- | --- | --- | --- |
+| `lead-plan` | Split the latest user request into `N` distinct, evidence-seeking research tasks. It may use the prior conversation for context and can do a light `web_search -> web_fetch` pass before splitting work. | Tools allowed during planning, but used sparingly. Platform-specific work should stay on matching tools. If the user asks for an image or slides, this stage only plans supporting research, not final asset generation. | JSON array only. Each item is usually a task string, but object items are also accepted when they contain a task-like field such as `task`, `title`, or `summary`. |
+| `sub-N` worker | Execute one assigned research task, gather evidence, and report the strongest findings plus open gaps. | Tools allowed. Workers should prefer `web_search -> web_fetch` for broad web research and use platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin. They should not call `gen_img` or `gen_slides` unless the assigned task explicitly asks for the final asset. | JSON only: `{"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}` |
+| `lead-synthesis` | Merge worker reports, identify the strongest evidence, resolve or highlight conflicts, and fill missing gaps with tools when needed. | Tools allowed. It can do another `web_search -> web_fetch` pass if worker evidence is incomplete or conflicting. | JSON only: `{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}` |
+| `lead-final` | Turn synthesis into the user-facing answer for the latest request. | No new research. Tools are reserved only for final asset creation, and only when the user explicitly asked for it: `gen_img` once for an image, `gen_slides` once for slides. | Markdown. Default mode is a concise answer. With `--long-report-mode`, it switches to thesis-like Markdown in the current language and should include `## Conclusion`. The system appends `## Reference` from collected citations. |
+| `lead-format` | Reformat the previous assistant answer for a follow-up such as a table, list, translation, rewrite, or shorter/longer version. | No tools and no new research. It must work only from the prior assistant answer plus the latest user request. | Plain Markdown / text in the requested format. If the previous answer does not contain enough detail, it should say so briefly instead of inventing new content. |
+
+### Structured JSON Output
+
+When you run:
+
+```bash
+uv run -m deepfind.cli "same query" --json
+```
+
+the CLI prints a structured envelope with this shape:
+
+```json
+{
+  "version": "research.v1",
+  "query": "user query",
+  "lead": {
+    "overview_md": "final markdown answer",
+    "key_points": [
+      {
+        "text": "synthesized finding",
+        "citation_ids": ["c1"],
+        "confidence": "high"
+      }
+    ],
+    "disagreements": [],
+    "next_steps": []
+  },
+  "agents": [
+    {
+      "agent_id": "sub-1",
+      "task": "assigned task",
+      "summary": "worker summary",
+      "claims": [
+        {
+          "text": "worker finding",
+          "citation_ids": ["c1"],
+          "confidence": "medium"
+        }
+      ],
+      "gaps": []
+    }
+  ],
+  "citations": [
+    {
+      "id": "r1",
+      "dedup_id": "c1",
+      "url": "https://example.com/report?utm_source=news",
+      "title": "",
+      "publisher": "",
+      "source_agent": "sub-1",
+      "source_section": "claim",
+      "source_index": 1
+    }
+  ],
+  "citations_dedup": [
+    {
+      "id": "c1",
+      "canonical_url": "https://example.com/report",
+      "url": "https://example.com/report?utm_source=news",
+      "title": "",
+      "publisher": ""
+    }
+  ],
+  "meta": {
+    "num_agents": 2,
+    "max_iter_per_agent": 50,
+    "generated_at": "2026-04-07T00:00:00Z"
+  }
+}
+```
+
+Notes:
+
+- `citations` stores raw citation occurrences with provenance back to the agent and section that emitted them.
+- `citations_dedup` stores canonicalized URLs with tracking parameters removed.
+- Worker and synthesis prompts expect exact source URLs in `citations` whenever a claim is backed by a tool result.
+- If a worker returns non-JSON text, DeepFind keeps the text as `summary`, leaves `claims` empty, and records `gaps: ["non_json_output"]`.

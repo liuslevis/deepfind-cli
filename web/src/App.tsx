@@ -38,7 +38,11 @@ interface ChatRuntime {
 
 interface SourceGroup {
   label: string;
-  urls: string[];
+  links: Array<{
+    key: string;
+    href: string;
+    ordinal: string;
+  }>;
 }
 
 type TranscriptScrollTarget = "bottom" | "last-assistant-head";
@@ -689,17 +693,47 @@ function sourceLabel(url: string): string {
 }
 
 function groupSources(sources: string[]): SourceGroup[] {
-  const grouped = new Map<string, string[]>();
-  for (const source of sources) {
+  const grouped = new Map<string, SourceGroup["links"]>();
+  for (const [index, source] of sources.entries()) {
     const label = sourceLabel(source);
     const existing = grouped.get(label);
     if (existing) {
-      existing.push(source);
+      existing.push({
+        key: source,
+        href: source,
+        ordinal: String(index + 1),
+      });
       continue;
     }
-    grouped.set(label, [source]);
+    grouped.set(label, [
+      {
+        key: source,
+        href: source,
+        ordinal: String(index + 1),
+      },
+    ]);
   }
-  return Array.from(grouped, ([label, urls]) => ({ label, urls }));
+  return Array.from(grouped, ([label, links]) => ({ label, links }));
+}
+
+function groupCitations(citations: CitationLink[]): SourceGroup[] {
+  const grouped = new Map<string, SourceGroup["links"]>();
+  for (const [index, citation] of citations.entries()) {
+    const label = sourceLabel(citation.canonical_url || citation.url);
+    const ordinal = citationOrdinal(citation.id, index + 1);
+    const existing = grouped.get(label);
+    const link = {
+      key: citation.id,
+      href: citation.url,
+      ordinal,
+    };
+    if (existing) {
+      existing.push(link);
+      continue;
+    }
+    grouped.set(label, [link]);
+  }
+  return Array.from(grouped, ([label, links]) => ({ label, links }));
 }
 
 function hasReferenceSection(markdown: string): boolean {
@@ -810,6 +844,28 @@ const ActivityPanel = memo(function ActivityPanel({
 
 ActivityPanel.displayName = "ActivityPanel";
 
+function CollapsibleSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: ReactNode;
+}) {
+  return (
+    <details className="message__structured message__structured--collapsible">
+      <summary className="message__section-summary">
+        <span className="message__section-title" role="heading" aria-level={3}>
+          {title}
+        </span>
+        <span className="message__section-count">{count}</span>
+      </summary>
+      <div className="message__section-content">{children}</div>
+    </details>
+  );
+}
+
 const MessageCard = memo(function MessageCard({ message }: { message: ClientMessage }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
   const markdownBody = normalizeMermaidMarkdown(body);
@@ -817,7 +873,8 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
   const citationLookup = buildCitationLookup(citations);
   const citationOrdinals = new Map(citations.map((citation, index) => [citation.id, citationOrdinal(citation.id, index + 1)]));
   const hasInlineReferences = hasReferenceSection(markdownBody);
-  const sourceGroups = citations.length === 0 ? groupSources(message.sources) : [];
+  const referenceGroups = citations.length > 0 ? groupCitations(citations) : groupSources(message.sources);
+  const referenceCount = referenceGroups.reduce((total, group) => total + group.links.length, 0);
   const keyPoints = message.key_points ?? [];
 
   return (
@@ -861,8 +918,7 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
       )}
 
       {message.role === "assistant" && keyPoints.length > 0 ? (
-        <section className="message__structured">
-          <h3 className="message__section-title">Key Points</h3>
+        <CollapsibleSection title="Key Points" count={keyPoints.length}>
           <ol className="key-point-list">
             {keyPoints.map((point, index) => (
               <li key={`${point.text}_${index}`} className="key-point-card">
@@ -892,53 +948,36 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
               </li>
             ))}
           </ol>
-        </section>
+        </CollapsibleSection>
       ) : null}
 
       {message.error ? <p className="message__error">{message.error}</p> : null}
 
-      {message.role === "assistant" && citations.length > 0 && !hasInlineReferences ? (
-        <section className="message__structured">
-          <h3 className="message__section-title">References</h3>
-          <ol className="reference-list">
-            {citations.map((citation, index) => {
-              const ordinal = citationOrdinals.get(citation.id) ?? citationOrdinal(citation.id, index + 1);
-              return (
-                <li key={citation.id} className="reference-card">
-                  <a href={citation.url} target="_blank" rel="noreferrer">
-                    [{ordinal}] {citationDisplayText(citation)}
-                  </a>
-                  <span className="reference-card__url">{citation.canonical_url}</span>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      ) : null}
-
-      {sourceGroups.length > 0 ? (
-        <div className="message__sources">
-          {sourceGroups.map((group) => (
-            <div key={group.label} className="source-group">
-              <span className="source-group__label">{group.label}</span>
-              <div className="source-group__links">
-                {group.urls.map((source, index) => (
-                  <a
-                    key={source}
-                    className="source-group__link"
-                    href={source}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`${group.label} source ${index + 1}`}
-                    title={source}
-                  >
-                    {index + 1}
-                  </a>
-                ))}
+      {message.role === "assistant" && referenceGroups.length > 0 && !hasInlineReferences ? (
+        <CollapsibleSection title="References" count={referenceCount}>
+          <div className="message__sources">
+            {referenceGroups.map((group) => (
+              <div key={group.label} className="source-group">
+                <span className="source-group__label">{group.label}</span>
+                <div className="source-group__links">
+                  {group.links.map((link) => (
+                    <a
+                      key={link.key}
+                      className="source-group__link"
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`${group.label} source ${link.ordinal}`}
+                      title={link.href}
+                    >
+                      {link.ordinal}
+                    </a>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </CollapsibleSection>
       ) : null}
 
       {message.artifacts.length > 0 ? (

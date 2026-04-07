@@ -58,7 +58,8 @@ LEAD_PROMPT = (
     "for the final image asset, and call gen_slides exactly once when it explicitly asks for the final slide deck. "
     "Do not claim an asset exists unless the corresponding tool succeeds. Write concise Markdown that serves as the "
     "lead overview, mention uncertainty when the synthesis still has gaps, and rely on the provided synthesis instead "
-    "of adding new facts."
+    "of adding new facts. When the synthesis includes numbered references, cite evidence inline with bracketed "
+    "numbers like [1] or [1] [2], using only the provided reference numbers."
 )
 LONG_REPORT_LEAD_PROMPT = (
     "You are the lead researcher in an ongoing chat. Use the conversation history for context and answer the latest "
@@ -66,8 +67,9 @@ LONG_REPORT_LEAD_PROMPT = (
     "they are only for final asset creation: call gen_img exactly once when the latest user request explicitly asks "
     "for the final image asset, and call gen_slides exactly once when it explicitly asks for the final slide deck. "
     "Do not claim an asset exists unless the corresponding tool succeeds. Write Thesis-like Markdown in the current "
-    "language that serves as the lead overview, including ## Conclusion. Do not write ## Reference yourself; the "
-    "system will append it from the synthesis citations."
+    "language that serves as the lead overview, including ## Conclusion. Cite evidence inline with bracketed numbers "
+    "like [1] or [1] [2], using only the provided reference numbers. Do not write ## Reference yourself; the system "
+    "will append it from the synthesis citations."
 )
 FORMAT_FOLLOWUP_PROMPT = (
     "You are the lead editor in an ongoing chat. The user is asking you to transform the prior assistant answer into "
@@ -413,18 +415,72 @@ def _strip_reference_tail(text: str) -> str:
     return stripped
 
 
-def _reference_urls_from_envelope(envelope: dict[str, Any]) -> list[str]:
+def _reference_entries_from_envelope(envelope: dict[str, Any]) -> list[dict[str, Any]]:
     citations = envelope.get("citations_dedup")
     if not isinstance(citations, list):
         return []
-    urls: list[str] = []
-    for item in citations:
+    entries: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for number, item in enumerate(citations, start=1):
         if not isinstance(item, dict):
             continue
+        citation_id = str(item.get("id") or "").strip()
         url = str(item.get("canonical_url") or item.get("url") or "").strip()
-        if url:
-            urls.append(url)
-    return _dedupe_keep_order(urls)
+        if not citation_id or not url or citation_id in seen_ids:
+            continue
+        seen_ids.add(citation_id)
+        entries.append(
+            {
+                "number": number,
+                "citation_id": citation_id,
+                "url": url,
+                "title": str(item.get("title") or "").strip(),
+                "publisher": str(item.get("publisher") or "").strip(),
+            }
+        )
+    return entries
+
+
+def _prepare_synthesis_for_lead(synthesis: dict[str, Any], envelope: dict[str, Any]) -> dict[str, Any]:
+    prepared = {
+        "overview_md": str(synthesis.get("overview_md") or "").strip(),
+        "key_points": [],
+        "disagreements": _normalize_string_list(synthesis.get("disagreements"))[:5],
+        "gaps": _normalize_string_list(synthesis.get("gaps"))[:5],
+        "next_steps": _normalize_string_list(synthesis.get("next_steps"))[:5],
+        "references": _reference_entries_from_envelope(envelope),
+    }
+    number_by_citation_id = {
+        str(item["citation_id"]): int(item["number"])
+        for item in prepared["references"]
+        if isinstance(item, dict) and item.get("citation_id") and item.get("number")
+    }
+    lead = envelope.get("lead")
+    raw_points = lead.get("key_points") if isinstance(lead, dict) else []
+    if not isinstance(raw_points, list):
+        return prepared
+    key_points: list[dict[str, Any]] = []
+    for item in raw_points:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        citation_ids = _normalize_string_list(item.get("citation_ids"))
+        key_points.append(
+            {
+                "text": text,
+                "citation_ids": citation_ids,
+                "reference_numbers": [
+                    number_by_citation_id[citation_id]
+                    for citation_id in citation_ids
+                    if citation_id in number_by_citation_id
+                ],
+                "confidence": _normalize_confidence(item.get("confidence")),
+            }
+        )
+    prepared["key_points"] = key_points
+    return prepared
 
 
 def _finalize_turn_envelope(envelope: dict[str, Any], *, long_report_mode: bool) -> dict[str, Any]:
@@ -434,11 +490,13 @@ def _finalize_turn_envelope(envelope: dict[str, Any], *, long_report_mode: bool)
     if not isinstance(lead, dict):
         return envelope
     overview = _strip_reference_tail(str(lead.get("overview_md") or ""))
-    reference_urls = _reference_urls_from_envelope(envelope)
-    if not reference_urls:
+    reference_entries = _reference_entries_from_envelope(envelope)
+    if not reference_entries:
         lead["overview_md"] = overview
         return envelope
-    reference_block = "## Reference\n\n" + "\n".join(f"- {url}" for url in reference_urls)
+    reference_block = "## Reference\n\n" + "\n".join(
+        f"- [{item['number']}] {item['url']}" for item in reference_entries
+    )
     lead["overview_md"] = f"{overview}\n\n{reference_block}".strip() if overview else reference_block
     return envelope
 
@@ -735,10 +793,21 @@ class DeepFind:
         tasks = self._plan(query, transcript, num_agent, max_iter_per_agent)
         reports = self._run_workers(query, transcript, tasks, max_iter_per_agent)
         synthesis = self._synthesize(query, transcript, reports, max_iter_per_agent)
+        lead_synthesis = _prepare_synthesis_for_lead(
+            synthesis,
+            _build_turn_envelope(
+                query=query,
+                lead_overview="",
+                synthesis=synthesis,
+                reports=reports,
+                num_agent=num_agent,
+                max_iter_per_agent=max_iter_per_agent,
+            ),
+        )
         lead_overview = self._lead(
             query,
             transcript,
-            synthesis,
+            lead_synthesis,
             max_iter_per_agent,
             long_report_mode=long_report_mode,
         ).strip()

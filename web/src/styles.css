@@ -553,6 +553,56 @@ img {
   color: var(--accent);
 }
 
+.message__structured--collapsible {
+  padding: 0;
+  overflow: hidden;
+}
+
+.message__section-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  padding: 14px;
+}
+
+.message__section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.message__section-summary::before {
+  content: "▸";
+  color: var(--accent);
+  font-size: 0.82rem;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+
+.message__structured--collapsible[open] .message__section-summary::before {
+  transform: rotate(90deg);
+}
+
+.message__section-count {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid rgba(93, 225, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(93, 225, 255, 0.08);
+  color: var(--text-soft);
+  font-size: 0.76rem;
+}
+
+.message__section-content {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(93, 225, 255, 0.08);
+}
+
 .key-point-list,
 .reference-list {
   display: grid;
