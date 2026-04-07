@@ -9,6 +9,20 @@ export interface ArtifactLink {
   url: string;
 }
 
+export interface CitationLink {
+  id: string;
+  canonical_url: string;
+  url: string;
+  title: string;
+  publisher: string;
+}
+
+export interface KeyPoint {
+  text: string;
+  citation_ids: string[];
+  confidence: string;
+}
+
 export interface WebMessage {
   id: string;
   role: MessageRole;
@@ -17,6 +31,8 @@ export interface WebMessage {
   mode: ChatMode | null;
   sources: string[];
   artifacts: ArtifactLink[];
+  key_points?: KeyPoint[];
+  citations?: CitationLink[];
 }
 
 export interface WebChatSummary {
@@ -39,6 +55,8 @@ export interface TurnResult {
   answer_markdown: string;
   sources: string[];
   artifacts: ArtifactLink[];
+  key_points?: KeyPoint[];
+  citations?: CitationLink[];
   mode: ChatMode;
 }
 

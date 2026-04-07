@@ -295,7 +295,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("- https://example.com/report", envelope["lead"]["overview_md"])
         self.assertNotIn("utm_", envelope["lead"]["overview_md"])
 
-    def test_run_turn_structured_keeps_existing_reference_section_in_long_report_mode(self) -> None:
+    def test_run_turn_structured_rebuilds_existing_reference_section_in_long_report_mode(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
         fake_reports = [
@@ -331,7 +331,51 @@ class OrchestratorTests(unittest.TestCase):
                             long_report_mode=True,
                         )
 
-        self.assertEqual(envelope["lead"]["overview_md"], lead_text)
+        self.assertEqual(
+            envelope["lead"]["overview_md"],
+            "## Conclusion\n\nText\n\n## Reference\n\n- https://example.com/report",
+        )
+
+    def test_run_turn_structured_replaces_partial_reference_heading_in_long_report_mode(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        fake_reports = [
+            WorkerReport(
+                task="task",
+                text="worker",
+                citations=[],
+                parsed={
+                    "summary": "summary",
+                    "claims": [
+                        {
+                            "text": "claim",
+                            "citations": ["https://example.com/report?utm_source=news"],
+                            "confidence": "high",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-1",
+            )
+        ]
+        fake_synthesis = {"overview_md": "draft", "key_points": [], "disagreements": [], "gaps": [], "next_steps": []}
+        lead_text = "## Conclusion\n\nText\n\n## Ref"
+        with patch.object(app, "_plan", return_value=["task"]):
+            with patch.object(app, "_run_workers", return_value=fake_reports):
+                with patch.object(app, "_synthesize", return_value=fake_synthesis):
+                    with patch.object(app, "_lead", return_value=lead_text):
+                        envelope, _ = app._run_turn_structured(
+                            "topic",
+                            transcript=[],
+                            num_agent=1,
+                            max_iter_per_agent=2,
+                            long_report_mode=True,
+                        )
+
+        self.assertEqual(
+            envelope["lead"]["overview_md"],
+            "## Conclusion\n\nText\n\n## Reference\n\n- https://example.com/report",
+        )
 
     def test_run_turn_structured_uses_raw_report_citations_for_long_report_references(self) -> None:
         settings = Settings(api_key="x")

@@ -13,7 +13,16 @@ from .json_utils import try_load_json
 from .models import ChatMessage, WorkerReport
 from .orchestrator import DeepFind
 from .tools import Toolset
-from .web_models import ArtifactKind, ArtifactLink, ChatMode, TurnResult, WebChatDetail, WebMessage
+from .web_models import (
+    ArtifactKind,
+    ArtifactLink,
+    CitationLink,
+    ChatMode,
+    KeyPoint,
+    TurnResult,
+    WebChatDetail,
+    WebMessage,
+)
 from .web_progress import ToolObservation, WebProgress
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
@@ -75,6 +84,83 @@ def _path_from_value(value: object, key: str) -> list[str]:
         for item in value:
             found.extend(_path_from_value(item, key))
     return found
+
+
+def _overview_from_envelope(envelope: dict[str, object] | None) -> str:
+    if not isinstance(envelope, dict):
+        return ""
+    lead = envelope.get("lead")
+    if not isinstance(lead, dict):
+        return ""
+    return str(lead.get("overview_md") or "").strip()
+
+
+def _normalize_string_list(value: object) -> list[str]:
+    values: list[str] = []
+    if not isinstance(value, list):
+        return values
+    for item in value:
+        text = str(item).strip()
+        if text:
+            values.append(text)
+    return _dedupe_keep_order(values)
+
+
+def _key_points_from_envelope(envelope: dict[str, object] | None) -> list[KeyPoint]:
+    if not isinstance(envelope, dict):
+        return []
+    lead = envelope.get("lead")
+    if not isinstance(lead, dict):
+        return []
+    raw_points = lead.get("key_points")
+    if not isinstance(raw_points, list):
+        return []
+
+    points: list[KeyPoint] = []
+    for item in raw_points:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        points.append(
+            KeyPoint(
+                text=text,
+                citation_ids=_normalize_string_list(item.get("citation_ids")),
+                confidence=str(item.get("confidence") or "medium").strip() or "medium",
+            )
+        )
+    return points
+
+
+def _citations_from_envelope(envelope: dict[str, object] | None) -> list[CitationLink]:
+    if not isinstance(envelope, dict):
+        return []
+    raw_citations = envelope.get("citations_dedup")
+    if not isinstance(raw_citations, list):
+        return []
+
+    citations: list[CitationLink] = []
+    seen: set[str] = set()
+    for item in raw_citations:
+        if not isinstance(item, dict):
+            continue
+        citation_id = str(item.get("id") or "").strip()
+        canonical_url = str(item.get("canonical_url") or item.get("url") or "").strip()
+        url = str(item.get("url") or canonical_url).strip()
+        if not citation_id or not canonical_url or not url or citation_id in seen:
+            continue
+        seen.add(citation_id)
+        citations.append(
+            CitationLink(
+                id=citation_id,
+                canonical_url=canonical_url,
+                url=url,
+                title=str(item.get("title") or "").strip(),
+                publisher=str(item.get("publisher") or "").strip(),
+            )
+        )
+    return citations
 
 
 @lru_cache(maxsize=1)
@@ -174,17 +260,28 @@ class DeepFindWebService:
         def run_turn() -> None:
             try:
                 app = self.app_factory(progress)
-                answer, reports = app._run_turn_detailed(
-                    query=query,
-                    transcript=prior_transcript,
-                    num_agent=mode_to_agent_count(mode),
-                    max_iter_per_agent=self.max_iter_per_agent,
-                )
+                envelope: dict[str, object] | None = None
+                if hasattr(app, "_run_turn_structured"):
+                    envelope, reports = app._run_turn_structured(
+                        query=query,
+                        transcript=prior_transcript,
+                        num_agent=mode_to_agent_count(mode),
+                        max_iter_per_agent=self.max_iter_per_agent,
+                    )
+                    answer = _overview_from_envelope(envelope)
+                else:
+                    answer, reports = app._run_turn_detailed(
+                        query=query,
+                        transcript=prior_transcript,
+                        num_agent=mode_to_agent_count(mode),
+                        max_iter_per_agent=self.max_iter_per_agent,
+                    )
                 turn_result = self._build_turn_result(
                     answer=answer,
                     reports=reports,
                     observations=list(progress.tool_outputs),
                     mode=mode,
+                    envelope=envelope,
                 )
                 assistant_message = self._save_assistant_message(chat_id, turn_result)
 
@@ -229,6 +326,8 @@ class DeepFindWebService:
             mode=turn_result.mode,
             sources=turn_result.sources,
             artifacts=turn_result.artifacts,
+            key_points=turn_result.key_points,
+            citations=turn_result.citations,
         )
         latest_chat = self.get_chat(chat_id).model_copy(deep=True)
         latest_chat.messages.append(assistant_message)
@@ -243,6 +342,7 @@ class DeepFindWebService:
         reports: list[WorkerReport],
         observations: list[ToolObservation],
         mode: ChatMode,
+        envelope: dict[str, object] | None = None,
     ) -> TurnResult:
         urls: list[str] = []
         urls.extend(_extract_urls_from_text(answer))
@@ -257,6 +357,8 @@ class DeepFindWebService:
             answer_markdown=answer,
             sources=_dedupe_keep_order(urls),
             artifacts=artifacts,
+            key_points=_key_points_from_envelope(envelope),
+            citations=_citations_from_envelope(envelope),
             mode=mode,
         )
 

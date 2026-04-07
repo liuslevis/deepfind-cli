@@ -163,6 +163,44 @@ class WebServiceTests(unittest.TestCase):
             ],
         )
 
+    def test_build_turn_result_includes_structured_key_points_and_citations(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(store=ChatStore(Path(temp_dir)))
+            result = service._build_turn_result(
+                answer="Final answer",
+                reports=[],
+                observations=[],
+                mode="fast",
+                envelope={
+                    "lead": {
+                        "overview_md": "Final answer",
+                        "key_points": [
+                            {
+                                "text": "Key fact",
+                                "citation_ids": ["c1"],
+                                "confidence": "high",
+                            }
+                        ],
+                    },
+                    "citations_dedup": [
+                        {
+                            "id": "c1",
+                            "canonical_url": "https://example.com/report",
+                            "url": "https://example.com/report?utm_source=news",
+                            "title": "Example Report",
+                            "publisher": "Example Publisher",
+                        }
+                    ],
+                },
+            )
+
+        self.assertEqual(result.key_points[0].text, "Key fact")
+        self.assertEqual(result.key_points[0].citation_ids, ["c1"])
+        self.assertEqual(result.key_points[0].confidence, "high")
+        self.assertEqual(result.citations[0].id, "c1")
+        self.assertEqual(result.citations[0].canonical_url, "https://example.com/report")
+        self.assertEqual(result.citations[0].title, "Example Report")
+
     def test_stream_message_emits_ordered_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(
