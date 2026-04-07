@@ -465,10 +465,23 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByText("Overview paragraph.");
-    expect(screen.getByRole("heading", { name: "Key Points" })).toBeInTheDocument();
+    const keyPointsHeading = screen.getByRole("heading", { name: "Key Points" });
+    const keyPointsDetails = keyPointsHeading.closest("details");
+    expect(keyPointsDetails).not.toBeNull();
+    expect(keyPointsDetails).not.toHaveAttribute("open");
+    const referencesHeading = screen.getByRole("heading", { name: "References" });
+    const referencesDetails = referencesHeading.closest("details");
+    expect(referencesDetails).not.toBeNull();
+    expect(referencesDetails).not.toHaveAttribute("open");
+
+    await userEvent.click(keyPointsHeading.closest("summary")!);
+    await userEvent.click(referencesHeading.closest("summary")!);
+
+    expect(keyPointsDetails).toHaveAttribute("open");
+    expect(referencesDetails).toHaveAttribute("open");
     expect(screen.getByText("A structured key point")).toBeInTheDocument();
     expect(screen.getByText("High confidence")).toBeInTheDocument();
-    const keyPointsSection = screen.getByRole("heading", { name: "Key Points" }).closest("section");
+    const keyPointsSection = screen.getByRole("heading", { name: "Key Points" }).closest("details");
     expect(keyPointsSection).not.toBeNull();
     if (keyPointsSection) {
       expect(within(keyPointsSection).getByRole("link", { name: /\[1\] example\.com: Example Report/i })).toHaveAttribute(
@@ -476,15 +489,14 @@ describe("App", () => {
         "https://example.com/report",
       );
     }
-    const referencesSection = screen.getByRole("heading", { name: "References" }).closest("section");
+    const referencesSection = screen.getByRole("heading", { name: "References" }).closest("details");
     expect(referencesSection).not.toBeNull();
     if (referencesSection) {
-      expect(within(referencesSection).getByRole("link", { name: /\[1\] example\.com: Example Report/i })).toHaveAttribute(
+      expect(within(referencesSection).getByRole("link", { name: "example.com source 1" })).toHaveAttribute(
         "href",
         "https://example.com/report",
       );
     }
-    expect(screen.queryByRole("link", { name: "example.com source 1" })).not.toBeInTheDocument();
   });
 
   it("toggles the mobile chat drawer and closes it after selecting a chat", async () => {
@@ -880,9 +892,15 @@ describe("App", () => {
     expect(terminal.textContent).toContain('LEAD-SYNTHESIS done       2 rounds | {"summary":"merged"}');
     expect(terminal.textContent).toContain("LEAD-FINAL done       3 rounds | Final streamed answer");
     expect(terminal.innerHTML).toContain("color: #ffd479");
+    const referencesHeading = screen.getByRole("heading", { name: "References" });
+    const referencesDetails = referencesHeading.closest("details");
+    expect(referencesDetails).not.toBeNull();
+    expect(referencesDetails).not.toHaveAttribute("open");
+    await userEvent.click(referencesHeading.closest("summary")!);
+    expect(referencesDetails).toHaveAttribute("open");
     expect(screen.getByRole("link", { name: "zhihu.com source 1" })).toHaveAttribute("href", "https://zhihu.com/question/1");
     expect(screen.getByRole("link", { name: "zhihu.com source 2" })).toHaveAttribute("href", "https://zhihu.com/question/2");
-    expect(screen.getByRole("link", { name: "baidu.com source 1" })).toHaveAttribute("href", "https://baidu.com/s?wd=atlas");
+    expect(screen.getByRole("link", { name: "baidu.com source 3" })).toHaveAttribute("href", "https://baidu.com/s?wd=atlas");
     expect(screen.getByRole("link", { name: /deck.html/i })).toHaveAttribute("href", "/api/files?path=deck");
   });
 

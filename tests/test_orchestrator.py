@@ -50,11 +50,13 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("gen_img", LEAD_PROMPT)
         self.assertIn("gen_slides", LEAD_PROMPT)
         self.assertIn("synthesis", LEAD_PROMPT)
+        self.assertIn("[1]", LEAD_PROMPT)
 
     def test_long_report_prompt_mentions_required_sections(self) -> None:
         self.assertIn("## Conclusion", LONG_REPORT_LEAD_PROMPT)
         self.assertIn("## Reference", LONG_REPORT_LEAD_PROMPT)
         self.assertIn("current language", LONG_REPORT_LEAD_PROMPT)
+        self.assertIn("[1]", LONG_REPORT_LEAD_PROMPT)
 
     def test_plan_prompt_mentions_slides(self) -> None:
         self.assertIn("slides", PLAN_PROMPT)
@@ -192,6 +194,77 @@ class OrchestratorTests(unittest.TestCase):
         synthesize.assert_called_once()
         lead.assert_called_once()
 
+    def test_run_turn_structured_passes_numbered_references_to_lead(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        fake_reports = [
+            WorkerReport(
+                task="task",
+                text="worker",
+                citations=[],
+                parsed={
+                    "summary": "summary",
+                    "claims": [
+                        {
+                            "text": "claim",
+                            "citations": ["https://example.com/source?utm_source=news"],
+                            "confidence": "high",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-1",
+            )
+        ]
+        fake_synthesis = {
+            "overview_md": "draft overview",
+            "key_points": [
+                {
+                    "text": "lead point",
+                    "citations": ["https://example.com/source"],
+                    "confidence": "medium",
+                }
+            ],
+            "disagreements": [],
+            "gaps": [],
+            "next_steps": [],
+        }
+        with patch.object(app, "_plan", return_value=["task"]):
+            with patch.object(app, "_run_workers", return_value=fake_reports):
+                with patch.object(app, "_synthesize", return_value=fake_synthesis):
+                    with patch.object(app, "_lead", return_value="final lead overview") as lead:
+                        app._run_turn_structured(
+                            "topic",
+                            transcript=[],
+                            num_agent=1,
+                            max_iter_per_agent=2,
+                        )
+
+        lead_synthesis = lead.call_args.args[2]
+        self.assertEqual(
+            lead_synthesis["references"],
+            [
+                {
+                    "number": 1,
+                    "citation_id": "c1",
+                    "url": "https://example.com/source",
+                    "title": "",
+                    "publisher": "",
+                }
+            ],
+        )
+        self.assertEqual(
+            lead_synthesis["key_points"],
+            [
+                {
+                    "text": "lead point",
+                    "citation_ids": ["c1"],
+                    "reference_numbers": [1],
+                    "confidence": "medium",
+                }
+            ],
+        )
+
     def test_lead_uses_only_asset_tools_when_requested(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
@@ -292,7 +365,7 @@ class OrchestratorTests(unittest.TestCase):
 
         self.assertIn("## Reference", envelope["lead"]["overview_md"])
         self.assertEqual(envelope["lead"]["overview_md"].count("## Reference"), 1)
-        self.assertIn("- https://example.com/report", envelope["lead"]["overview_md"])
+        self.assertIn("- [1] https://example.com/report", envelope["lead"]["overview_md"])
         self.assertNotIn("utm_", envelope["lead"]["overview_md"])
 
     def test_run_turn_structured_rebuilds_existing_reference_section_in_long_report_mode(self) -> None:
@@ -333,7 +406,7 @@ class OrchestratorTests(unittest.TestCase):
 
         self.assertEqual(
             envelope["lead"]["overview_md"],
-            "## Conclusion\n\nText\n\n## Reference\n\n- https://example.com/report",
+            "## Conclusion\n\nText\n\n## Reference\n\n- [1] https://example.com/report",
         )
 
     def test_run_turn_structured_replaces_partial_reference_heading_in_long_report_mode(self) -> None:
@@ -374,7 +447,7 @@ class OrchestratorTests(unittest.TestCase):
 
         self.assertEqual(
             envelope["lead"]["overview_md"],
-            "## Conclusion\n\nText\n\n## Reference\n\n- https://example.com/report",
+            "## Conclusion\n\nText\n\n## Reference\n\n- [1] https://example.com/report",
         )
 
     def test_run_turn_structured_uses_raw_report_citations_for_long_report_references(self) -> None:
@@ -413,7 +486,7 @@ class OrchestratorTests(unittest.TestCase):
                         )
 
         self.assertIn("## Reference", envelope["lead"]["overview_md"])
-        self.assertIn("- https://example.com/source", envelope["lead"]["overview_md"])
+        self.assertIn("- [1] https://example.com/source", envelope["lead"]["overview_md"])
         self.assertEqual(envelope["citations_dedup"][0]["canonical_url"], "https://example.com/source")
 
     def test_chat_session_keeps_full_successful_transcript(self) -> None:
