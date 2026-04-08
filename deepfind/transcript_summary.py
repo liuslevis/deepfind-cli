@@ -14,6 +14,7 @@ def summarize_transcript_for_query(
     transcript: str,
     query: str,
     transcript_path: str = "",
+    model: str = BILI_TRANSCRIPT_SUMMARY_MODEL,
 ) -> tuple[str, int]:
     normalized_query = query.strip()
     normalized_transcript = transcript.strip()
@@ -28,6 +29,7 @@ def summarize_transcript_for_query(
         chunk_summaries.append(
             _summarize_chunk(
                 client,
+                model=model,
                 query=normalized_query,
                 chunk=chunk,
                 index=index,
@@ -38,12 +40,21 @@ def summarize_transcript_for_query(
 
     if len(chunk_summaries) == 1:
         return chunk_summaries[0], 1
-    return _merge_chunk_summaries(client, query=normalized_query, chunk_summaries=chunk_summaries), len(chunks)
+    return (
+        _merge_chunk_summaries(
+            client,
+            model=model,
+            query=normalized_query,
+            chunk_summaries=chunk_summaries,
+        ),
+        len(chunks),
+    )
 
 
 def _summarize_chunk(
     client,
     *,
+    model: str,
     query: str,
     chunk: str,
     index: int,
@@ -73,6 +84,7 @@ def _summarize_chunk(
     )
     summary = _chat_complete(
         client,
+        model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         max_tokens=900,
@@ -82,7 +94,13 @@ def _summarize_chunk(
     raise TranscriptSummaryError(f"chunk summary {index}/{total} returned empty output")
 
 
-def _merge_chunk_summaries(client, *, query: str, chunk_summaries: list[str]) -> str:
+def _merge_chunk_summaries(
+    client,
+    *,
+    model: str,
+    query: str,
+    chunk_summaries: list[str],
+) -> str:
     system_prompt = (
         "You merge partial transcript summaries for a research agent. "
         "Answer the research query using only the provided chunk summaries. "
@@ -104,6 +122,7 @@ def _merge_chunk_summaries(client, *, query: str, chunk_summaries: list[str]) ->
     )
     summary = _chat_complete(
         client,
+        model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         max_tokens=1_200,
@@ -113,10 +132,17 @@ def _merge_chunk_summaries(client, *, query: str, chunk_summaries: list[str]) ->
     raise TranscriptSummaryError("merged transcript summary returned empty output")
 
 
-def _chat_complete(client, *, system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+def _chat_complete(
+    client,
+    *,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+) -> str:
     try:
         response = client.chat.completions.create(
-            model=BILI_TRANSCRIPT_SUMMARY_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
