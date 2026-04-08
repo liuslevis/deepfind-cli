@@ -255,7 +255,13 @@ def _truncate_plain_text(text: str, limit: int) -> str:
     return shortened or text[:limit].strip()
 
 
-def summarize_web_document(client, *, prompt: str, document: PreparedWebDocument) -> str:
+def summarize_web_document(
+    client,
+    *,
+    prompt: str,
+    document: PreparedWebDocument,
+    model: str = WEB_FETCH_MODEL,
+) -> str:
     system_prompt = (
         "You summarize fetched web pages for a research agent. "
         "Answer the user's prompt using only the provided page content. "
@@ -273,7 +279,7 @@ def summarize_web_document(client, *, prompt: str, document: PreparedWebDocument
     )
     try:
         response = client.chat.completions.create(
-            model=WEB_FETCH_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

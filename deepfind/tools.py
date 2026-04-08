@@ -570,6 +570,7 @@ class Toolset:
                 self.settings.new_client(),
                 prompt=clean_prompt,
                 document=document,
+                model=self.settings.model,
             )
         except WebFetchError as exc:
             return {
@@ -1270,6 +1271,7 @@ class Toolset:
                 transcript=data["transcript"],
                 query=normalized_query,
                 transcript_path=data["transcript_path"],
+                model=self.settings.model,
             )
         except (
             InvalidBiliIdError,
@@ -1284,7 +1286,7 @@ class Toolset:
         result_data = {
             "bili_id": data["bili_id"],
             "query": normalized_query,
-            "summary_model": BILI_TRANSCRIPT_SUMMARY_MODEL,
+            "summary_model": self.settings.model,
             "transcript_path": data["transcript_path"],
             "transcript_kind": "summary",
             "transcript_chars": len(data["transcript"]),

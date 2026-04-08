@@ -17,9 +17,8 @@ from deepfind.bili_transcribe import (
 from deepfind.config import Settings
 from deepfind.gen_slides import SlideGenerationError
 from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
-from deepfind.transcript_summary import BILI_TRANSCRIPT_SUMMARY_MODEL
 from deepfind.tools import Toolset
-from deepfind.web_fetch import WEB_FETCH_MAX_MARKDOWN_CHARS, WEB_FETCH_MODEL
+from deepfind.web_fetch import WEB_FETCH_MAX_MARKDOWN_CHARS
 
 
 def message_response(text: str):
@@ -149,7 +148,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["error"], "opencli not found")
 
     def test_web_fetch_html_returns_summary_and_metadata(self) -> None:
-        toolset = Toolset(Settings(api_key="x"))
+        toolset = Toolset(Settings(api_key="x", model="configured-web-model"))
         response = httpx.Response(
             200,
             headers={"content-type": "text/html; charset=utf-8"},
@@ -176,7 +175,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertFalse(result["data"]["truncated"])
         self.assertGreater(result["data"]["markdown_chars"], 0)
         calls = fake_client.chat.completions.calls
-        self.assertEqual(calls[0]["model"], WEB_FETCH_MODEL)
+        self.assertEqual(calls[0]["model"], "configured-web-model")
         self.assertIn("Example Title", calls[0]["messages"][1]["content"])
         self.assertEqual(fake_http.calls, ["https://example.com/start"])
 
@@ -884,7 +883,7 @@ class ToolsetTests(unittest.TestCase):
 
     def test_bili_transcribe_success_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            toolset = Toolset(Settings(api_key="x", model="configured-bili-model", audio_dir=tmpdir))
             fake_client = FakeOpenAIClient([message_response("condensed summary")])
             with patch(
                 "deepfind.tools.transcribe_bili_audio",
@@ -904,8 +903,8 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["data"]["bili_id"], "BV1cgPSzeEj5")
         self.assertEqual(result["data"]["summary"], "condensed summary")
         self.assertEqual(result["data"]["transcript"], "condensed summary")
-        self.assertEqual(result["data"]["summary_model"], BILI_TRANSCRIPT_SUMMARY_MODEL)
-        self.assertEqual(fake_client.chat.completions.calls[0]["model"], BILI_TRANSCRIPT_SUMMARY_MODEL)
+        self.assertEqual(result["data"]["summary_model"], "configured-bili-model")
+        self.assertEqual(fake_client.chat.completions.calls[0]["model"], "configured-bili-model")
 
     def test_bili_transcribe_uses_cache_for_same_bili_id_and_query(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
