@@ -9,11 +9,13 @@ deepfind/gen_img.py
 deepfind/gen_slides.py
 deepfind/json_utils.py
 deepfind/llm.py
+deepfind/local_runtime.py
 deepfind/models.py
 deepfind/orchestrator.py
 deepfind/output.py
 deepfind/progress.py
 deepfind/tools.py
+deepfind/transcript_summary.py
 deepfind/web_api.py
 deepfind/web_fetch.py
 deepfind/web_models.py
@@ -33,8 +35,10 @@ tests/test_config.py
 tests/test_gen_img.py
 tests/test_gen_slides.py
 tests/test_llm.py
+tests/test_local_runtime.py
 tests/test_orchestrator.py
 tests/test_output.py
+tests/test_progress.py
 tests/test_tools.py
 tests/test_web_api.py
 tests/test_web_service.py

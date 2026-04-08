@@ -1,4 +1,4 @@
-import type { ChatMode, ProgressEvent, WebChatDetail, WebChatSummary } from "./types";
+import type { ChatListResponse, ChatMode, ModelTarget, ProgressEvent, WebChatDetail } from "./types";
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -40,10 +40,9 @@ function parseEventBlock(block: string): ProgressEvent | null {
   };
 }
 
-export async function listChats(): Promise<WebChatSummary[]> {
+export async function listChats(): Promise<ChatListResponse> {
   const response = await fetch("/api/chats");
-  const payload = await readJson<{ chats: WebChatSummary[] }>(response);
-  return payload.chats;
+  return readJson<ChatListResponse>(response);
 }
 
 export async function createChat(title?: string): Promise<WebChatDetail> {
@@ -75,7 +74,7 @@ export async function deleteChat(chatId: string): Promise<void> {
 
 export async function streamChatMessage(
   chatId: string,
-  payload: { content: string; mode: ChatMode },
+  payload: { content: string; mode: ChatMode; model_target: ModelTarget },
   onEvent: (event: ProgressEvent) => void,
   options?: { signal?: AbortSignal },
 ): Promise<void> {

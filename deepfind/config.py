@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from openai import OpenAI
@@ -12,6 +12,9 @@ from .gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
 
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_MODEL = "qwen3-max"
+DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
+DEFAULT_LOCAL_MODEL = "qwen3.5:9b"
+DEFAULT_LOCAL_API_KEY = "ollama"
 
 
 def _clean_env_value(value: str | None) -> str | None:
@@ -56,6 +59,9 @@ class Settings:
     api_key: str
     model: str = DEFAULT_MODEL
     base_url: str = DEFAULT_BASE_URL
+    local_model: str = DEFAULT_LOCAL_MODEL
+    local_base_url: str = DEFAULT_LOCAL_BASE_URL
+    local_api_key: str = DEFAULT_LOCAL_API_KEY
     nano_banana_api_key: str | None = None
     nano_banana_model: str = DEFAULT_IMAGE_MODEL
     image_dir: str = DEFAULT_IMAGE_DIR
@@ -69,16 +75,19 @@ class Settings:
     subprocess_timeout: int = 90
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls, *, require_api_key: bool = True) -> "Settings":
         _load_dotenv()
-        api_key = _env("QWEN_API_KEY") or _env("DASHSCOPE_API_KEY")
-        if not api_key:
-            raise RuntimeError("Set QWEN_API_KEY or DASHSCOPE_API_KEY.")
+        api_key = _env("QWEN_API_KEY") or _env("DASHSCOPE_API_KEY") or ""
+        if require_api_key and not api_key:
+            raise RuntimeError("Set QWEN_API_KEY or DASHSCOPE_API_KEY, or use local GPU mode.")
         timeout = _env("DEEPFIND_TOOL_TIMEOUT", "90")
         return cls(
             api_key=api_key,
             model=_env("QWEN_MODEL") or _env("QWEN_MODEL_NAME", DEFAULT_MODEL) or DEFAULT_MODEL,
             base_url=_env("QWEN_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL,
+            local_model=_env("DEEPFIND_LOCAL_MODEL", DEFAULT_LOCAL_MODEL) or DEFAULT_LOCAL_MODEL,
+            local_base_url=_env("DEEPFIND_LOCAL_BASE_URL", DEFAULT_LOCAL_BASE_URL) or DEFAULT_LOCAL_BASE_URL,
+            local_api_key=_env("DEEPFIND_LOCAL_API_KEY", DEFAULT_LOCAL_API_KEY) or DEFAULT_LOCAL_API_KEY,
             nano_banana_api_key=(
                 _env("GOOGLE_NANO_BANANA_API_KEY")
                 or _env("GEMINI_API_KEY")
@@ -106,3 +115,16 @@ class Settings:
 
     def new_client(self) -> OpenAI:
         return OpenAI(api_key=self.api_key, base_url=self.base_url)
+
+    def ensure_remote_ready(self) -> "Settings":
+        if not self.api_key:
+            raise RuntimeError("Set QWEN_API_KEY or DASHSCOPE_API_KEY, or switch to GPU mode.")
+        return self
+
+    def with_local_gpu(self) -> "Settings":
+        return replace(
+            self,
+            api_key=self.local_api_key,
+            model=self.local_model,
+            base_url=self.local_base_url,
+        )

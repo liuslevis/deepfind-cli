@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+local-llm = []
 media = [
   "accelerate>=0.20.0",
   "librosa>=0.10.0",
@@ -35,11 +36,3 @@ deepfind-web = "deepfind.web_api:main"
 [tool.setuptools.packages.find]
 include = ["deepfind*"]
 
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[tool.uv.sources]
-torch = [{ index = "pytorch-cu128" }]
-torchaudio = [{ index = "pytorch-cu128" }]

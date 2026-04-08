@@ -5,6 +5,7 @@ import sys
 from typing import Callable, TextIO
 
 from .config import Settings
+from .local_runtime import detect_local_model
 from .orchestrator import ChatSession, DeepFind
 from .output import render_answer, render_json_answer
 from .progress import ConsoleProgress
@@ -45,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--long-report-mode",
         action="store_true",
         help="use long-form final report output instead of the default concise overview",
+    )
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        help="run the research pipeline with the local Ollama GPU model instead of the remote Qwen API",
     )
     return parser
 
@@ -119,7 +125,17 @@ def main(
         parser.error("--max-iter-per-agent must be >= 1")
 
     try:
-        app = DeepFind(progress=ConsoleProgress(enabled=not args.quiet, stream=stderr))
+        app_kwargs = {
+            "progress": ConsoleProgress(enabled=not args.quiet, stream=stderr),
+        }
+        if args.gpu:
+            base_settings = Settings.from_env(require_api_key=False)
+            local_status = detect_local_model(base_settings)
+            if not local_status.available:
+                raise RuntimeError(local_status.reason or f"Local model {base_settings.local_model} is unavailable.")
+            app_kwargs["settings"] = base_settings.with_local_gpu()
+
+        app = DeepFind(**app_kwargs)
         session = app.session(
             num_agent=args.num_agent,
             max_iter_per_agent=args.max_iter_per_agent,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -10,6 +11,7 @@ from uuid import uuid4
 from .chat_store import ChatStore, repo_root, summarize_text, utc_now
 from .config import Settings
 from .json_utils import try_load_json
+from .local_runtime import detect_local_model
 from .models import ChatMessage, WorkerReport
 from .orchestrator import DeepFind
 from .tools import Toolset
@@ -19,6 +21,8 @@ from .web_models import (
     CitationLink,
     ChatMode,
     KeyPoint,
+    LocalModelInfo,
+    ModelTarget,
     TurnResult,
     WebChatDetail,
     WebMessage,
@@ -35,6 +39,10 @@ _SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
 
 def mode_to_agent_count(mode: ChatMode) -> int:
     return 1 if mode == "fast" else 4
+
+
+def model_target_label(model_target: ModelTarget, settings: Settings) -> str:
+    return settings.local_model if model_target == "gpu" else settings.model
 
 
 def chunk_text(text: str, width: int = 180) -> list[str]:
@@ -163,6 +171,22 @@ def _citations_from_envelope(envelope: dict[str, object] | None) -> list[Citatio
     return citations
 
 
+def _local_model_info(settings: Settings) -> LocalModelInfo:
+    status = detect_local_model(settings)
+    return LocalModelInfo(
+        available=status.available,
+        backend=status.backend,
+        model=status.model,
+        base_url=status.base_url,
+        reason=status.reason,
+        gpu={
+            "available": status.gpu.available,
+            "name": status.gpu.name,
+            "memory_total_mb": status.gpu.memory_total_mb,
+        },
+    )
+
+
 @lru_cache(maxsize=1)
 def _tool_catalog() -> tuple[tuple[str, str], ...]:
     catalog: list[tuple[str, str]] = []
@@ -205,12 +229,15 @@ class DeepFindWebService:
         max_iter_per_agent: int = _DEFAULT_MAX_ITER_PER_AGENT,
     ) -> None:
         self.store = store or ChatStore()
-        self.app_factory = app_factory or (lambda progress: DeepFind(progress=progress))
+        self.app_factory = app_factory
         self.max_iter_per_agent = max_iter_per_agent
         self._repo_root = repo_root()
 
     def list_chats(self):
         return self.store.list_chats()
+
+    def local_model_info(self) -> LocalModelInfo:
+        return _local_model_info(Settings.from_env(require_api_key=False))
 
     def create_chat(self, title: str | None = None) -> WebChatDetail:
         return self.store.create_chat(title=title)
@@ -221,11 +248,13 @@ class DeepFindWebService:
     def delete_chat(self, chat_id: str) -> None:
         self.store.delete_chat(chat_id)
 
-    def stream_message(self, chat_id: str, content: str, mode: ChatMode):
+    def stream_message(self, chat_id: str, content: str, mode: ChatMode, model_target: ModelTarget = "cloud"):
         query = content.strip()
         if not query:
             raise ValueError("message content must not be empty")
 
+        settings = self._settings_for_target(model_target)
+        model_label = model_target_label(model_target, settings)
         chat = self.get_chat(chat_id)
         prior_transcript = self._messages_to_transcript(chat.messages)
         updated_chat = chat.model_copy(deep=True)
@@ -235,13 +264,15 @@ class DeepFindWebService:
             content=query,
             created_at=utc_now(),
             mode=mode,
+            model_target=model_target,
+            model_label=model_label,
         )
         updated_chat.messages.append(user_message)
         updated_chat.title = self._next_title(updated_chat, fallback=query)
         updated_chat.updated_at = user_message.created_at
         self.store.save_chat(updated_chat)
 
-        command_result = self._build_slash_command_result(query, mode)
+        command_result = self._build_slash_command_result(query, mode, model_target=model_target, model_label=model_label)
         if command_result is not None:
             assistant_message = self._save_assistant_message(chat_id, command_result)
             progress = WebProgress()
@@ -259,7 +290,7 @@ class DeepFindWebService:
 
         def run_turn() -> None:
             try:
-                app = self.app_factory(progress)
+                app = self._app_for_settings(progress, settings)
                 envelope: dict[str, object] | None = None
                 if hasattr(app, "_run_turn_structured"):
                     envelope, reports = app._run_turn_structured(
@@ -282,6 +313,8 @@ class DeepFindWebService:
                     observations=list(progress.tool_outputs),
                     mode=mode,
                     envelope=envelope,
+                    model_target=model_target,
+                    model_label=model_label,
                 )
                 assistant_message = self._save_assistant_message(chat_id, turn_result)
 
@@ -303,7 +336,14 @@ class DeepFindWebService:
         Thread(target=run_turn, daemon=True).start()
         return progress.iter_events()
 
-    def _build_slash_command_result(self, query: str, mode: ChatMode) -> TurnResult | None:
+    def _build_slash_command_result(
+        self,
+        query: str,
+        mode: ChatMode,
+        *,
+        model_target: ModelTarget,
+        model_label: str,
+    ) -> TurnResult | None:
         if not query.startswith("/"):
             return None
         if query.lower() == _LIST_TOOL_COMMAND:
@@ -315,6 +355,8 @@ class DeepFindWebService:
             sources=[],
             artifacts=[],
             mode=mode,
+            model_target=model_target,
+            model_label=model_label,
         )
 
     def _save_assistant_message(self, chat_id: str, turn_result: TurnResult) -> WebMessage:
@@ -328,6 +370,8 @@ class DeepFindWebService:
             artifacts=turn_result.artifacts,
             key_points=turn_result.key_points,
             citations=turn_result.citations,
+            model_target=turn_result.model_target,
+            model_label=turn_result.model_label,
         )
         latest_chat = self.get_chat(chat_id).model_copy(deep=True)
         latest_chat.messages.append(assistant_message)
@@ -343,6 +387,8 @@ class DeepFindWebService:
         observations: list[ToolObservation],
         mode: ChatMode,
         envelope: dict[str, object] | None = None,
+        model_target: ModelTarget = "cloud",
+        model_label: str = "",
     ) -> TurnResult:
         urls: list[str] = []
         urls.extend(_extract_urls_from_text(answer))
@@ -360,6 +406,8 @@ class DeepFindWebService:
             key_points=_key_points_from_envelope(envelope),
             citations=_citations_from_envelope(envelope),
             mode=mode,
+            model_target=model_target,
+            model_label=model_label,
         )
 
     def _build_artifacts(self, observations: list[ToolObservation]) -> list[ArtifactLink]:
@@ -399,6 +447,29 @@ class DeepFindWebService:
     def file_url_for(self, path: Path | str) -> str:
         resolved = self.resolve_file_path(str(path))
         return f"/api/files?path={quote(str(resolved))}"
+
+    def _settings_for_target(self, model_target: ModelTarget) -> Settings:
+        base_settings = Settings.from_env(require_api_key=False)
+        if model_target == "gpu":
+            local_status = detect_local_model(base_settings)
+            if not local_status.available:
+                raise RuntimeError(
+                    local_status.reason or f"Local model {base_settings.local_model} is unavailable."
+                )
+            return base_settings.with_local_gpu()
+        return base_settings.ensure_remote_ready()
+
+    def _app_for_settings(self, progress: WebProgress, settings: Settings):
+        if self.app_factory is None:
+            return DeepFind(progress=progress, settings=settings)
+
+        signature = inspect.signature(self.app_factory)
+        parameters = signature.parameters
+        if "settings" in parameters:
+            return self.app_factory(progress, settings=settings)
+        if len(parameters) >= 2:
+            return self.app_factory(progress, settings)
+        return self.app_factory(progress)
 
     def _messages_to_transcript(self, messages: list[WebMessage]) -> list[ChatMessage]:
         return [ChatMessage(role=message.role, content=message.content) for message in messages]

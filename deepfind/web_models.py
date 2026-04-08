@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 ChatMode = Literal["fast", "expert"]
 MessageRole = Literal["user", "assistant"]
 ArtifactKind = Literal["image", "slides", "file"]
+ModelTarget = Literal["cloud", "gpu"]
 
 
 class ArtifactLink(BaseModel):
@@ -30,6 +31,21 @@ class KeyPoint(BaseModel):
     confidence: str = "medium"
 
 
+class GpuInfo(BaseModel):
+    available: bool = False
+    name: str = ""
+    memory_total_mb: int | None = None
+
+
+class LocalModelInfo(BaseModel):
+    available: bool = False
+    backend: str = "ollama"
+    model: str = ""
+    base_url: str = ""
+    reason: str = ""
+    gpu: GpuInfo = Field(default_factory=GpuInfo)
+
+
 class WebMessage(BaseModel):
     id: str
     role: MessageRole
@@ -40,6 +56,8 @@ class WebMessage(BaseModel):
     artifacts: list[ArtifactLink] = Field(default_factory=list)
     key_points: list[KeyPoint] = Field(default_factory=list)
     citations: list[CitationLink] = Field(default_factory=list)
+    model_target: ModelTarget = "cloud"
+    model_label: str = ""
 
 
 class WebChatSummary(BaseModel):
@@ -65,6 +83,8 @@ class TurnResult(BaseModel):
     key_points: list[KeyPoint] = Field(default_factory=list)
     citations: list[CitationLink] = Field(default_factory=list)
     mode: ChatMode
+    model_target: ModelTarget = "cloud"
+    model_label: str = ""
 
 
 class ProgressEvent(BaseModel):
@@ -79,6 +99,7 @@ class CreateChatResponse(BaseModel):
 
 class ChatListResponse(BaseModel):
     chats: list[WebChatSummary]
+    local_model: LocalModelInfo | None = None
 
 
 class ChatDetailResponse(BaseModel):
@@ -92,8 +113,10 @@ class CreateChatRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str
     mode: ChatMode
+    model_target: ModelTarget = "cloud"
 
 
 class HealthResponse(BaseModel):
     ok: bool
     service: str
+    local_model: LocalModelInfo | None = None

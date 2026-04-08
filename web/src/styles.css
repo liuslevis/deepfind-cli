@@ -603,6 +603,38 @@ img {
   border-top: 1px solid rgba(93, 225, 255, 0.08);
 }
 
+.message__section-summary {
+  gap: 8px;
+  padding: 10px 14px;
+  min-height: 42px;
+}
+
+.message__section-summary::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--accent);
+  transform-origin: center;
+}
+
+.message__section-summary .message__section-title {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  min-height: 18px;
+}
+
+.message__section-count {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 1px 7px;
+  font-size: 0.74rem;
+  line-height: 1;
+}
+
 .key-point-list,
 .reference-list {
   display: grid;
