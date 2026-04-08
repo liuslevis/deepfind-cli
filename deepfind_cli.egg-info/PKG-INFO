@@ -11,6 +11,7 @@ Requires-Dist: markdownify>=1.1.0
 Requires-Dist: openai>=2.15.0
 Requires-Dist: pypdf>=5.4.0
 Requires-Dist: uvicorn>=0.35.0
+Provides-Extra: local-llm
 Provides-Extra: media
 Requires-Dist: accelerate>=0.20.0; extra == "media"
 Requires-Dist: librosa>=0.10.0; extra == "media"
@@ -54,6 +55,8 @@ uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 
 
 uv run -m deepfind.cli "Help me search Agent jobs on Boss" --num-agent 1
 
+uv run -m deepfind.cli "help me survey robotics arms industry" --num-agent 3 --long-report-mode --once
+
 uv run -m deepfind.cli --list-tools
 ```
 
@@ -61,7 +64,19 @@ uv run -m deepfind.cli --list-tools
 ## Install
 
 ```bash
-python3 -m pip install -e .
+uv sync
+```
+
+Install everything needed for local GPU mode and Bilibili ASR in one setup step:
+
+```bash
+uv sync --extra media --extra local-llm
+```
+
+If you prefer pip, the equivalent is:
+
+```bash
+python3 -m pip install -e ".[media,local-llm]"
 ```
 
 Install `opencli` as an optional dependency when you want broad web search through
@@ -93,6 +108,36 @@ xhs whoami
 twitter whoami
 ```
 
+## Non-Windows Setup
+
+For macOS, Linux, or WSL, the shortest full setup path is:
+
+```bash
+uv sync --extra media --extra local-llm
+cd web
+npm ci
+cd ..
+cp .env.example .env
+```
+
+Then start the backend and frontend in two shells:
+
+Shell 1:
+
+```bash
+uv run deepfind-web --reload
+```
+
+Shell 2:
+
+```bash
+cd web
+npm run dev -- --host
+```
+
+If you only need the CLI and not the web app, you can skip `cd web; npm ci`.
+If you do not need local GPU mode or Bilibili ASR, plain `uv sync` is enough.
+
 ## Env
 
 The CLI auto-loads `.env` from the repo root.
@@ -108,10 +153,20 @@ QWEN_API_KEY=...
 QWEN_MODEL_NAME=qwen3-max
 ```
 
+Local Ollama GPU mode:
+
+```bash
+DEEPFIND_LOCAL_BASE_URL=http://127.0.0.1:11434/v1
+DEEPFIND_LOCAL_MODEL=qwen3.5:9b
+DEEPFIND_LOCAL_API_KEY=ollama
+```
+
 Optional:
 
 ```bash
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+DEEPFIND_LOCAL_MODEL=Qwen/Qwen2.5-7B-Instruct
+DEEPFIND_LOCAL_QUANTIZATION=4bit
 OPENCLI_BIN=opencli
 TWITTER_CLI_BIN=twitter
 XHS_CLI_BIN=xhs
@@ -140,9 +195,23 @@ Flags:
 - `query`: required unless using `--list-tools`
 - `--num-agent`: `1..4`
 - `--max-iter-per-agent`: default `50`
+- `--gpu`: run the text agents on the local Hugging Face GPU model configured in `.env`
 - `--quiet`: disable formatted progress output
 - `--once`: always exit after the first answer
+- `--json`: print structured research JSON
+- `--long-report-mode`: switch the final lead response from a concise overview to a long-form report
 - `--list-tools`: print built-in tool names/descriptions and exit
+- `--gpu`: use the local Ollama model configured by `DEEPFIND_LOCAL_BASE_URL` and `DEEPFIND_LOCAL_MODEL`
+
+To run with Ollama locally:
+
+```bash
+ollama serve
+ollama pull qwen3.5:9b
+uv run -m deepfind.cli "same query" --gpu
+```
+
+`--long-report-mode` is explicit only. It does not auto-detect benchmark tasks, so turn it on when you want a long-form benchmark-style report.
 
 ## Chat Mode
 
@@ -176,7 +245,18 @@ Generate 3 HTML slides from that summary and save them under tmp/
 
 The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
 live run activity, an iPhone-friendly mobile drawer, and a mode switch for
-`Fast (1 agent)` and `Expert (4 agents)`.
+`Fast (1 agent)` and `Expert (4 agents)`. When a compatible NVIDIA GPU and the
+optional Hugging Face local runtime are available, the composer also shows a GPU
+toggle next to Send.
+
+Local GPU setup:
+
+```bash
+python3 -m pip install -e ".[local-llm]"
+```
+
+The default local model is `Qwen/Qwen2.5-7B-Instruct`. If you want a different
+checkpoint, set `DEEPFIND_LOCAL_MODEL` to its Hugging Face repo id.
 
 Backend:
 
@@ -194,6 +274,16 @@ npm run dev
 
 Open the Vite URL during development, or run `npm run build` so `deepfind-web` can
 serve `web/dist` directly.
+
+On Windows, you can also double-click [`start-dev.cmd`](./start-dev.cmd) from the
+repo root. It launches the backend and frontend together, preferring a Windows
+Terminal split-pane layout and falling back to two separate PowerShell windows if
+Windows Terminal is unavailable. Before launch it also runs `uv sync --extra media
+--extra local-llm` and installs frontend packages so the local toolchain is ready.
+
+To make it a desktop icon, right-click `start-dev.cmd` and create a shortcut. You
+can then move that shortcut to the desktop and optionally change its icon in the
+shortcut properties.
 
 The production shell now includes a web manifest, touch icon, and iPhone Safari
 safe-area handling so it works cleanly in Safari and when added to the Home
@@ -257,11 +347,13 @@ curl http://127.0.0.1:8000/api/health
 
 ## How It Works
 
-- Lead agent splits the query into a few tasks.
-- Sub-agents call local tools such as `web_search`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
-- Lead agent merges the results into one answer.
+- Lead planner can use tools before task split, usually with a `web_search -> web_fetch` flow on the most promising URLs.
+- Sub-agents call local tools such as `web_search`, `web_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
+- Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` pass when evidence is weak or conflicting.
+- Lead final answer turns the synthesis into the user-facing response, and only uses asset tools for final image/slide requests.
 
-Qwen is used through the OpenAI-compatible `chat.completions` API.
+Cloud mode uses the OpenAI-compatible `chat.completions` API. GPU mode uses a
+local Hugging Face Transformers runtime with quantized loading when configured.
 
 ## Video Transcription Tools
 
@@ -293,3 +385,103 @@ Artifacts:
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## APPENDIX
+
+### Agent Roles
+
+Runtime pipeline for a normal research turn:
+
+1. `lead-plan`
+2. `sub-1 .. sub-N`
+3. `lead-synthesis`
+4. `lead-final`
+
+When a follow-up only asks to reformat the previous answer in chat mode, the app can skip research and run `lead-format` directly.
+
+### Agent Contracts
+
+| Agent | Main task / goal | Tool policy | Output format |
+| --- | --- | --- | --- |
+| `lead-plan` | Split the latest user request into `N` distinct, evidence-seeking research tasks. It may use the prior conversation for context and can do a light `web_search -> web_fetch` pass before splitting work. | Tools allowed during planning, but used sparingly. Platform-specific work should stay on matching tools. If the user asks for an image or slides, this stage only plans supporting research, not final asset generation. | JSON array only. Each item is usually a task string, but object items are also accepted when they contain a task-like field such as `task`, `title`, or `summary`. |
+| `sub-N` worker | Execute one assigned research task, gather evidence, and report the strongest findings plus open gaps. | Tools allowed. Workers should prefer `web_search -> web_fetch` for broad web research and use platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin. They should not call `gen_img` or `gen_slides` unless the assigned task explicitly asks for the final asset. | JSON only: `{"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}` |
+| `lead-synthesis` | Merge worker reports, identify the strongest evidence, resolve or highlight conflicts, and fill missing gaps with tools when needed. | Tools allowed. It can do another `web_search -> web_fetch` pass if worker evidence is incomplete or conflicting. | JSON only: `{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}` |
+| `lead-final` | Turn synthesis into the user-facing answer for the latest request. | No new research. Tools are reserved only for final asset creation, and only when the user explicitly asked for it: `gen_img` once for an image, `gen_slides` once for slides. | Markdown. Default mode is a concise answer. With `--long-report-mode`, it switches to thesis-like Markdown in the current language and should include `## Conclusion`. The system appends `## Reference` from collected citations. |
+| `lead-format` | Reformat the previous assistant answer for a follow-up such as a table, list, translation, rewrite, or shorter/longer version. | No tools and no new research. It must work only from the prior assistant answer plus the latest user request. | Plain Markdown / text in the requested format. If the previous answer does not contain enough detail, it should say so briefly instead of inventing new content. |
+
+### Structured JSON Output
+
+When you run:
+
+```bash
+uv run -m deepfind.cli "same query" --json
+```
+
+the CLI prints a structured envelope with this shape:
+
+```json
+{
+  "version": "research.v1",
+  "query": "user query",
+  "lead": {
+    "overview_md": "final markdown answer",
+    "key_points": [
+      {
+        "text": "synthesized finding",
+        "citation_ids": ["c1"],
+        "confidence": "high"
+      }
+    ],
+    "disagreements": [],
+    "next_steps": []
+  },
+  "agents": [
+    {
+      "agent_id": "sub-1",
+      "task": "assigned task",
+      "summary": "worker summary",
+      "claims": [
+        {
+          "text": "worker finding",
+          "citation_ids": ["c1"],
+          "confidence": "medium"
+        }
+      ],
+      "gaps": []
+    }
+  ],
+  "citations": [
+    {
+      "id": "r1",
+      "dedup_id": "c1",
+      "url": "https://example.com/report?utm_source=news",
+      "title": "",
+      "publisher": "",
+      "source_agent": "sub-1",
+      "source_section": "claim",
+      "source_index": 1
+    }
+  ],
+  "citations_dedup": [
+    {
+      "id": "c1",
+      "canonical_url": "https://example.com/report",
+      "url": "https://example.com/report?utm_source=news",
+      "title": "",
+      "publisher": ""
+    }
+  ],
+  "meta": {
+    "num_agents": 2,
+    "max_iter_per_agent": 50,
+    "generated_at": "2026-04-07T00:00:00Z"
+  }
+}
+```
+
+Notes:
+
+- `citations` stores raw citation occurrences with provenance back to the agent and section that emitted them.
+- `citations_dedup` stores canonicalized URLs with tracking parameters removed.
+- Worker and synthesis prompts expect exact source URLs in `citations` whenever a claim is backed by a tool result.
+- If a worker returns non-JSON text, DeepFind keeps the text as `summary`, leaves `claims` empty, and records `gaps: ["non_json_output"]`.

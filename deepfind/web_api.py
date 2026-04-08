@@ -46,11 +46,14 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        return HealthResponse(ok=True, service="deepfind-web")
+        return HealthResponse(ok=True, service="deepfind-web", local_model=app.state.service.local_model_info())
 
     @app.get("/api/chats", response_model=ChatListResponse)
     def list_chats() -> ChatListResponse:
-        return ChatListResponse(chats=app.state.service.list_chats())
+        return ChatListResponse(
+            chats=app.state.service.list_chats(),
+            local_model=app.state.service.local_model_info(),
+        )
 
     @app.post("/api/chats", response_model=CreateChatResponse)
     def create_chat(payload: CreateChatRequest | None = None) -> CreateChatResponse:
@@ -76,7 +79,12 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
     @app.post("/api/chats/{chat_id}/messages/stream")
     def stream_message(chat_id: str, payload: SendMessageRequest) -> StreamingResponse:
         try:
-            stream = app.state.service.stream_message(chat_id, payload.content, payload.mode)
+            stream = app.state.service.stream_message(
+                chat_id,
+                payload.content,
+                payload.mode,
+                payload.model_target,
+            )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"chat not found: {chat_id}") from exc
         except ValueError as exc:

@@ -1,6 +1,7 @@
 export type ChatMode = "fast" | "expert";
 export type ArtifactKind = "image" | "slides" | "file";
 export type MessageRole = "user" | "assistant";
+export type ModelTarget = "cloud" | "gpu";
 
 export interface ArtifactLink {
   kind: ArtifactKind;
@@ -23,6 +24,21 @@ export interface KeyPoint {
   confidence: string;
 }
 
+export interface GpuInfo {
+  available: boolean;
+  name: string;
+  memory_total_mb: number | null;
+}
+
+export interface LocalModelInfo {
+  available: boolean;
+  backend: string;
+  model: string;
+  base_url: string;
+  reason: string;
+  gpu: GpuInfo;
+}
+
 export interface WebMessage {
   id: string;
   role: MessageRole;
@@ -33,6 +49,8 @@ export interface WebMessage {
   artifacts: ArtifactLink[];
   key_points?: KeyPoint[];
   citations?: CitationLink[];
+  model_target?: ModelTarget;
+  model_label?: string;
 }
 
 export interface WebChatSummary {
@@ -51,6 +69,11 @@ export interface WebChatDetail {
   messages: WebMessage[];
 }
 
+export interface ChatListResponse {
+  chats: WebChatSummary[];
+  local_model?: LocalModelInfo | null;
+}
+
 export interface TurnResult {
   answer_markdown: string;
   sources: string[];
@@ -58,6 +81,8 @@ export interface TurnResult {
   key_points?: KeyPoint[];
   citations?: CitationLink[];
   mode: ChatMode;
+  model_target?: ModelTarget;
+  model_label?: string;
 }
 
 export interface ProgressEvent {

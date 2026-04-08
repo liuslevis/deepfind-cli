@@ -4,9 +4,11 @@ import io
 import json
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
 from itertools import count
 from unittest.mock import patch
 
+from deepfind.config import Settings
 from deepfind.cli import main
 
 
@@ -51,6 +53,41 @@ class CliTests(unittest.TestCase):
         )
         session.ask.assert_called_once_with("test query")
         session.ask_detailed.assert_not_called()
+
+    def test_main_gpu_uses_local_settings(self) -> None:
+        base_settings = Settings(api_key="", local_model="qwen3.5:9b")
+
+        with (
+            patch("deepfind.cli.Settings.from_env", return_value=base_settings),
+            patch("deepfind.cli.detect_local_model") as detect_local_model,
+            patch("deepfind.cli.DeepFind") as app_cls,
+        ):
+            detect_local_model.return_value = type(
+                "Status",
+                (),
+                {"available": True, "reason": "", "model": base_settings.local_model},
+            )()
+            session = app_cls.return_value.session.return_value
+            session.ask.return_value = "local answer"
+            stdout = io.StringIO()
+
+            code = main(
+                ["test query", "--gpu", "--once"],
+                stdin=NonTtyStringIO(),
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "local answer")
+        expected_settings = replace(
+            base_settings,
+            api_key=base_settings.local_api_key,
+            model=base_settings.local_model,
+            base_url=base_settings.local_base_url,
+        )
+        app_cls.assert_called_once()
+        self.assertEqual(app_cls.call_args.kwargs["settings"], expected_settings)
 
     def test_main_passes_long_report_mode_to_session(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:

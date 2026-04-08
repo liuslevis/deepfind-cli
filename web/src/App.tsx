@@ -9,6 +9,8 @@ import type {
   ActivitySummary,
   CitationLink,
   ChatMode,
+  LocalModelInfo,
+  ModelTarget,
   ProgressEvent,
   TurnResult,
   WebChatDetail,
@@ -125,6 +127,23 @@ function modeLabel(mode: ChatMode | null): string {
     return "Expert (4 agents)";
   }
   return "Fast (1 agent)";
+}
+
+function modelTargetButtonLabel(target: ModelTarget, localModel: LocalModelInfo | null): string {
+  if (target === "gpu") {
+    return localModel?.model || "GPU";
+  }
+  return "Cloud";
+}
+
+function messageModelLabel(modelTarget: ModelTarget | undefined, modelLabel: string | undefined): string | null {
+  if (modelTarget === "gpu") {
+    return modelLabel || "GPU";
+  }
+  if (modelTarget === "cloud") {
+    return modelLabel ? `Cloud: ${modelLabel}` : "Cloud";
+  }
+  return null;
 }
 
 function summarize(text: string, width = 56): string {
@@ -286,6 +305,8 @@ function messageFromServer(message: WebMessage): ClientMessage {
     ...message,
     key_points: message.key_points ?? [],
     citations: message.citations ?? [],
+    model_target: message.model_target ?? "cloud",
+    model_label: message.model_label ?? "",
     activity: [],
     error: null,
     pending: false,
@@ -468,13 +489,21 @@ function MermaidBlock({ chart }: { chart: string }) {
   );
 }
 
-function newClientMessage(role: "user" | "assistant", content: string, mode: ChatMode): ClientMessage {
+function newClientMessage(
+  role: "user" | "assistant",
+  content: string,
+  mode: ChatMode,
+  modelTarget: ModelTarget,
+  modelLabel: string,
+): ClientMessage {
   return {
     id: `local_${createClientMessageId()}`,
     role,
     content,
     created_at: new Date().toISOString(),
     mode,
+    model_target: modelTarget,
+    model_label: modelLabel,
     sources: [],
     artifacts: [],
     key_points: [],
@@ -888,6 +917,9 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
         {message.role === "assistant" && message.mode ? (
           <span className="message__mode">{modeLabel(message.mode)}</span>
         ) : null}
+        {message.role === "assistant" && messageModelLabel(message.model_target, message.model_label) ? (
+          <span className="message__mode">{messageModelLabel(message.model_target, message.model_label)}</span>
+        ) : null}
       </div>
 
       {message.role === "assistant" ? (
@@ -1006,7 +1038,9 @@ MessageCard.displayName = "MessageCard";
 
 export default function App() {
   const [mode, setMode] = useState<ChatMode>("fast");
+  const [modelTarget, setModelTarget] = useState<ModelTarget>("cloud");
   const [composerValue, setComposerValue] = useState("");
+  const [localModel, setLocalModel] = useState<LocalModelInfo | null>(null);
   const [chats, setChats] = useState<WebChatSummary[]>([]);
   const [currentChat, setCurrentChat] = useState<WebChatDetail | null>(null);
   const [chatRuntimeById, setChatRuntimeById] = useState<Record<string, ChatRuntime>>({});
@@ -1025,6 +1059,7 @@ export default function App() {
   const activeRuntime = selectedChatId ? chatRuntimeById[selectedChatId] : null;
   const activeMessages = activeRuntime?.messages ?? [];
   const sending = activeRuntime?.pending ?? false;
+  const gpuToggleAvailable = Boolean(localModel?.available);
   const slashMatches = matchSlashCommands(composerValue);
   const showSlashAutocomplete = slashMatches.length > 0;
 
@@ -1075,6 +1110,14 @@ export default function App() {
     });
   }
 
+  function applyLocalModel(nextLocalModel: LocalModelInfo | null | undefined) {
+    const normalized = nextLocalModel ?? null;
+    setLocalModel(normalized);
+    if (!normalized?.available) {
+      setModelTarget("cloud");
+    }
+  }
+
   function pruneChatRuntimes(validIds: Set<string>) {
     setChatRuntimeById((current) => {
       let changed = false;
@@ -1118,7 +1161,9 @@ export default function App() {
   }
 
   async function hydrateChats(preferredChatId?: string | null): Promise<void> {
-    const nextChats = await listChats();
+    const payload = await listChats();
+    const nextChats = payload.chats;
+    applyLocalModel(payload.local_model);
     setChats(nextChats);
     pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
     const targetId =
@@ -1149,10 +1194,12 @@ export default function App() {
       setLoading(true);
       setPageError(null);
       try {
-        const nextChats = await listChats();
+        const payload = await listChats();
+        const nextChats = payload.chats;
         if (cancelled) {
           return;
         }
+        applyLocalModel(payload.local_model);
         setChats(nextChats);
         pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
         const storedId = storageGetItem(STORAGE_KEY);
@@ -1396,6 +1443,8 @@ export default function App() {
               artifacts: turnResult.artifacts,
               key_points: turnResult.key_points ?? [],
               citations: turnResult.citations ?? [],
+              model_target: turnResult.model_target ?? message.model_target ?? "cloud",
+              model_label: turnResult.model_label ?? message.model_label ?? "",
               pending: false,
               error: null,
             }
@@ -1454,12 +1503,14 @@ export default function App() {
 
     const controller = new AbortController();
     let activeChat: WebChatDetail | null = null;
+    const currentModelTarget = gpuToggleAvailable ? modelTarget : "cloud";
+    const currentModelLabel = currentModelTarget === "gpu" ? localModel?.model ?? "GPU" : "";
 
     try {
       const chat = await ensureActiveChat(content);
       activeChat = chat;
-      const userMessage = newClientMessage("user", content, mode);
-      const assistantMessage = newClientMessage("assistant", "", mode);
+      const userMessage = newClientMessage("user", content, mode, currentModelTarget, currentModelLabel);
+      const assistantMessage = newClientMessage("assistant", "", mode, currentModelTarget, currentModelLabel);
       const nextTitle = currentChat?.title && currentChat.title !== "New chat" ? currentChat.title : summarize(content, 48);
       const chatSnapshot = {
         ...chat,
@@ -1483,7 +1534,7 @@ export default function App() {
 
       await streamChatMessage(
         chat.id,
-        { content, mode },
+        { content, mode, model_target: currentModelTarget },
         (progressEvent) => {
           appendActivity(chat.id, assistantMessage.id, progressEvent);
           if (progressEvent.type === "answer_delta") {
@@ -1529,7 +1580,9 @@ export default function App() {
         { signal: controller.signal },
       );
 
-      const nextChats = await listChats();
+      const payload = await listChats();
+      const nextChats = payload.chats;
+      applyLocalModel(payload.local_model);
       setChats(nextChats);
       pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
       const refreshedSummary = nextChats.find((item) => item.id === chat.id);
@@ -1751,6 +1804,21 @@ export default function App() {
                 </div>
               ) : null}
             </div>
+            {gpuToggleAvailable ? (
+              <button
+                type="button"
+                className={`model-toggle__button${modelTarget === "gpu" ? " model-toggle__button--active" : ""}`}
+                aria-label="Model"
+                title={
+                  modelTarget === "gpu"
+                    ? `${localModel?.model ?? "GPU"} via Hugging Face`
+                    : "Cloud Qwen API"
+                }
+                onClick={() => setModelTarget((current) => (current === "cloud" ? "gpu" : "cloud"))}
+              >
+                {modelTargetButtonLabel(modelTarget, localModel)}
+              </button>
+            ) : null}
             <button className="send-button" type="submit" disabled={sending}>
               {sending ? "Running..." : "Send"}
             </button>

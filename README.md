@@ -41,22 +41,16 @@ uv run -m deepfind.cli --list-tools
 
 ## Install
 
+Install everything needed for local GPU mode and Bilibili ASR in one setup step:
+
 ```bash
-python3 -m pip install -e .
+uv sync --extra media --extra local-llm --extra-index-url https://mirrors.aliyun.com/pytorch-wheels/torch_stable.html
 ```
 
-Install `opencli` as an optional dependency when you want broad web search through
-`web_search`, YouTube transcript support through `youtube_transcribe`, or BOSS
-Zhipin workflows through `boss_search` / `boss_detail` / `boss_chatlist` / `boss_send`:
+Install `opencli` for web search and video download:
 
 ```bash
 npm install -g @jackwener/opencli
-```
-
-Install optional ASR dependencies only when you need Bilibili transcription:
-
-```bash
-python3 -m pip install -e ".[media]"
 ```
 
 Pre-download the ASR model on Windows (PowerShell) to avoid first-run delay:
@@ -89,10 +83,20 @@ QWEN_API_KEY=...
 QWEN_MODEL_NAME=qwen3-max
 ```
 
+Local Ollama GPU mode:
+
+```bash
+DEEPFIND_LOCAL_BASE_URL=http://127.0.0.1:11434/v1
+DEEPFIND_LOCAL_MODEL=qwen3.5:9b
+DEEPFIND_LOCAL_API_KEY=ollama
+```
+
 Optional:
 
 ```bash
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+DEEPFIND_LOCAL_MODEL=Qwen/Qwen2.5-7B-Instruct
+DEEPFIND_LOCAL_QUANTIZATION=4bit
 OPENCLI_BIN=opencli
 TWITTER_CLI_BIN=twitter
 XHS_CLI_BIN=xhs
@@ -126,6 +130,15 @@ Flags:
 - `--json`: print structured research JSON
 - `--long-report-mode`: switch the final lead response from a concise overview to a long-form report
 - `--list-tools`: print built-in tool names/descriptions and exit
+- `--gpu`: use the local Ollama model configured by `DEEPFIND_LOCAL_BASE_URL` and `DEEPFIND_LOCAL_MODEL`
+
+To run with Ollama locally:
+
+```bash
+ollama serve
+ollama pull qwen3.5:9b
+uv run -m deepfind.cli "same query" --gpu
+```
 
 `--long-report-mode` is explicit only. It does not auto-detect benchmark tasks, so turn it on when you want a long-form benchmark-style report.
 
@@ -161,10 +174,9 @@ Generate 3 HTML slides from that summary and save them under tmp/
 
 The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
 live run activity, an iPhone-friendly mobile drawer, and a mode switch for
-`Fast (1 agent)` and `Expert (4 agents)`.
+`Fast (1 agent)` and `Expert (4 agents)`. When a compatible NVIDIA GPU are available, the composer also shows a GPU/Cloud mode toogle.
 
 Backend:
-
 ```bash
 uv run deepfind-web --reload
 ```
@@ -246,8 +258,6 @@ curl http://127.0.0.1:8000/api/health
 - Sub-agents call local tools such as `web_search`, `web_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
 - Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` pass when evidence is weak or conflicting.
 - Lead final answer turns the synthesis into the user-facing response, and only uses asset tools for final image/slide requests.
-
-Qwen is used through the OpenAI-compatible `chat.completions` API.
 
 ## Video Transcription Tools
 
