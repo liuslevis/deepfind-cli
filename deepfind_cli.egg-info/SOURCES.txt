@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 deepfind/__init__.py
 deepfind/bili_transcribe.py
+deepfind/browser_fetch.py
 deepfind/chat_store.py
 deepfind/cli.py
 deepfind/config.py

@@ -41,10 +41,10 @@ uv run -m deepfind.cli --list-tools
 
 ## Install
 
-Install everything needed for local GPU mode and Bilibili ASR in one setup step:
+Install everything needed for local GPU mode, browser fetch, and Bilibili ASR in one setup step:
 
 ```bash
-uv sync --extra media --extra local-llm --extra-index-url https://mirrors.aliyun.com/pytorch-wheels/torch_stable.html
+uv sync --extra media --extra browser --extra local-llm --extra-index-url https://mirrors.aliyun.com/pytorch-wheels/torch_stable.html
 ```
 
 Install `opencli` for web search and video download:
@@ -52,6 +52,16 @@ Install `opencli` for web search and video download:
 ```bash
 npm install -g @jackwener/opencli
 ```
+
+Install Playwright for `browser_fetch` (renders pages in a real Chrome to handle JS/cookies):
+
+```bash
+uv sync --extra browser
+playwright install
+```
+
+When a site still shows a verification page in `browser_fetch`, retry with `headless=false`.
+Deepfind keeps a persistent browser profile under `tmp/browser_profile`, so if you manually pass login/captcha once, later fetches can often reuse that session.
 
 Pre-download the ASR model on Windows (PowerShell) to avoid first-run delay:
 
@@ -255,8 +265,9 @@ curl http://127.0.0.1:8000/api/health
 ## How It Works
 
 - Lead planner can use tools before task split, usually with a `web_search -> web_fetch` flow on the most promising URLs.
-- Sub-agents call local tools such as `web_search`, `web_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
-- Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` pass when evidence is weak or conflicting.
+- If a page is blocked or requires JavaScript/cookies, use `browser_fetch` instead of `web_fetch`.
+- Sub-agents call local tools such as `web_search`, `web_fetch`, `browser_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, and `youtube_transcribe`.
+- Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` (or `browser_fetch`) pass when evidence is weak or conflicting.
 - Lead final answer turns the synthesis into the user-facing response, and only uses asset tools for final image/slide requests.
 
 ## Video Transcription Tools
@@ -307,9 +318,9 @@ When a follow-up only asks to reformat the previous answer in chat mode, the app
 
 | Agent | Main task / goal | Tool policy | Output format |
 | --- | --- | --- | --- |
-| `lead-plan` | Split the latest user request into `N` distinct, evidence-seeking research tasks. It may use the prior conversation for context and can do a light `web_search -> web_fetch` pass before splitting work. | Tools allowed during planning, but used sparingly. Platform-specific work should stay on matching tools. If the user asks for an image or slides, this stage only plans supporting research, not final asset generation. | JSON array only. Each item is usually a task string, but object items are also accepted when they contain a task-like field such as `task`, `title`, or `summary`. |
-| `sub-N` worker | Execute one assigned research task, gather evidence, and report the strongest findings plus open gaps. | Tools allowed. Workers should prefer `web_search -> web_fetch` for broad web research and use platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin. They should not call `gen_img` or `gen_slides` unless the assigned task explicitly asks for the final asset. | JSON only: `{"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}` |
-| `lead-synthesis` | Merge worker reports, identify the strongest evidence, resolve or highlight conflicts, and fill missing gaps with tools when needed. | Tools allowed. It can do another `web_search -> web_fetch` pass if worker evidence is incomplete or conflicting. | JSON only: `{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}` |
+| `lead-plan` | Split the latest user request into `N` distinct, evidence-seeking research tasks. It may use the prior conversation for context and can do a light `web_search -> web_fetch` pass before splitting work (use `browser_fetch` when blocked or JS-only). | Tools allowed during planning, but used sparingly. Platform-specific work should stay on matching tools. If the user asks for an image or slides, this stage only plans supporting research, not final asset generation. | JSON array only. Each item is usually a task string, but object items are also accepted when they contain a task-like field such as `task`, `title`, or `summary`. |
+| `sub-N` worker | Execute one assigned research task, gather evidence, and report the strongest findings plus open gaps. | Tools allowed. Workers should prefer `web_search -> web_fetch` for broad web research (use `browser_fetch` when blocked or JS-only) and use platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin. They should not call `gen_img` or `gen_slides` unless the assigned task explicitly asks for the final asset. | JSON only: `{"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}` |
+| `lead-synthesis` | Merge worker reports, identify the strongest evidence, resolve or highlight conflicts, and fill missing gaps with tools when needed. | Tools allowed. It can do another `web_search -> web_fetch` (or `browser_fetch`) pass if worker evidence is incomplete or conflicting. | JSON only: `{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}` |
 | `lead-final` | Turn synthesis into the user-facing answer for the latest request. | No new research. Tools are reserved only for final asset creation, and only when the user explicitly asked for it: `gen_img` once for an image, `gen_slides` once for slides. | Markdown. Default mode is a concise answer. With `--long-report-mode`, it switches to thesis-like Markdown in the current language and should include `## Conclusion`. The system appends `## Reference` from collected citations. |
 | `lead-format` | Reformat the previous assistant answer for a follow-up such as a table, list, translation, rewrite, or shorter/longer version. | No tools and no new research. It must work only from the prior assistant answer plus the latest user request. | Plain Markdown / text in the requested format. If the previous answer does not contain enough detail, it should say so briefly instead of inventing new content. |
 
