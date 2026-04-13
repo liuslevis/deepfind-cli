@@ -6,6 +6,9 @@ openai>=2.15.0
 pypdf>=5.4.0
 uvicorn>=0.35.0
 
+[browser]
+playwright>=1.42.0
+
 [local-llm]
 
 [media]

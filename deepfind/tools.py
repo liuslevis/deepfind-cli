@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,6 +17,7 @@ from .bili_transcribe import (
     parse_bili_id,
     transcribe_bili_audio,
 )
+from .browser_fetch import fetch_web_document_browser
 from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
@@ -93,6 +95,7 @@ class Toolset:
         self._functions = {
             "web_search": self.web_search,
             "web_fetch": self.web_fetch,
+            "browser_fetch": self.browser_fetch,
             "arxiv_search": self.arxiv_search,
             "twitter_search": self.twitter_search,
             "x_search": self.x_search,
@@ -143,6 +146,20 @@ class Toolset:
                     "properties": {
                         "url": {"type": "string"},
                         "prompt": {"type": "string"},
+                    },
+                    "required": ["url", "prompt"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "browser_fetch",
+                "Fetch one web page by rendering it in a real browser (Chrome via Playwright), then convert it to Markdown and return a targeted summary. Use this when web_fetch is blocked or the page requires JavaScript/cookies. Set headless=false when a site needs manual login or captcha verification.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "prompt": {"type": "string"},
+                        "headless": {"type": "boolean"},
                     },
                     "required": ["url", "prompt"],
                     "additionalProperties": False,
@@ -595,6 +612,48 @@ class Toolset:
                 "content_type": document.content_type,
                 "truncated": document.truncated,
                 "markdown_chars": document.markdown_chars,
+            },
+        }
+
+    def browser_fetch(self, url: str, prompt: str, headless: bool = True) -> dict[str, Any]:
+        clean_url = url.strip()
+        clean_prompt = prompt.strip()
+        try:
+            document = fetch_web_document_browser(
+                clean_url,
+                timeout=self.settings.subprocess_timeout,
+                headless=headless,
+            )
+            summary = summarize_web_document(
+                self.settings.new_client(),
+                prompt=clean_prompt,
+                document=document,
+                model=self.settings.model,
+            )
+        except WebFetchError as exc:
+            return {
+                "ok": False,
+                "tool": "browser_fetch",
+                "url": clean_url,
+                "prompt": clean_prompt,
+                "error_code": exc.error_code,
+                "error": str(exc),
+            }
+
+        return {
+            "ok": True,
+            "tool": "browser_fetch",
+            "url": clean_url,
+            "prompt": clean_prompt,
+            "data": {
+                "url": document.url,
+                "final_url": document.final_url,
+                "title": document.title,
+                "summary": summary,
+                "content_type": document.content_type,
+                "truncated": document.truncated,
+                "markdown_chars": document.markdown_chars,
+                "rendered": True,
             },
         }
 
@@ -1600,18 +1659,45 @@ class Toolset:
                 "error": f"{binary} not found",
             }
         command = [resolved, *args]
+        env = dict(os.environ)
+        # Many of the optional CLIs are Python-based (click/typer) and may emit
+        # emoji in titles or help text. Force UTF-8 so subprocess output remains
+        # readable on Windows GBK locales and doesn't crash the tool.
+        env.setdefault("PYTHONUTF8", "1")
+        env.setdefault("PYTHONIOENCODING", "utf-8")
         proc = subprocess.run(
             command,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=self.settings.subprocess_timeout,
+            env=env,
         )
         if proc.returncode != 0:
+            error_text = (proc.stderr or proc.stdout).strip()[:4000]
+            parsed_error = try_load_json(error_text)
+            if (
+                isinstance(parsed_error, dict)
+                and parsed_error.get("ok") is False
+                and isinstance(parsed_error.get("error"), dict)
+            ):
+                payload = parsed_error["error"]
+                code = payload.get("code")
+                message = payload.get("message")
+                if isinstance(message, str) and message.strip():
+                    return {
+                        "ok": False,
+                        "tool": tool,
+                        "command": command,
+                        "error_code": str(code or "command_failed"),
+                        "error": message.strip()[:4000],
+                    }
             return {
                 "ok": False,
                 "tool": tool,
                 "command": command,
-                "error": (proc.stderr or proc.stdout).strip()[:4000],
+                "error": error_text,
             }
 
         parsed = try_load_json(proc.stdout)

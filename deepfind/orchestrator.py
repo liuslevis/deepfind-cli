@@ -19,7 +19,8 @@ PLAN_PROMPT = (
     "You are the lead planner for an ongoing research chat. Use the prior conversation for context when needed, "
     "but focus on the latest user request. Use tools sparingly during planning when they help you discover the most "
     "important evidence paths. Prefer a two-step flow: use web_search to find candidate URLs, then use web_fetch on "
-    "the most promising pages before splitting work. If the user wants an image or slides, plan only supporting "
+    "the most promising pages before splitting work. If web_fetch is blocked or the page requires JavaScript/cookies, "
+    "use browser_fetch as a fallback, and retry with headless=false when a site needs manual verification. If the user wants an image or slides, plan only supporting "
     "research/context tasks and leave the final asset creation for the lead response. Reserve Xiaohongshu, "
     "X/Twitter, Bilibili, YouTube, and BOSS Zhipin-specific tasks for their matching platform tools. Split it into "
     "{n} distinct research tasks. Make each task specific and evidence-seeking, and include discovered URLs when "
@@ -29,6 +30,7 @@ WORKER_PROMPT = (
     "You are a research worker in an ongoing chat. Use the conversation history for context when the latest request "
     "depends on earlier turns. Do the task. Use tools. For broad web research, prefer a two-step flow: use "
     "web_search to find candidate URLs, then use web_fetch to inspect the highest-value pages with a targeted prompt "
+    "(use browser_fetch when web_fetch is blocked or the page requires JavaScript/cookies, and retry with headless=false when manual verification is needed) "
     "instead of relying only on snippets. Keep using the Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS "
     "Zhipin-specific tools for those platforms. Use boss_search for job searches, boss_detail when you need one "
     "posting's full description, boss_chatlist when you need existing BOSS chat threads or uid values, and boss_send "
@@ -47,7 +49,7 @@ SYNTHESIS_PROMPT = (
     "You are the lead synthesis coordinator in an ongoing research chat. Use the conversation history when needed, "
     "merge the worker reports, identify the strongest evidence, and fill gaps with tools when the reports are "
     "incomplete or conflicting. For broad web research, prefer the two-step flow: web_search first, then web_fetch "
-    "for deep reading. Keep platform-specific work on the matching tools. Preserve exact source URLs from worker "
+    "for deep reading (use browser_fetch when web_fetch is blocked or the page requires JavaScript/cookies, and retry with headless=false when manual verification is needed). Keep platform-specific work on the matching tools. Preserve exact source URLs from worker "
     "claims and report citations in each key point whenever evidence is available. JSON only: "
     '{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}.'
 )

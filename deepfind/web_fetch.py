@@ -58,6 +58,10 @@ class EmptyWebContentError(WebFetchError):
     error_code = "empty_content"
 
 
+class WebFetchBlockedError(WebFetchError):
+    error_code = "blocked"
+
+
 class HttpWebFetchError(WebFetchError):
     error_code = "http_error"
 
@@ -93,6 +97,16 @@ def fetch_web_document(url: str, timeout: int) -> PreparedWebDocument:
         raise WebFetchTimeoutError(f"request timed out for {url}") from exc
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else "unknown"
+        body_text = ""
+        try:
+            body_text = exc.response.text if exc.response is not None else ""
+        except Exception:
+            body_text = ""
+        block_reason = _detect_bot_challenge(int(status) if isinstance(status, int) else 0, body_text)
+        if block_reason:
+            raise WebFetchBlockedError(
+                f"blocked by anti-bot challenge at {url} (status {status}): {block_reason}"
+            ) from exc
         raise HttpWebFetchError(f"HTTP {status} while fetching {url}") from exc
     except httpx.HTTPError as exc:
         raise WebFetchError(str(exc) or f"request failed for {url}") from exc
@@ -109,6 +123,11 @@ def fetch_web_document(url: str, timeout: int) -> PreparedWebDocument:
         looks_like_html = _looks_like_html(content_type, body_text)
 
         if looks_like_html:
+            block_reason = _detect_bot_challenge(response.status_code, body_text)
+            if block_reason:
+                raise WebFetchBlockedError(
+                    f"blocked by anti-bot challenge at {url} (status {response.status_code}): {block_reason}"
+                )
             title, markdown = _html_to_markdown(body_text)
         elif _is_text_like(content_type):
             markdown = _normalize_text(body_text)
@@ -118,7 +137,10 @@ def fetch_web_document(url: str, timeout: int) -> PreparedWebDocument:
             )
 
     if not markdown:
-        raise EmptyWebContentError(f"no readable text found at {url}")
+        raise EmptyWebContentError(
+            "no readable text found at "
+            f"{url} (status {response.status_code}, content-type {content_type or 'unknown'})"
+        )
 
     normalized_type = content_type
     if is_pdf and content_type in {"", "application/octet-stream"}:
@@ -199,6 +221,33 @@ def _is_text_like(content_type: str) -> bool:
     if any(marker in content_type for marker in _TEXTISH_MARKERS):
         return True
     return content_type.startswith("text/")
+
+
+def _detect_bot_challenge(status_code: int, body_text: str) -> str | None:
+    lowered = body_text.lower()
+    if "<" in lowered:
+        try:
+            soup = BeautifulSoup(body_text, "html.parser")
+            for selector in ("script", "style", "noscript"):
+                for node in soup.select(selector):
+                    node.decompose()
+            visible_text = _normalize_text(soup.get_text(" ", strip=True))
+        except Exception:
+            visible_text = ""
+        if len(visible_text) > 400:
+            return None
+
+    if status_code == 202 and "probe.js" in lowered and "var buid" in lowered:
+        return "smzdm probe.js page (likely requires JavaScript/cookies)"
+    if "cf-chl" in lowered or "cdn-cgi/challenge-platform" in lowered:
+        return "Cloudflare challenge page (requires JavaScript/cookies)"
+    if status_code in {401, 403} and ("zh-zse-ck" in lowered or "zse-93" in lowered or "zse-96" in lowered):
+        return "Zhihu anti-crawler gate (requires JavaScript/cookies)"
+    if "captcha" in lowered and ("access denied" in lowered or "verify" in lowered):
+        return "captcha/verification page (requires JavaScript/cookies)"
+    if "enable javascript" in lowered and "cookies" in lowered:
+        return "JavaScript/cookie gate page"
+    return None
 
 
 def _html_to_markdown(html: str) -> tuple[str, str]:
