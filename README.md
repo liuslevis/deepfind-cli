@@ -266,7 +266,7 @@ curl http://127.0.0.1:8000/api/health
 
 - Lead planner can use tools before task split, usually with a `web_search -> web_fetch` flow on the most promising URLs.
 - If a page is blocked or requires JavaScript/cookies, use `browser_fetch` instead of `web_fetch`.
-- Sub-agents call local tools such as `web_search`, `web_fetch`, `browser_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, `youtube_transcribe`, and `youtube_audio_transcribe`.
+- Sub-agents call local tools such as `web_search`, `web_fetch`, `browser_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, `youtube_transcribe`, and `youtube_transcribe_full`.
 - Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` (or `browser_fetch`) pass when evidence is weak or conflicting.
 - Lead final answer turns the synthesis into the user-facing response, and only uses asset tools for final image/slide requests.
 
@@ -275,13 +275,12 @@ curl http://127.0.0.1:8000/api/health
 `bili_transcribe(bili_id, query)` accepts a Bilibili video URL or `BV...` ID, runs download + ASR if needed,
 then returns a query-focused summary. Use `bili_transcribe_full(bili_id)` when you need the full transcript.
 
-`youtube_transcribe` is available to sub-agents and accepts either a YouTube video URL
-or a raw video ID.
-It calls `opencli youtube transcript` and caches grouped transcript text under
-`audio/transcripts/youtube/<VIDEO_ID>.txt`.
+`youtube_transcribe(url, query)` downloads YouTube audio via `yt-dlp` + `ffmpeg`, transcribes it with local ASR,
+then returns a query-focused summary for the given query.
 
-`youtube_audio_transcribe(url, query)` downloads YouTube audio via `yt-dlp` + `ffmpeg`, transcribes it with local ASR,
-then returns a query-focused summary. Use `youtube_audio_transcribe_full(url)` when you need the full transcript.
+`youtube_transcribe_full(url)` downloads YouTube audio via `yt-dlp` + `ffmpeg`, transcribes it with local ASR,
+and returns the full transcript. The raw transcript is cached under
+`audio/transcripts/youtube_audio/<VIDEO_ID>.txt`.
 
 Setup (WSL):
 

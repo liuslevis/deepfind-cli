@@ -36,6 +36,8 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("bili_search", WORKER_PROMPT)
         self.assertIn("bili_transcribe", WORKER_PROMPT)
         self.assertIn("youtube_transcribe", WORKER_PROMPT)
+        self.assertIn("youtube_transcribe_full", WORKER_PROMPT)
+        self.assertNotIn("youtube_audio_transcribe", WORKER_PROMPT)
         self.assertIn('"claims"', WORKER_PROMPT)
         self.assertIn('"citations"', WORKER_PROMPT)
         self.assertIn('"confidence"', WORKER_PROMPT)
