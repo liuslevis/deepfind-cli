@@ -10,6 +10,8 @@ from .json_utils import try_load_json
 from .progress import ConsoleProgress
 from .web_models import ProgressEvent, TurnResult
 
+_WEB_CONSOLE_TRUNCATE_WIDTH = 2000
+
 
 @dataclass(frozen=True)
 class ToolObservation:
@@ -62,6 +64,9 @@ class WebProgress:
             use_color=True,
             print_enabled=False,
             line_sink=self._emit_console_line,
+            truncate_width=_WEB_CONSOLE_TRUNCATE_WIDTH,
+            tool_summary_width=_WEB_CONSOLE_TRUNCATE_WIDTH,
+            done_summary_width=_WEB_CONSOLE_TRUNCATE_WIDTH,
         )
 
     def _event(self, event_type: str, data: dict[str, Any] | None = None) -> None:

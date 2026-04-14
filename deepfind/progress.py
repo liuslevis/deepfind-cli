@@ -16,9 +16,9 @@ def _short(value: Any, width: int = 88) -> str:
     return textwrap.shorten(text, width=width, placeholder="...")
 
 
-def _tool_summary(parsed: dict[str, Any]) -> str:
+def _tool_summary(parsed: dict[str, Any], *, width: int = 64) -> str:
     if parsed.get("error"):
-        return _short(parsed["error"], 64)
+        return _short(parsed["error"], width)
 
     data = parsed.get("data")
     if isinstance(data, dict):
@@ -42,17 +42,17 @@ def _tool_summary(parsed: dict[str, Any]) -> str:
                 return ", ".join(metrics[:3])
         note = data.get("note") if isinstance(data.get("note"), dict) else None
         if note and note.get("title"):
-            return _short(note["title"], 64)
+            return _short(note["title"], width)
         if data.get("transcript_path"):
-            return _short(f"transcript={data['transcript_path']}", 64)
+            return _short(f"transcript={data['transcript_path']}", width)
         if data.get("image_path"):
-            return _short(f"image={data['image_path']}", 64)
+            return _short(f"image={data['image_path']}", width)
         if data.get("html_path"):
-            return _short(f"html={data['html_path']}", 64)
+            return _short(f"html={data['html_path']}", width)
         if data.get("title"):
-            return _short(data["title"], 64)
+            return _short(data["title"], width)
         if data.get("final_url"):
-            return _short(data["final_url"], 64)
+            return _short(data["final_url"], width)
 
     return parsed.get("tool", "")
 
@@ -64,6 +64,9 @@ class ConsoleProgress:
     use_color: bool | None = None
     print_enabled: bool = True
     line_sink: Callable[[str], None] | None = None
+    truncate_width: int = 88
+    tool_summary_width: int = 64
+    done_summary_width: int = 68
     _lock: Lock = field(default_factory=Lock)
 
     def __post_init__(self) -> None:
@@ -122,30 +125,35 @@ class ConsoleProgress:
         self._box("PLAN", rows)
 
     def worker_started(self, name: str, task: str) -> None:
-        self._event(name.upper(), "start", _short(task), "35")
+        self._event(name.upper(), "start", _short(task, self.truncate_width), "35")
 
     def iteration(self, name: str, iteration: int) -> None:
         self._event(name.upper(), "iter", f"round {iteration}", "34")
 
     def tool_call(self, name: str, iteration: int, tool_name: str, arguments: dict[str, Any]) -> None:
-        detail = f"{tool_name} {_short(arguments)}"
+        detail = f"{tool_name} {_short(arguments, self.truncate_width)}"
         self._event(name.upper(), f"tool {iteration}", detail, "33")
 
     def tool_result(self, name: str, tool_name: str, output: str) -> None:
         parsed = try_load_json(output)
         if isinstance(parsed, dict):
             ok = parsed.get("ok")
-            suffix = _tool_summary(parsed)
+            suffix = _tool_summary(parsed, width=self.tool_summary_width)
         else:
             ok = None
             suffix = ""
         status = "ok" if ok is True else "err" if ok is False else "done"
         color = "32" if ok is True else "31" if ok is False else "36"
-        detail = f"{tool_name} {_short(suffix)}".rstrip()
+        detail = f"{tool_name} {_short(suffix, self.truncate_width)}".rstrip()
         self._event(name.upper(), status, detail, color)
 
     def synthesize_started(self, report_count: int) -> None:
         self._event("LEAD", "merge", f"{report_count} worker reports", "36")
 
     def agent_done(self, name: str, iterations: int, text: str) -> None:
-        self._event(name.upper(), "done", f"{iterations} rounds | {_short(text, 68)}", "32")
+        self._event(
+            name.upper(),
+            "done",
+            f"{iterations} rounds | {_short(text, self.done_summary_width)}",
+            "32",
+        )
