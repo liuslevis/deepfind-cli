@@ -40,8 +40,12 @@ from .youtube_transcribe import (
     resolve_audio_root,
     store_youtube_transcript,
 )
+from .youtube_audio_transcribe import (
+    YouTubeDownloadError,
+    transcribe_youtube_audio,
+)
 
-_WEB_SEARCH_ENGINES = frozenset({"google"}) # "bing", "baidu"
+_WEB_SEARCH_ENGINES = frozenset({"google", "bing", "baidu"})
 _OPENCLI_REGISTRY_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 _OPENCLI_REGISTRY_LOCK = Lock()
 
@@ -115,6 +119,8 @@ class Toolset:
             "bili_transcribe": self.bili_transcribe,
             "bili_transcribe_full": self.bili_transcribe_full,
             "youtube_transcribe": self.youtube_transcribe,
+            "youtube_audio_transcribe": self.youtube_audio_transcribe,
+            "youtube_audio_transcribe_full": self.youtube_audio_transcribe_full,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
         }
@@ -433,6 +439,31 @@ class Toolset:
                     "properties": {
                         "url": {"type": "string"},
                         "lang": {"type": "string"},
+                    },
+                    "required": ["url"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "youtube_audio_transcribe",
+                "Download YouTube audio with yt-dlp, transcribe it with local ASR, then summarize it for the research query.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "query": {"type": "string"},
+                    },
+                    "required": ["url", "query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "youtube_audio_transcribe_full",
+                "Download YouTube audio with yt-dlp and transcribe it with local ASR, returning the full transcript.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
                     },
                     "required": ["url"],
                     "additionalProperties": False,
@@ -1172,6 +1203,16 @@ class Toolset:
             timeout=self.settings.subprocess_timeout,
         )
 
+    def _transcribe_youtube_audio_data(self, url: str) -> dict[str, str]:
+        return transcribe_youtube_audio(
+            url,
+            ytdlp_bin=self.settings.ytdlp_bin,
+            ffmpeg_bin=self.settings.ffmpeg_bin,
+            asr_model=self.settings.asr_model,
+            audio_dir=self.settings.audio_dir,
+            timeout=self.settings.subprocess_timeout,
+        )
+
     def _bili_summary_cache_path(self, audio_root: Path, bili_id: str, query: str) -> Path:
         digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
         return audio_root / "transcripts" / "bili_summary" / bili_id / f"{digest}.json"
@@ -1253,6 +1294,134 @@ class Toolset:
             cache_path.write_text(dump_json(payload), encoding="utf-8")
         except OSError:
             return
+
+    def _youtube_audio_summary_cache_path(self, audio_root: Path, youtube_id: str, query: str) -> Path:
+        digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
+        return audio_root / "transcripts" / "youtube_audio_summary" / youtube_id / f"{digest}.json"
+
+    def _load_cached_youtube_audio_summary(
+        self,
+        audio_root: Path,
+        youtube_id: str,
+        query: str,
+    ) -> dict[str, Any] | None:
+        cache_path = self._youtube_audio_summary_cache_path(audio_root, youtube_id, query)
+        if not cache_path.is_file():
+            return None
+
+        try:
+            raw = cache_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+
+        payload = try_load_json(raw)
+        if not isinstance(payload, dict):
+            return None
+
+        cached_query = payload.get("query")
+        summary = payload.get("summary")
+        transcript_path = payload.get("transcript_path")
+        summary_model = payload.get("summary_model")
+        if payload.get("youtube_id") != youtube_id:
+            return None
+        if not isinstance(cached_query, str) or cached_query != query:
+            return None
+        if not isinstance(summary, str) or not summary.strip():
+            return None
+        if not isinstance(transcript_path, str) or not transcript_path.strip():
+            return None
+        if not isinstance(summary_model, str) or not summary_model.strip():
+            summary_model = self.settings.model
+
+        chunk_count = payload.get("chunk_count")
+        transcript_chars = payload.get("transcript_chars")
+        summary_chars = payload.get("summary_chars")
+        if not isinstance(chunk_count, int) or chunk_count < 1:
+            chunk_count = 1
+        if not isinstance(transcript_chars, int) or transcript_chars < 0:
+            transcript_chars = 0
+        if not isinstance(summary_chars, int) or summary_chars < 0:
+            summary_chars = len(summary)
+
+        return {
+            "youtube_id": youtube_id,
+            "query": query,
+            "summary_model": summary_model,
+            "transcript_path": transcript_path,
+            "transcript_kind": "summary",
+            "transcript_chars": transcript_chars,
+            "chunk_count": chunk_count,
+            "summary": summary,
+            "summary_chars": summary_chars,
+            "transcript": summary,
+        }
+
+    def _store_cached_youtube_audio_summary(
+        self,
+        audio_root: Path,
+        youtube_id: str,
+        query: str,
+        data: dict[str, Any],
+    ) -> None:
+        cache_path = self._youtube_audio_summary_cache_path(audio_root, youtube_id, query)
+        payload = {
+            "youtube_id": youtube_id,
+            "query": query,
+            "summary_model": data.get("summary_model", ""),
+            "transcript_path": data.get("transcript_path", ""),
+            "transcript_chars": data.get("transcript_chars", 0),
+            "chunk_count": data.get("chunk_count", 1),
+            "summary": data.get("summary", ""),
+            "summary_chars": data.get("summary_chars", 0),
+        }
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(dump_json(payload), encoding="utf-8")
+        except OSError:
+            return
+
+    def _youtube_audio_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
+        if isinstance(exc, InvalidYouTubeIdError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "invalid_youtube_id",
+                "error": str(exc),
+            }
+        if isinstance(exc, MissingDependencyError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "missing_dependency",
+                "error": str(exc),
+            }
+        if isinstance(exc, YouTubeDownloadError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "download_failed",
+                "error": str(exc),
+            }
+        if isinstance(exc, TranscriptionError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "transcription_failed",
+                "error": str(exc),
+            }
+        if isinstance(exc, TranscriptSummaryError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "summary_failed",
+                "error": str(exc),
+            }
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "error_code": "unknown_error",
+            "error": str(exc),
+        }
 
     def _bili_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
         if isinstance(exc, InvalidBiliIdError):
@@ -1498,6 +1667,84 @@ class Toolset:
                 "youtube_id": youtube_id,
                 "transcript_path": str(transcript_path),
                 "transcript": transcript,
+            },
+        }
+
+    def youtube_audio_transcribe(self, url: str, query: str) -> dict[str, Any]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            return {
+                "ok": False,
+                "tool": "youtube_audio_transcribe",
+                "error_code": "invalid_query",
+                "error": "query cannot be empty",
+            }
+
+        try:
+            youtube_id = parse_youtube_id(url)
+            audio_root = resolve_audio_root(self.settings.audio_dir)
+            cached = self._load_cached_youtube_audio_summary(audio_root, youtube_id, normalized_query)
+            if cached is not None:
+                return {
+                    "ok": True,
+                    "tool": "youtube_audio_transcribe",
+                    "data": cached,
+                }
+
+            data = self._transcribe_youtube_audio_data(url)
+            summary, chunk_count = summarize_transcript_for_query(
+                self.settings.new_client(),
+                transcript=data["transcript"],
+                query=normalized_query,
+                transcript_path=data["transcript_path"],
+                model=self.settings.model,
+            )
+        except (
+            InvalidYouTubeIdError,
+            MissingDependencyError,
+            YouTubeDownloadError,
+            TranscriptionError,
+            TranscriptSummaryError,
+        ) as exc:
+            return self._youtube_audio_transcribe_error("youtube_audio_transcribe", exc)
+
+        result_data = {
+            "youtube_id": data["youtube_id"],
+            "query": normalized_query,
+            "summary_model": self.settings.model,
+            "transcript_path": data["transcript_path"],
+            "transcript_kind": "summary",
+            "transcript_chars": len(data["transcript"]),
+            "chunk_count": chunk_count,
+            "summary": summary,
+            "summary_chars": len(summary),
+            "transcript": summary,
+        }
+        self._store_cached_youtube_audio_summary(audio_root, data["youtube_id"], normalized_query, result_data)
+        return {
+            "ok": True,
+            "tool": "youtube_audio_transcribe",
+            "data": result_data,
+        }
+
+    def youtube_audio_transcribe_full(self, url: str) -> dict[str, Any]:
+        try:
+            data = self._transcribe_youtube_audio_data(url)
+        except (
+            InvalidYouTubeIdError,
+            MissingDependencyError,
+            YouTubeDownloadError,
+            TranscriptionError,
+        ) as exc:
+            return self._youtube_audio_transcribe_error("youtube_audio_transcribe_full", exc)
+
+        return {
+            "ok": True,
+            "tool": "youtube_audio_transcribe_full",
+            "data": {
+                "youtube_id": data["youtube_id"],
+                "transcript_path": data["transcript_path"],
+                "transcript": data["transcript"],
             },
         }
 
