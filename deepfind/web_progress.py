@@ -7,7 +7,7 @@ from typing import Any, Iterator
 
 from .chat_store import utc_now
 from .json_utils import try_load_json
-from .progress import ConsoleProgress
+from .progress import ConsoleProgress, _note_title_from_items, _tool_payload
 from .web_models import ProgressEvent, TurnResult
 
 _WEB_CONSOLE_TRUNCATE_WIDTH = 2000
@@ -32,8 +32,14 @@ def _summary_from_output(output: str) -> tuple[str, str]:
     if parsed.get("error"):
         return status, str(parsed["error"])
 
-    data = parsed.get("data")
-    if isinstance(data, dict):
+    data = _tool_payload(parsed)
+    if data:
+        note = data.get("note")
+        if isinstance(note, dict) and note.get("title"):
+            return status, str(note["title"])
+        note_title = _note_title_from_items(data)
+        if note_title:
+            return status, note_title
         if data.get("image_path"):
             return status, str(data["image_path"])
         if data.get("html_path"):
@@ -51,7 +57,7 @@ def _summary_from_output(output: str) -> tuple[str, str]:
             return status, str(data["title"])
         if data.get("final_url"):
             return status, str(data["final_url"])
-    return status, str(parsed.get("tool", ""))
+    return status, ""
 
 
 class WebProgress:

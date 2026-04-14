@@ -16,12 +16,39 @@ def _short(value: Any, width: int = 88) -> str:
     return textwrap.shorten(text, width=width, placeholder="...")
 
 
+def _tool_payload(parsed: dict[str, Any]) -> dict[str, Any]:
+    data = parsed.get("data")
+    if not isinstance(data, dict):
+        return {}
+    nested = data.get("data")
+    if "ok" in data and isinstance(nested, dict):
+        return nested
+    return data
+
+
+def _note_title_from_items(data: dict[str, Any]) -> str:
+    items = data.get("items")
+    if not isinstance(items, list) or len(items) != 1 or data.get("pages_fetched"):
+        return ""
+    first = items[0]
+    if not isinstance(first, dict):
+        return ""
+    note_card = first.get("note_card")
+    if not isinstance(note_card, dict):
+        return ""
+    title = note_card.get("title") or note_card.get("display_title") or ""
+    return str(title).strip()
+
+
 def _tool_summary(parsed: dict[str, Any], *, width: int = 64) -> str:
     if parsed.get("error"):
         return _short(parsed["error"], width)
 
-    data = parsed.get("data")
-    if isinstance(data, dict):
+    data = _tool_payload(parsed)
+    if data:
+        note_title = _note_title_from_items(data)
+        if note_title:
+            return _short(note_title, width)
         if isinstance(data.get("items"), list):
             pages = data.get("pages_fetched")
             if pages:
@@ -54,7 +81,7 @@ def _tool_summary(parsed: dict[str, Any], *, width: int = 64) -> str:
         if data.get("final_url"):
             return _short(data["final_url"], width)
 
-    return parsed.get("tool", "")
+    return ""
 
 
 @dataclass
@@ -144,7 +171,9 @@ class ConsoleProgress:
             suffix = ""
         status = "ok" if ok is True else "err" if ok is False else "done"
         color = "32" if ok is True else "31" if ok is False else "36"
-        detail = f"{tool_name} {_short(suffix, self.truncate_width)}".rstrip()
+        detail = tool_name
+        if suffix:
+            detail = f"{tool_name} {_short(suffix, self.truncate_width)}".rstrip()
         self._event(name.upper(), status, detail, color)
 
     def synthesize_started(self, report_count: int) -> None:

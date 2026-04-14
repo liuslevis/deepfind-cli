@@ -130,8 +130,9 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("bili_transcribe", names)
         self.assertIn("bili_transcribe_full", names)
         self.assertIn("youtube_transcribe", names)
-        self.assertIn("youtube_audio_transcribe", names)
-        self.assertIn("youtube_audio_transcribe_full", names)
+        self.assertIn("youtube_transcribe_full", names)
+        self.assertEqual(names.count("youtube_transcribe"), 1)
+        self.assertEqual(names.count("youtube_transcribe_full"), 1)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
 
@@ -139,6 +140,12 @@ class ToolsetTests(unittest.TestCase):
         toolset = Toolset(Settings(api_key="x"))
         spec = next(item for item in toolset.specs() if item["function"]["name"] == "bili_transcribe")
         self.assertEqual(spec["function"]["parameters"]["required"], ["bili_id", "query"])
+        self.assertIn("query", spec["function"]["parameters"]["properties"])
+
+    def test_youtube_transcribe_spec_requires_query(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        spec = next(item for item in toolset.specs() if item["function"]["name"] == "youtube_transcribe")
+        self.assertEqual(spec["function"]["parameters"]["required"], ["url", "query"])
         self.assertIn("query", spec["function"]["parameters"]["properties"])
 
     def test_web_search_missing_binary_returns_error(self) -> None:
@@ -510,11 +517,16 @@ class ToolsetTests(unittest.TestCase):
         with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
             with patch(
                 "deepfind.tools.subprocess.run",
-                return_value=SimpleNamespace(returncode=0, stdout='{"items":[1]}', stderr=""),
+                return_value=SimpleNamespace(
+                    returncode=0,
+                    stdout='{"items":[{"id":"note-1","title":"hello"}],"has_more":false}',
+                    stderr="",
+                ),
             ):
                 result = toolset.xhs_search("topic", page=1)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["data"]["items"], [])
+        self.assertEqual(result["data"]["items"], [{"id": "note-1", "title": "hello"}])
+        self.assertFalse(result["data"]["has_more"])
 
     def test_twitter_search_uses_supported_flags(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -793,6 +805,55 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["data"]["pages_requested"], 3)
         self.assertEqual(result["data"]["pages_fetched"], 3)
 
+    def test_xhs_search_accepts_enveloped_json_output(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        page_payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"ok":true,"schema_version":"1","data":{"items":[{"id":"note-1"},{"id":"note-2"}],"has_more":true}}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=page_payload):
+                result = toolset.xhs_search("keyword", page=1, sort="latest")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["items"], [{"id": "note-1"}, {"id": "note-2"}])
+        self.assertTrue(result["data"]["has_more"])
+
+    def test_xhs_read_normalizes_note_for_model_consumption(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"ok":true,"schema_version":"1","data":{"items":[{"id":"69db389a000000002103a532","note_card":'
+                '{"note_id":"69db389a000000002103a532","title":"美伊谈判破裂，一场没有赢家的博弈",'
+                '"desc":"#国际新闻[话题]# #中东局势[话题]# #伊朗[话题]# #美伊谈判[话题]#",'
+                '"type":"video","time":1775974554000,"last_update_time":1775974554000,'
+                '"tag_list":[{"name":"国际新闻"},{"name":"中东局势"},{"name":"伊朗"},{"name":"美伊谈判"}],'
+                '"user":{"nickname":"眀洞四方","user_id":"667a7216000000000b0320c0"},'
+                '"interact_info":{"liked_count":"14","collected_count":"3","comment_count":"1","share_count":""},'
+                '"video":{"capa":{"duration":213}},"image_list":[{}]}}]}}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                result = toolset.xhs_read("69db389a000000002103a532")
+        self.assertTrue(result["ok"])
+        note = result["data"]["note"]
+        self.assertEqual(note["id"], "69db389a000000002103a532")
+        self.assertEqual(note["title"], "美伊谈判破裂，一场没有赢家的博弈")
+        self.assertEqual(note["author"], "眀洞四方")
+        self.assertEqual(note["media_type"], "video")
+        self.assertEqual(note["text_mode"], "tags_only")
+        self.assertEqual(note["video_duration_sec"], 213)
+        self.assertEqual(note["stats"], {"likes": 14, "collects": 3, "comments": 1, "shares": 0})
+        self.assertEqual(note["url"], "https://www.xiaohongshu.com/explore/69db389a000000002103a532")
+        self.assertIn("the main substance may be in the spoken audio", note["content_hint"])
+        self.assertIn("Title: 美伊谈判破裂，一场没有赢家的博弈", note["content_text"])
+        self.assertIn("Media type: video", note["content_text"])
+
     def test_bili_search_uses_supported_flags(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
@@ -1009,115 +1070,6 @@ class ToolsetTests(unittest.TestCase):
 
     def test_youtube_transcribe_success_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
-            with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
-                with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
-                    with patch(
-                        "deepfind.tools.subprocess.run",
-                        side_effect=[
-                            SimpleNamespace(
-                                returncode=0,
-                                stdout='[{"command":"youtube/transcript","args":[{"name":"url","positional":true},{"name":"lang","positional":false},{"name":"mode","positional":false}]}]',
-                                stderr="",
-                            ),
-                            SimpleNamespace(
-                                returncode=0,
-                                stdout='[{"timestamp":"0:01","speaker":"","text":"line one"},{"timestamp":"0:35","speaker":"Host","text":"line two"}]',
-                                stderr="",
-                            ),
-                        ],
-                    ) as run_mock:
-                        result = toolset.youtube_transcribe("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-            self.assertTrue(result["ok"])
-            self.assertEqual(result["tool"], "youtube_transcribe")
-            self.assertEqual(result["data"]["youtube_id"], "dQw4w9WgXcQ")
-            self.assertEqual(result["data"]["transcript"], "[0:01] line one\n\n[0:35] Host: line two")
-            self.assertEqual(
-                run_mock.call_args_list[1][0][0],
-                [
-                    "/usr/bin/opencli",
-                    "youtube",
-                    "transcript",
-                    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                    "--mode",
-                    "grouped",
-                    "-f",
-                    "json",
-                ],
-            )
-            transcript_path = Path(result["data"]["transcript_path"])
-            self.assertTrue(transcript_path.exists())
-            self.assertEqual(transcript_path.read_text(encoding="utf-8"), "[0:01] line one\n\n[0:35] Host: line two\n")
-
-    def test_youtube_transcribe_uses_cached_transcript(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            transcript_dir = Path(tmpdir) / "transcripts" / "youtube"
-            transcript_dir.mkdir(parents=True, exist_ok=True)
-            cached_path = transcript_dir / "dQw4w9WgXcQ.txt"
-            cached_path.write_text("cached line\n", encoding="utf-8")
-
-            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
-            with patch("deepfind.tools.subprocess.run") as run_mock:
-                result = toolset.youtube_transcribe("dQw4w9WgXcQ")
-
-        self.assertTrue(result["ok"])
-        self.assertEqual(result["data"]["transcript"], "cached line")
-        self.assertEqual(result["data"]["transcript_path"], str(cached_path))
-        run_mock.assert_not_called()
-
-    def test_youtube_transcribe_invalid_id_error(self) -> None:
-        toolset = Toolset(Settings(api_key="x"))
-        result = toolset.youtube_transcribe("not a video")
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error_code"], "invalid_youtube_id")
-
-    def test_youtube_transcribe_missing_dependency_error(self) -> None:
-        toolset = Toolset(Settings(api_key="x"))
-        with patch("deepfind.tools.shutil.which", return_value=None):
-            result = toolset.youtube_transcribe("dQw4w9WgXcQ")
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error_code"], "missing_dependency")
-
-    def test_youtube_transcribe_passes_lang_when_requested(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
-            with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
-                with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
-                    with patch(
-                        "deepfind.tools.subprocess.run",
-                        side_effect=[
-                            SimpleNamespace(
-                                returncode=0,
-                                stdout='[{"command":"youtube/transcript","args":[{"name":"url","positional":true},{"name":"lang","positional":false},{"name":"mode","positional":false}]}]',
-                                stderr="",
-                            ),
-                            SimpleNamespace(
-                                returncode=0,
-                                stdout='[{"timestamp":"0:01","speaker":"","text":"line one"}]',
-                                stderr="",
-                            ),
-                        ],
-                    ) as run_mock:
-                        result = toolset.youtube_transcribe("dQw4w9WgXcQ", lang="zh-Hans")
-        self.assertTrue(result["ok"])
-        self.assertEqual(
-            run_mock.call_args_list[1][0][0],
-            [
-                "/usr/bin/opencli",
-                "youtube",
-                "transcript",
-                "dQw4w9WgXcQ",
-                "--lang",
-                "zh-Hans",
-                "--mode",
-                "grouped",
-                "-f",
-                "json",
-            ],
-        )
-
-    def test_youtube_audio_transcribe_success_payload(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
             toolset = Toolset(Settings(api_key="x", model="configured-yt-model", audio_dir=tmpdir))
             fake_client = FakeOpenAIClient([message_response("condensed summary")])
             with patch(
@@ -1129,19 +1081,19 @@ class ToolsetTests(unittest.TestCase):
                 },
             ):
                 with patch.object(Settings, "new_client", return_value=fake_client):
-                    result = toolset.youtube_audio_transcribe(
+                    result = toolset.youtube_transcribe(
                         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                         "summarize coverage, gross margin, and profitability",
                     )
         self.assertTrue(result["ok"])
-        self.assertEqual(result["tool"], "youtube_audio_transcribe")
+        self.assertEqual(result["tool"], "youtube_transcribe")
         self.assertEqual(result["data"]["youtube_id"], "dQw4w9WgXcQ")
         self.assertEqual(result["data"]["summary"], "condensed summary")
         self.assertEqual(result["data"]["transcript"], "condensed summary")
         self.assertEqual(result["data"]["summary_model"], "configured-yt-model")
         self.assertEqual(fake_client.chat.completions.calls[0]["model"], "configured-yt-model")
 
-    def test_youtube_audio_transcribe_uses_cache_for_same_youtube_id_and_query(self) -> None:
+    def test_youtube_transcribe_uses_cache_for_same_youtube_id_and_query(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
             first_client = FakeOpenAIClient([message_response("cached summary body")])
@@ -1154,11 +1106,11 @@ class ToolsetTests(unittest.TestCase):
                 },
             ) as first_transcribe_mock:
                 with patch.object(Settings, "new_client", return_value=first_client):
-                    first = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+                    first = toolset.youtube_transcribe("dQw4w9WgXcQ", "summarize this video")
             second_client = FakeOpenAIClient([message_response("should not be used")])
             with patch("deepfind.tools.transcribe_youtube_audio") as second_transcribe_mock:
                 with patch.object(Settings, "new_client", return_value=second_client):
-                    second = toolset.youtube_audio_transcribe(
+                    second = toolset.youtube_transcribe(
                         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                         "  summarize this video  ",
                     )
@@ -1173,7 +1125,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(len(first_client.chat.completions.calls), 1)
         self.assertEqual(second_client.chat.completions.calls, [])
 
-    def test_youtube_audio_transcribe_full_success_payload(self) -> None:
+    def test_youtube_transcribe_full_success_payload(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch(
             "deepfind.tools.transcribe_youtube_audio",
@@ -1183,54 +1135,54 @@ class ToolsetTests(unittest.TestCase):
                 "transcript": "line one",
             },
         ):
-            result = toolset.youtube_audio_transcribe_full("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+            result = toolset.youtube_transcribe_full("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         self.assertTrue(result["ok"])
-        self.assertEqual(result["tool"], "youtube_audio_transcribe_full")
+        self.assertEqual(result["tool"], "youtube_transcribe_full")
         self.assertEqual(result["data"]["transcript"], "line one")
 
-    def test_youtube_audio_transcribe_invalid_youtube_id_error(self) -> None:
+    def test_youtube_transcribe_invalid_youtube_id_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
-        result = toolset.youtube_audio_transcribe("not a video", "summarize this video")
+        result = toolset.youtube_transcribe("not a video", "summarize this video")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "invalid_youtube_id")
 
-    def test_youtube_audio_transcribe_missing_dependency_error(self) -> None:
+    def test_youtube_transcribe_missing_dependency_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch(
             "deepfind.tools.transcribe_youtube_audio",
             side_effect=MissingDependencyError("missing"),
         ):
-            result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+            result = toolset.youtube_transcribe("dQw4w9WgXcQ", "summarize this video")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "missing_dependency")
 
-    def test_youtube_audio_transcribe_download_error(self) -> None:
+    def test_youtube_transcribe_download_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch(
             "deepfind.tools.transcribe_youtube_audio",
             side_effect=YouTubeDownloadError("failed"),
         ):
-            result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+            result = toolset.youtube_transcribe("dQw4w9WgXcQ", "summarize this video")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "download_failed")
 
-    def test_youtube_audio_transcribe_transcription_error(self) -> None:
+    def test_youtube_transcribe_transcription_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch(
             "deepfind.tools.transcribe_youtube_audio",
             side_effect=TranscriptionError("failed"),
         ):
-            result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+            result = toolset.youtube_transcribe("dQw4w9WgXcQ", "summarize this video")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "transcription_failed")
 
-    def test_youtube_audio_transcribe_rejects_empty_query(self) -> None:
+    def test_youtube_transcribe_rejects_empty_query(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
-        result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "   ")
+        result = toolset.youtube_transcribe("dQw4w9WgXcQ", "   ")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "invalid_query")
 
-    def test_youtube_audio_transcribe_summary_error(self) -> None:
+    def test_youtube_transcribe_summary_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
             fake_client = FakeOpenAIClient([message_response("")])
@@ -1243,7 +1195,7 @@ class ToolsetTests(unittest.TestCase):
                 },
             ):
                 with patch.object(Settings, "new_client", return_value=fake_client):
-                    result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+                    result = toolset.youtube_transcribe("dQw4w9WgXcQ", "summarize this video")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "summary_failed")
 

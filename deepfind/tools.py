@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -34,11 +35,8 @@ from .web_fetch import (
 )
 from .youtube_transcribe import (
     InvalidYouTubeIdError,
-    load_cached_youtube_transcript,
-    normalize_youtube_transcript,
     parse_youtube_id,
     resolve_audio_root,
-    store_youtube_transcript,
 )
 from .youtube_audio_transcribe import (
     YouTubeDownloadError,
@@ -48,6 +46,7 @@ from .youtube_audio_transcribe import (
 _WEB_SEARCH_ENGINES = frozenset({"google", "bing", "baidu"})
 _OPENCLI_REGISTRY_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 _OPENCLI_REGISTRY_LOCK = Lock()
+_XHS_TOPIC_TAG_RE = re.compile(r"#[^#\n]+#")
 
 
 def _twitter_type(value: str) -> str | None:
@@ -85,12 +84,175 @@ def _xhs_type(value: str) -> str:
     return mapping.get(value, "all")
 
 
+def _xhs_payload(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return {}
+    payload = data.get("data")
+    if isinstance(payload, dict):
+        return payload
+    return data
+
+
+def _xhs_first_note_item(data: Any) -> dict[str, Any]:
+    payload = _xhs_payload(data)
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return {}
+    for item in items:
+        if isinstance(item, dict):
+            return item
+    return {}
+
+
+def _xhs_note_card(data: Any) -> dict[str, Any]:
+    item = _xhs_first_note_item(data)
+    note_card = item.get("note_card")
+    if isinstance(note_card, dict):
+        return note_card
+    return {}
+
+
 def _xhs_items(data: Any) -> list[dict[str, Any]]:
-    if isinstance(data, dict):
-        items = data.get("items")
-        if isinstance(items, list):
-            return [item for item in items if isinstance(item, dict)]
+    payload = _xhs_payload(data)
+    items = payload.get("items")
+    if isinstance(items, list):
+        return [item for item in items if isinstance(item, dict)]
     return []
+
+
+def _xhs_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    lines = [line.strip() for line in value.replace("\r", "").split("\n")]
+    return "\n".join(line for line in lines if line)
+
+
+def _xhs_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return 0
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _xhs_tags(note_card: dict[str, Any]) -> list[str]:
+    tags = note_card.get("tag_list")
+    if not isinstance(tags, list):
+        return []
+    names: list[str] = []
+    for item in tags:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _xhs_desc_mode(desc: str) -> str:
+    if not desc:
+        return "empty"
+    stripped = _XHS_TOPIC_TAG_RE.sub("", desc)
+    stripped = re.sub(r"[\s#\[\],，。！？!?:：;；、()（）【】…·\-]+", "", stripped)
+    return "full" if stripped else "tags_only"
+
+
+def _xhs_media_type(note_card: dict[str, Any]) -> str:
+    if note_card.get("type") == "video" or isinstance(note_card.get("video"), dict):
+        return "video"
+    return "image"
+
+
+def _xhs_note_url(note_id: str) -> str:
+    note_id = note_id.strip()
+    if not note_id:
+        return ""
+    return f"https://www.xiaohongshu.com/explore/{note_id}"
+
+
+def _xhs_content_text(note: dict[str, Any]) -> str:
+    lines: list[str] = []
+    title = str(note.get("title", "")).strip()
+    author = str(note.get("author", "")).strip()
+    desc = str(note.get("desc", "")).strip()
+    tags = note.get("tags")
+    media_type = str(note.get("media_type", "")).strip()
+    duration = note.get("video_duration_sec")
+    hint = str(note.get("content_hint", "")).strip()
+
+    if title:
+        lines.append(f"Title: {title}")
+    if author:
+        lines.append(f"Author: {author}")
+    if desc:
+        lines.append(f"Body: {desc}")
+    if isinstance(tags, list) and tags:
+        lines.append(f"Tags: {', '.join(str(tag) for tag in tags if str(tag).strip())}")
+    if media_type:
+        lines.append(f"Media type: {media_type}")
+    if isinstance(duration, int) and duration > 0:
+        lines.append(f"Video duration seconds: {duration}")
+    if hint:
+        lines.append(f"Note: {hint}")
+    return "\n".join(lines)
+
+
+def _xhs_note(data: Any) -> dict[str, Any]:
+    item = _xhs_first_note_item(data)
+    note_card = _xhs_note_card(data)
+    if not note_card:
+        return {}
+
+    note_id = str(note_card.get("note_id") or item.get("id") or "").strip()
+    title = _xhs_text(note_card.get("title") or note_card.get("display_title") or "")
+    desc = _xhs_text(note_card.get("desc"))
+    tags = _xhs_tags(note_card)
+    media_type = _xhs_media_type(note_card)
+    desc_mode = _xhs_desc_mode(desc)
+    video = note_card.get("video") if isinstance(note_card.get("video"), dict) else {}
+    video_capa = video.get("capa") if isinstance(video.get("capa"), dict) else {}
+    user = note_card.get("user") if isinstance(note_card.get("user"), dict) else {}
+    interact = note_card.get("interact_info") if isinstance(note_card.get("interact_info"), dict) else {}
+
+    content_hint = ""
+    if media_type == "video" and desc_mode != "full":
+        content_hint = "This is a video note and the text body is mostly tags or empty; the main substance may be in the spoken audio."
+    elif desc_mode == "tags_only":
+        content_hint = "The text body is mostly tags rather than full prose."
+
+    note = {
+        "id": note_id,
+        "url": _xhs_note_url(note_id),
+        "title": title,
+        "author": _xhs_text(user.get("nickname")),
+        "author_id": str(user.get("user_id", "")).strip(),
+        "desc": desc,
+        "tags": tags,
+        "media_type": media_type,
+        "text_mode": desc_mode,
+        "content_hint": content_hint,
+        "ip_location": _xhs_text(note_card.get("ip_location")),
+        "published_at_ms": _xhs_int(note_card.get("time")),
+        "updated_at_ms": _xhs_int(note_card.get("last_update_time")),
+        "image_count": len(note_card.get("image_list", [])) if isinstance(note_card.get("image_list"), list) else 0,
+        "video_duration_sec": _xhs_int(video_capa.get("duration")),
+        "stats": {
+            "likes": _xhs_int(interact.get("liked_count")),
+            "collects": _xhs_int(interact.get("collected_count")),
+            "comments": _xhs_int(interact.get("comment_count")),
+            "shares": _xhs_int(interact.get("share_count")),
+        },
+    }
+    note["content_text"] = _xhs_content_text(note)
+    return note
 
 
 class Toolset:
@@ -119,8 +281,7 @@ class Toolset:
             "bili_transcribe": self.bili_transcribe,
             "bili_transcribe_full": self.bili_transcribe_full,
             "youtube_transcribe": self.youtube_transcribe,
-            "youtube_audio_transcribe": self.youtube_audio_transcribe,
-            "youtube_audio_transcribe_full": self.youtube_audio_transcribe_full,
+            "youtube_transcribe_full": self.youtube_transcribe_full,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
         }
@@ -433,19 +594,6 @@ class Toolset:
             ),
             self._function_spec(
                 "youtube_transcribe",
-                "Transcribe YouTube video subtitles by URL or video ID through opencli.",
-                {
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string"},
-                        "lang": {"type": "string"},
-                    },
-                    "required": ["url"],
-                    "additionalProperties": False,
-                },
-            ),
-            self._function_spec(
-                "youtube_audio_transcribe",
                 "Download YouTube audio with yt-dlp, transcribe it with local ASR, then summarize it for the research query.",
                 {
                     "type": "object",
@@ -458,7 +606,7 @@ class Toolset:
                 },
             ),
             self._function_spec(
-                "youtube_audio_transcribe_full",
+                "youtube_transcribe_full",
                 "Download YouTube audio with yt-dlp and transcribe it with local ASR, returning the full transcript.",
                 {
                     "type": "object",
@@ -1073,6 +1221,7 @@ class Toolset:
                 commands.append(command)
 
             data = result.get("data")
+            payload = _xhs_payload(data)
             items = _xhs_items(data)
             for item in items:
                 item_id = str(item.get("id", ""))
@@ -1083,7 +1232,7 @@ class Toolset:
                 merged_items.append(item)
 
             pages_fetched += 1
-            has_more = bool(data.get("has_more")) if isinstance(data, dict) else False
+            has_more = bool(payload.get("has_more"))
 
         return {
             "ok": True,
@@ -1103,11 +1252,27 @@ class Toolset:
         }
 
     def xhs_read(self, ref: str) -> dict[str, Any]:
-        return self._run(
+        result = self._run(
             self.settings.xhs_bin,
             ["read", ref, "--json"],
             "xhs_read",
         )
+        if not result.get("ok"):
+            return result
+
+        note = _xhs_note(result.get("data"))
+        if not note:
+            return result
+
+        return {
+            "ok": True,
+            "tool": "xhs_read",
+            "command": result.get("command", []),
+            "data": {
+                "ref": ref,
+                "note": note,
+            },
+        }
 
     def xhs_search_user(self, query: str) -> dict[str, Any]:
         return self._run(
@@ -1380,7 +1545,7 @@ class Toolset:
         except OSError:
             return
 
-    def _youtube_audio_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
+    def _youtube_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
         if isinstance(exc, InvalidYouTubeIdError):
             return {
                 "ok": False,
@@ -1552,130 +1717,12 @@ class Toolset:
             },
         }
 
-    def youtube_transcribe(self, url: str, lang: str = "") -> dict[str, Any]:
-        try:
-            youtube_id = parse_youtube_id(url)
-        except InvalidYouTubeIdError as exc:
-            return {
-                "ok": False,
-                "tool": "youtube_transcribe",
-                "error_code": "invalid_youtube_id",
-                "error": str(exc),
-            }
-
-        audio_root = resolve_audio_root(self.settings.audio_dir)
-        cached = load_cached_youtube_transcript(audio_root, youtube_id)
-        if cached:
-            transcript_path, transcript = cached
-            return {
-                "ok": True,
-                "tool": "youtube_transcribe",
-                "data": {
-                    "youtube_id": youtube_id,
-                    "transcript_path": str(transcript_path),
-                    "transcript": transcript,
-                },
-            }
-
-        command_prefix, resolve_error = self._opencli_command_prefix()
-        if not command_prefix:
-            return {
-                "ok": False,
-                "tool": "youtube_transcribe",
-                "url": url,
-                "error_code": "missing_dependency",
-                "error": resolve_error or f"{self.settings.opencli_bin} not found",
-            }
-
-        registry_result = self._opencli_registry(command_prefix)
-        if not registry_result.get("ok"):
-            return {
-                **registry_result,
-                "tool": "youtube_transcribe",
-                "url": url,
-            }
-
-        registry = registry_result["data"]
-        command_name = "youtube/transcript"
-        command_spec = registry.get(command_name)
-        if not command_spec:
-            return {
-                "ok": False,
-                "tool": "youtube_transcribe",
-                "url": url,
-                "error_code": "unsupported_command",
-                "error": f"{command_name} is not available in the current opencli registry",
-            }
-
-        command = [*command_prefix, "youtube", "transcript"]
-        if self._opencli_arg_is_positional(command_spec, "url"):
-            command.append(url)
-        else:
-            command.extend(["--url", url])
-        normalized_lang = lang.strip()
-        if normalized_lang and self._opencli_supports_arg(command_spec, "lang"):
-            command.extend(["--lang", normalized_lang])
-        if self._opencli_supports_arg(command_spec, "mode"):
-            command.extend(["--mode", "grouped"])
-        command.extend(["-f", "json"])
-
-        proc = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=self.settings.subprocess_timeout,
-        )
-        if proc.returncode != 0:
-            return {
-                "ok": False,
-                "tool": "youtube_transcribe",
-                "url": url,
-                "command": command,
-                "error_code": "command_failed",
-                "error": (proc.stderr or proc.stdout or "").strip()[:4000],
-            }
-
-        parsed = try_load_json(proc.stdout or "")
-        if parsed is None:
-            return {
-                "ok": False,
-                "tool": "youtube_transcribe",
-                "url": url,
-                "command": command,
-                "error_code": "invalid_json",
-                "error": "opencli returned non-JSON output",
-            }
-
-        transcript = normalize_youtube_transcript(parsed)
-        if not transcript:
-            return {
-                "ok": False,
-                "tool": "youtube_transcribe",
-                "url": url,
-                "command": command,
-                "error_code": "transcript_empty",
-                "error": "opencli returned an empty YouTube transcript",
-            }
-
-        transcript_path = store_youtube_transcript(audio_root, youtube_id, transcript)
-        return {
-            "ok": True,
-            "tool": "youtube_transcribe",
-            "data": {
-                "youtube_id": youtube_id,
-                "transcript_path": str(transcript_path),
-                "transcript": transcript,
-            },
-        }
-
-    def youtube_audio_transcribe(self, url: str, query: str) -> dict[str, Any]:
+    def youtube_transcribe(self, url: str, query: str) -> dict[str, Any]:
         normalized_query = query.strip()
         if not normalized_query:
             return {
                 "ok": False,
-                "tool": "youtube_audio_transcribe",
+                "tool": "youtube_transcribe",
                 "error_code": "invalid_query",
                 "error": "query cannot be empty",
             }
@@ -1687,7 +1734,7 @@ class Toolset:
             if cached is not None:
                 return {
                     "ok": True,
-                    "tool": "youtube_audio_transcribe",
+                    "tool": "youtube_transcribe",
                     "data": cached,
                 }
 
@@ -1706,7 +1753,7 @@ class Toolset:
             TranscriptionError,
             TranscriptSummaryError,
         ) as exc:
-            return self._youtube_audio_transcribe_error("youtube_audio_transcribe", exc)
+            return self._youtube_transcribe_error("youtube_transcribe", exc)
 
         result_data = {
             "youtube_id": data["youtube_id"],
@@ -1723,11 +1770,11 @@ class Toolset:
         self._store_cached_youtube_audio_summary(audio_root, data["youtube_id"], normalized_query, result_data)
         return {
             "ok": True,
-            "tool": "youtube_audio_transcribe",
+            "tool": "youtube_transcribe",
             "data": result_data,
         }
 
-    def youtube_audio_transcribe_full(self, url: str) -> dict[str, Any]:
+    def youtube_transcribe_full(self, url: str) -> dict[str, Any]:
         try:
             data = self._transcribe_youtube_audio_data(url)
         except (
@@ -1736,11 +1783,11 @@ class Toolset:
             YouTubeDownloadError,
             TranscriptionError,
         ) as exc:
-            return self._youtube_audio_transcribe_error("youtube_audio_transcribe_full", exc)
+            return self._youtube_transcribe_error("youtube_transcribe_full", exc)
 
         return {
             "ok": True,
-            "tool": "youtube_audio_transcribe_full",
+            "tool": "youtube_transcribe_full",
             "data": {
                 "youtube_id": data["youtube_id"],
                 "transcript_path": data["transcript_path"],
