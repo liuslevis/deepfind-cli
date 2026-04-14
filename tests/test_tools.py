@@ -18,6 +18,7 @@ from deepfind.config import Settings
 from deepfind.gen_slides import SlideGenerationError
 from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
 from deepfind.tools import Toolset
+from deepfind.youtube_audio_transcribe import YouTubeDownloadError
 from deepfind.web_fetch import WEB_FETCH_MAX_MARKDOWN_CHARS
 
 
@@ -129,6 +130,8 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("bili_transcribe", names)
         self.assertIn("bili_transcribe_full", names)
         self.assertIn("youtube_transcribe", names)
+        self.assertIn("youtube_audio_transcribe", names)
+        self.assertIn("youtube_audio_transcribe_full", names)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
 
@@ -1112,6 +1115,137 @@ class ToolsetTests(unittest.TestCase):
                 "json",
             ],
         )
+
+    def test_youtube_audio_transcribe_success_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", model="configured-yt-model", audio_dir=tmpdir))
+            fake_client = FakeOpenAIClient([message_response("condensed summary")])
+            with patch(
+                "deepfind.tools.transcribe_youtube_audio",
+                return_value={
+                    "youtube_id": "dQw4w9WgXcQ",
+                    "transcript_path": "/tmp/audio/transcripts/youtube_audio/dQw4w9WgXcQ.txt",
+                    "transcript": "line one\nline two",
+                },
+            ):
+                with patch.object(Settings, "new_client", return_value=fake_client):
+                    result = toolset.youtube_audio_transcribe(
+                        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                        "summarize coverage, gross margin, and profitability",
+                    )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "youtube_audio_transcribe")
+        self.assertEqual(result["data"]["youtube_id"], "dQw4w9WgXcQ")
+        self.assertEqual(result["data"]["summary"], "condensed summary")
+        self.assertEqual(result["data"]["transcript"], "condensed summary")
+        self.assertEqual(result["data"]["summary_model"], "configured-yt-model")
+        self.assertEqual(fake_client.chat.completions.calls[0]["model"], "configured-yt-model")
+
+    def test_youtube_audio_transcribe_uses_cache_for_same_youtube_id_and_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            first_client = FakeOpenAIClient([message_response("cached summary body")])
+            with patch(
+                "deepfind.tools.transcribe_youtube_audio",
+                return_value={
+                    "youtube_id": "dQw4w9WgXcQ",
+                    "transcript_path": "/tmp/audio/transcripts/youtube_audio/dQw4w9WgXcQ.txt",
+                    "transcript": "line one\nline two",
+                },
+            ) as first_transcribe_mock:
+                with patch.object(Settings, "new_client", return_value=first_client):
+                    first = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+            second_client = FakeOpenAIClient([message_response("should not be used")])
+            with patch("deepfind.tools.transcribe_youtube_audio") as second_transcribe_mock:
+                with patch.object(Settings, "new_client", return_value=second_client):
+                    second = toolset.youtube_audio_transcribe(
+                        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                        "  summarize this video  ",
+                    )
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(first["data"]["summary"], "cached summary body")
+        self.assertEqual(second["data"]["summary"], "cached summary body")
+        self.assertEqual(first["data"]["query"], "summarize this video")
+        self.assertEqual(second["data"]["query"], "summarize this video")
+        first_transcribe_mock.assert_called_once()
+        second_transcribe_mock.assert_not_called()
+        self.assertEqual(len(first_client.chat.completions.calls), 1)
+        self.assertEqual(second_client.chat.completions.calls, [])
+
+    def test_youtube_audio_transcribe_full_success_payload(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch(
+            "deepfind.tools.transcribe_youtube_audio",
+            return_value={
+                "youtube_id": "dQw4w9WgXcQ",
+                "transcript_path": "/tmp/audio/transcripts/youtube_audio/dQw4w9WgXcQ.txt",
+                "transcript": "line one",
+            },
+        ):
+            result = toolset.youtube_audio_transcribe_full("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "youtube_audio_transcribe_full")
+        self.assertEqual(result["data"]["transcript"], "line one")
+
+    def test_youtube_audio_transcribe_invalid_youtube_id_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        result = toolset.youtube_audio_transcribe("not a video", "summarize this video")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_youtube_id")
+
+    def test_youtube_audio_transcribe_missing_dependency_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch(
+            "deepfind.tools.transcribe_youtube_audio",
+            side_effect=MissingDependencyError("missing"),
+        ):
+            result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "missing_dependency")
+
+    def test_youtube_audio_transcribe_download_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch(
+            "deepfind.tools.transcribe_youtube_audio",
+            side_effect=YouTubeDownloadError("failed"),
+        ):
+            result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "download_failed")
+
+    def test_youtube_audio_transcribe_transcription_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch(
+            "deepfind.tools.transcribe_youtube_audio",
+            side_effect=TranscriptionError("failed"),
+        ):
+            result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "transcription_failed")
+
+    def test_youtube_audio_transcribe_rejects_empty_query(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "   ")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_query")
+
+    def test_youtube_audio_transcribe_summary_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            fake_client = FakeOpenAIClient([message_response("")])
+            with patch(
+                "deepfind.tools.transcribe_youtube_audio",
+                return_value={
+                    "youtube_id": "dQw4w9WgXcQ",
+                    "transcript_path": "/tmp/audio/transcripts/youtube_audio/dQw4w9WgXcQ.txt",
+                    "transcript": "line one",
+                },
+            ):
+                with patch.object(Settings, "new_client", return_value=fake_client):
+                    result = toolset.youtube_audio_transcribe("dQw4w9WgXcQ", "summarize this video")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "summary_failed")
 
     def test_gen_img_success_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

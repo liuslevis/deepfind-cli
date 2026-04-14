@@ -70,6 +70,8 @@ class Settings:
     twitter_bin: str = "twitter"
     xhs_bin: str = "xhs"
     bili_bin: str = "bili"
+    ytdlp_bin: str = "yt-dlp"
+    ffmpeg_bin: str = "ffmpeg"
     asr_model: str = DEFAULT_ASR_MODEL
     audio_dir: str = "audio"
     subprocess_timeout: int = 90
@@ -108,6 +110,8 @@ class Settings:
             twitter_bin=_env("TWITTER_CLI_BIN", "twitter") or "twitter",
             xhs_bin=_env("XHS_CLI_BIN", "xhs") or "xhs",
             bili_bin=_env("BILI_BIN", "bili") or "bili",
+            ytdlp_bin=_env("YTDLP_BIN", "yt-dlp") or "yt-dlp",
+            ffmpeg_bin=_env("FFMPEG_BIN", "ffmpeg") or "ffmpeg",
             asr_model=_env("ASR_MODEL", DEFAULT_ASR_MODEL) or DEFAULT_ASR_MODEL,
             audio_dir=_env("DEEPFIND_AUDIO_DIR", "audio") or "audio",
             subprocess_timeout=int(timeout or "90"),
