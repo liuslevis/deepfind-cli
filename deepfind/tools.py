@@ -42,6 +42,11 @@ from .youtube_audio_transcribe import (
     YouTubeDownloadError,
     transcribe_youtube_audio,
 )
+from .xhs_transcribe import (
+    InvalidXhsVideoError,
+    XhsDownloadError,
+    transcribe_xhs_video,
+)
 
 _WEB_SEARCH_ENGINES = frozenset({"google", "bing", "baidu"})
 _OPENCLI_REGISTRY_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
@@ -255,6 +260,38 @@ def _xhs_note(data: Any) -> dict[str, Any]:
     return note
 
 
+def _xhs_video_url(data: Any) -> str:
+    note_card = _xhs_note_card(data)
+    video = note_card.get("video")
+    if not isinstance(video, dict):
+        return ""
+    media = video.get("media")
+    if not isinstance(media, dict):
+        return ""
+    stream = media.get("stream")
+    if not isinstance(stream, dict):
+        return ""
+
+    candidates: list[tuple[int, str]] = []
+    for codec_key in ("h264", "h265", "av1", "h266"):
+        values = stream.get(codec_key)
+        if not isinstance(values, list):
+            continue
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            master_url = str(item.get("master_url", "")).strip()
+            if not master_url:
+                continue
+            rank = _xhs_int(item.get("size")) or _xhs_int(item.get("avg_bitrate")) or 10**12
+            candidates.append((rank, master_url))
+
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
 class Toolset:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -273,6 +310,7 @@ class Toolset:
             "boss_send": self.boss_send,
             "xhs_search": self.xhs_search,
             "xhs_read": self.xhs_read,
+            "xhs_transcribe_full": self.xhs_transcribe_full,
             "xhs_search_user": self.xhs_search_user,
             "xhs_user": self.xhs_user,
             "xhs_user_posts": self.xhs_user_posts,
@@ -485,6 +523,18 @@ class Toolset:
             self._function_spec(
                 "xhs_read",
                 "Read one Xiaohongshu note by URL or ID.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "ref": {"type": "string"},
+                    },
+                    "required": ["ref"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "xhs_transcribe_full",
+                "Read one Xiaohongshu note and return all extractable content. For video notes, transcribe the spoken audio and return the full transcript.",
                 {
                     "type": "object",
                     "properties": {
@@ -1274,6 +1324,73 @@ class Toolset:
             },
         }
 
+    def xhs_transcribe_full(self, ref: str) -> dict[str, Any]:
+        result = self._run(
+            self.settings.xhs_bin,
+            ["read", ref, "--json"],
+            "xhs_transcribe_full",
+        )
+        if not result.get("ok"):
+            return result
+
+        note = _xhs_note(result.get("data"))
+        if not note:
+            return {
+                "ok": False,
+                "tool": "xhs_transcribe_full",
+                "error_code": "invalid_note",
+                "error": "xhs read returned no note data",
+            }
+
+        if note.get("media_type") != "video":
+            transcript = str(note.get("content_text", "")).strip()
+            return {
+                "ok": True,
+                "tool": "xhs_transcribe_full",
+                "command": result.get("command", []),
+                "data": {
+                    "ref": ref,
+                    "note": note,
+                    "transcript_kind": "note",
+                    "transcript_path": "",
+                    "transcript_chars": len(transcript),
+                    "transcript": transcript,
+                },
+            }
+
+        video_url = _xhs_video_url(result.get("data"))
+        if not video_url:
+            return {
+                "ok": False,
+                "tool": "xhs_transcribe_full",
+                "error_code": "video_unavailable",
+                "error": "xhs note does not expose a downloadable video stream",
+            }
+
+        try:
+            data = self._transcribe_xhs_video_data(note["id"], video_url)
+        except (
+            InvalidXhsVideoError,
+            MissingDependencyError,
+            XhsDownloadError,
+            TranscriptionError,
+        ) as exc:
+            return self._xhs_transcribe_error("xhs_transcribe_full", exc)
+
+        return {
+            "ok": True,
+            "tool": "xhs_transcribe_full",
+            "command": result.get("command", []),
+            "data": {
+                "ref": ref,
+                "note": note,
+                "transcript_kind": "audio",
+                "transcript_path": data["transcript_path"],
+                "transcript_chars": len(data["transcript"]),
+                "transcript": data["transcript"],
+            },
+        }
+
     def xhs_search_user(self, query: str) -> dict[str, Any]:
         return self._run(
             self.settings.xhs_bin,
@@ -1372,6 +1489,16 @@ class Toolset:
         return transcribe_youtube_audio(
             url,
             ytdlp_bin=self.settings.ytdlp_bin,
+            ffmpeg_bin=self.settings.ffmpeg_bin,
+            asr_model=self.settings.asr_model,
+            audio_dir=self.settings.audio_dir,
+            timeout=self.settings.subprocess_timeout,
+        )
+
+    def _transcribe_xhs_video_data(self, note_id: str, video_url: str) -> dict[str, str]:
+        return transcribe_xhs_video(
+            note_id,
+            video_url,
             ffmpeg_bin=self.settings.ffmpeg_bin,
             asr_model=self.settings.asr_model,
             audio_dir=self.settings.audio_dir,
@@ -1579,6 +1706,42 @@ class Toolset:
                 "ok": False,
                 "tool": tool_name,
                 "error_code": "summary_failed",
+                "error": str(exc),
+            }
+        return {
+            "ok": False,
+            "tool": tool_name,
+            "error_code": "unknown_error",
+            "error": str(exc),
+        }
+
+    def _xhs_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
+        if isinstance(exc, InvalidXhsVideoError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "video_unavailable",
+                "error": str(exc),
+            }
+        if isinstance(exc, MissingDependencyError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "missing_dependency",
+                "error": str(exc),
+            }
+        if isinstance(exc, XhsDownloadError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "download_failed",
+                "error": str(exc),
+            }
+        if isinstance(exc, TranscriptionError):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": "transcription_failed",
                 "error": str(exc),
             }
         return {

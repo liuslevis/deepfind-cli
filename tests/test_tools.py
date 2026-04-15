@@ -20,6 +20,7 @@ from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
 from deepfind.tools import Toolset
 from deepfind.youtube_audio_transcribe import YouTubeDownloadError
 from deepfind.web_fetch import WEB_FETCH_MAX_MARKDOWN_CHARS
+from deepfind.xhs_transcribe import XhsDownloadError
 
 
 def message_response(text: str):
@@ -131,8 +132,10 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("bili_transcribe_full", names)
         self.assertIn("youtube_transcribe", names)
         self.assertIn("youtube_transcribe_full", names)
+        self.assertIn("xhs_transcribe_full", names)
         self.assertEqual(names.count("youtube_transcribe"), 1)
         self.assertEqual(names.count("youtube_transcribe_full"), 1)
+        self.assertEqual(names.count("xhs_transcribe_full"), 1)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
 
@@ -853,6 +856,108 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("the main substance may be in the spoken audio", note["content_hint"])
         self.assertIn("Title: 美伊谈判破裂，一场没有赢家的博弈", note["content_text"])
         self.assertIn("Media type: video", note["content_text"])
+
+    def test_xhs_transcribe_full_video_success_payload(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"ok":true,"schema_version":"1","data":{"items":[{"id":"note-1","note_card":'
+                '{"note_id":"note-1","title":"Talk breakdown","desc":"#tag#","type":"video",'
+                '"user":{"nickname":"Analyst","user_id":"user-1"},'
+                '"interact_info":{"liked_count":"5","collected_count":"2","comment_count":"1","share_count":"0"},'
+                '"video":{"capa":{"duration":42},"media":{"stream":{"h264":[{"master_url":"https://video.example/test.mp4","size":1234}]}}},'
+                '"image_list":[{}]}}]}}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                with patch(
+                    "deepfind.tools.transcribe_xhs_video",
+                    return_value={
+                        "note_id": "note-1",
+                        "transcript_path": "/tmp/audio/transcripts/xhs/note-1.txt",
+                        "transcript": "full spoken transcript",
+                    },
+                ) as transcribe_mock:
+                    result = toolset.xhs_transcribe_full("note-1")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "xhs_transcribe_full")
+        self.assertEqual(result["data"]["note"]["title"], "Talk breakdown")
+        self.assertEqual(result["data"]["transcript_kind"], "audio")
+        self.assertEqual(result["data"]["transcript"], "full spoken transcript")
+        transcribe_mock.assert_called_once_with(
+            "note-1",
+            "https://video.example/test.mp4",
+            ffmpeg_bin=toolset.settings.ffmpeg_bin,
+            asr_model=toolset.settings.asr_model,
+            audio_dir=toolset.settings.audio_dir,
+            timeout=toolset.settings.subprocess_timeout,
+        )
+
+    def test_xhs_transcribe_full_non_video_returns_note_content(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"ok":true,"schema_version":"1","data":{"items":[{"id":"note-2","note_card":'
+                '{"note_id":"note-2","title":"Field notes","desc":"Long form text body",'
+                '"type":"normal","user":{"nickname":"Reporter","user_id":"user-2"},'
+                '"interact_info":{"liked_count":"8","collected_count":"1","comment_count":"0","share_count":"0"},'
+                '"tag_list":[{"name":"news"}],"image_list":[{}]}}]}}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                with patch("deepfind.tools.transcribe_xhs_video") as transcribe_mock:
+                    result = toolset.xhs_transcribe_full("note-2")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["transcript_kind"], "note")
+        self.assertEqual(result["data"]["transcript_path"], "")
+        self.assertIn("Body: Long form text body", result["data"]["transcript"])
+        transcribe_mock.assert_not_called()
+
+    def test_xhs_transcribe_full_video_url_missing_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"ok":true,"schema_version":"1","data":{"items":[{"id":"note-3","note_card":'
+                '{"note_id":"note-3","title":"Video without stream","desc":"#tag#","type":"video",'
+                '"user":{"nickname":"Reporter","user_id":"user-3"},'
+                '"interact_info":{"liked_count":"1","collected_count":"0","comment_count":"0","share_count":"0"},'
+                '"video":{"capa":{"duration":12}},"image_list":[{}]}}]}}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                result = toolset.xhs_transcribe_full("note-3")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "video_unavailable")
+
+    def test_xhs_transcribe_full_download_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"ok":true,"schema_version":"1","data":{"items":[{"id":"note-4","note_card":'
+                '{"note_id":"note-4","title":"Clip","desc":"#tag#","type":"video",'
+                '"user":{"nickname":"Analyst","user_id":"user-4"},'
+                '"interact_info":{"liked_count":"2","collected_count":"0","comment_count":"0","share_count":"0"},'
+                '"video":{"capa":{"duration":18},"media":{"stream":{"h264":[{"master_url":"https://video.example/clip.mp4","size":999}]}}},'
+                '"image_list":[{}]}}]}}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                with patch("deepfind.tools.transcribe_xhs_video", side_effect=XhsDownloadError("failed")):
+                    result = toolset.xhs_transcribe_full("note-4")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "download_failed")
 
     def test_bili_search_uses_supported_flags(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

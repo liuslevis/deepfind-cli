@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .bili_transcribe import (
+from .asr import (
     AUDIO_SUFFIXES,
     DEFAULT_ASR_MODEL,
     SEGMENT_SECONDS,
@@ -303,4 +303,3 @@ __all__ = [
     "store_youtube_audio_transcript",
     "transcribe_youtube_audio",
 ]
-
