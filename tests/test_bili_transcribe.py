@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import deepfind.asr as asr
 import deepfind.bili_transcribe as bili_transcribe
 from deepfind.bili_transcribe import (
     InvalidBiliIdError,
@@ -136,8 +137,8 @@ class BiliTranscribeTests(unittest.TestCase):
 
     def test_gpu_asr_slot_skips_semaphore_without_gpu(self) -> None:
         semaphore = MagicMock()
-        with patch("deepfind.bili_transcribe._gpu_available", return_value=False):
-            with patch.object(bili_transcribe, "_GPU_ASR_SEMAPHORE", semaphore):
+        with patch("deepfind.asr._gpu_available", return_value=False):
+            with patch.object(asr, "_GPU_ASR_SEMAPHORE", semaphore):
                 with gpu_asr_slot():
                     pass
         semaphore.acquire.assert_not_called()
@@ -145,8 +146,8 @@ class BiliTranscribeTests(unittest.TestCase):
 
     def test_gpu_asr_slot_acquires_and_releases_with_gpu(self) -> None:
         semaphore = MagicMock()
-        with patch("deepfind.bili_transcribe._gpu_available", return_value=True):
-            with patch.object(bili_transcribe, "_GPU_ASR_SEMAPHORE", semaphore):
+        with patch("deepfind.asr._gpu_available", return_value=True):
+            with patch.object(asr, "_GPU_ASR_SEMAPHORE", semaphore):
                 with gpu_asr_slot():
                     pass
         semaphore.acquire.assert_called_once()

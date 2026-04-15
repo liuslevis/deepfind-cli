@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .bili_transcribe import resolve_audio_root
+from .asr import resolve_audio_root
 
 
 YOUTUBE_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]{11}$")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from .bili_transcribe import DEFAULT_ASR_MODEL
+from .asr import DEFAULT_ASR_MODEL
 from .gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
 
 
