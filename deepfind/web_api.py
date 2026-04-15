@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import torch 
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -126,6 +127,8 @@ def create_app() -> FastAPI:
 
 
 def main(argv: list[str] | None = None) -> int:
+    print("cuda: ", torch.cuda.is_available())
+
     parser = argparse.ArgumentParser(prog="deepfind-web")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)

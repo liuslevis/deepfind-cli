@@ -14,8 +14,11 @@ from .asr import (
     TranscriptionError,
     gpu_asr_slot,
     load_model,
-    resolve_audio_root,
     transcribe_audio,
+    resolve_audio_root,
+    transcribe_segments,
+    load_text,
+    write_text,
 )
 
 BVID_PATTERN = re.compile(r"(BV[0-9A-Za-z]{10})")
@@ -87,15 +90,10 @@ def find_segments(root: Path) -> list[Path]:
 
 def load_cached_transcript(audio_root: Path, bili_id: str) -> tuple[Path, str] | None:
     candidate = audio_root / "transcripts" / f"{bili_id}.txt"
-    if not candidate.is_file():
+    transcript = load_text(candidate)
+    if transcript is None:
         return None
-    try:
-        transcript = candidate.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
-        return None
-    if transcript:
-        return candidate, transcript
-    return None
+    return candidate, transcript
 
 
 def ensure_segments(
@@ -154,8 +152,6 @@ def transcribe_bili_audio(
         }
 
     audio_dir_path = audio_root / resolved_id
-    transcript_root = audio_root / "transcripts"
-    transcript_root.mkdir(parents=True, exist_ok=True)
 
     segments = ensure_segments(
         resolved_id,
@@ -163,26 +159,10 @@ def transcribe_bili_audio(
         bili_bin=bili_bin,
         timeout=timeout,
     )
-    with gpu_asr_slot():
-        backend, model, processor, device = load_model(asr_model)
+    transcript = transcribe_segments(segments, asr_model=asr_model)
 
-        transcripts: list[str] = []
-        for segment in segments:
-            try:
-                segment_text = transcribe_audio(segment, backend, model, processor, device)
-            except (BiliTranscribeError, MissingDependencyError, TranscriptionError):
-                raise
-            except Exception as exc:
-                raise TranscriptionError(f"Failed transcribing {segment.name}: {exc}") from exc
-            if segment_text:
-                transcripts.append(segment_text)
-
-    transcript = "\n".join(transcripts).strip()
-    if not transcript:
-        raise TranscriptionError("ASR produced an empty transcript.")
-
-    transcript_path = transcript_root / f"{resolved_id}.txt"
-    transcript_path.write_text(transcript + "\n", encoding="utf-8")
+    transcript_path = audio_root / "transcripts" / f"{resolved_id}.txt"
+    write_text(transcript_path, transcript)
     return {
         "bili_id": resolved_id,
         "transcript_path": str(transcript_path),

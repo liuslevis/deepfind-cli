@@ -1346,6 +1346,7 @@ export default function App() {
       setSelectedChatId(chatId);
       storageSetItem(STORAGE_KEY, chatId);
       setSidebarOpen(false);
+      focusComposer();
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Failed to open chat");
     } finally {
@@ -1364,6 +1365,7 @@ export default function App() {
       setChats((current) => upsertSummary(current, summaryFromChat(chat)));
       storageSetItem(STORAGE_KEY, chat.id);
       setSidebarOpen(false);
+      focusComposer();
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Failed to create chat");
     }
@@ -1457,6 +1459,10 @@ export default function App() {
     setComposerValue(command);
     setSlashCommandIndex(0);
     composerInputRef.current?.focus();
+  }
+
+  function focusComposer() {
+    composerInputRef.current?.focus({ preventScroll: true });
   }
 
   function handleComposerKeyDown(keyEvent: ReactKeyboardEvent<HTMLInputElement>) {

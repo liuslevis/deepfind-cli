@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .asr import resolve_audio_root
+from .asr import load_text, resolve_audio_root, write_text
 
 
 YOUTUBE_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]{11}$")
@@ -68,21 +68,15 @@ def resolve_youtube_transcript_path(audio_root: Path, youtube_id: str) -> Path:
 
 def load_cached_youtube_transcript(audio_root: Path, youtube_id: str) -> tuple[Path, str] | None:
     candidate = resolve_youtube_transcript_path(audio_root, youtube_id)
-    if not candidate.is_file():
+    transcript = load_text(candidate)
+    if transcript is None:
         return None
-    try:
-        transcript = candidate.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
-        return None
-    if transcript:
-        return candidate, transcript
-    return None
+    return candidate, transcript
 
 
 def store_youtube_transcript(audio_root: Path, youtube_id: str, transcript: str) -> Path:
     path = resolve_youtube_transcript_path(audio_root, youtube_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(transcript.strip() + "\n", encoding="utf-8")
+    write_text(path, transcript)
     return path
 
 

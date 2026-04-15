@@ -62,18 +62,17 @@ class BiliTranscribeTests(unittest.TestCase):
             seg2.write_bytes(b"b")
 
             with patch("deepfind.bili_transcribe.ensure_segments", return_value=[seg1, seg2]):
-                with patch("deepfind.bili_transcribe.load_model", return_value=("qwen3_asr", object(), None, "cpu")):
-                    with patch(
-                        "deepfind.bili_transcribe.transcribe_audio",
-                        side_effect=["first line", "second line"],
-                    ):
-                        result = transcribe_bili_audio(
-                            "https://www.bilibili.com/video/BV1cgPSzeEj5",
-                            audio_dir=tmpdir,
-                            asr_model="Qwen/Qwen3-ASR-1.7B",
-                            bili_bin="bili",
-                            timeout=30,
-                        )
+                with patch(
+                    "deepfind.bili_transcribe.transcribe_segments",
+                    return_value="first line\nsecond line",
+                ):
+                    result = transcribe_bili_audio(
+                        "https://www.bilibili.com/video/BV1cgPSzeEj5",
+                        audio_dir=tmpdir,
+                        asr_model="Qwen/Qwen3-ASR-1.7B",
+                        bili_bin="bili",
+                        timeout=30,
+                    )
 
             transcript_path = Path(result["transcript_path"])
             self.assertTrue(transcript_path.exists())
@@ -94,7 +93,7 @@ class BiliTranscribeTests(unittest.TestCase):
             cached_path.write_text("cached line\n", encoding="utf-8")
 
             with patch("deepfind.bili_transcribe.ensure_segments") as ensure_mock:
-                with patch("deepfind.bili_transcribe.load_model") as load_model_mock:
+                with patch("deepfind.bili_transcribe.transcribe_segments") as transcribe_mock:
                     result = transcribe_bili_audio(
                         "BV1cgPSzeEj5",
                         audio_dir=tmpdir,
@@ -104,7 +103,7 @@ class BiliTranscribeTests(unittest.TestCase):
         self.assertEqual(result["transcript"], "cached line")
         self.assertEqual(result["transcript_path"], str(cached_path))
         ensure_mock.assert_not_called()
-        load_model_mock.assert_not_called()
+        transcribe_mock.assert_not_called()
 
     def test_transcribe_bili_audio_uses_gpu_queue_slot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -117,12 +116,9 @@ class BiliTranscribeTests(unittest.TestCase):
             slot.__exit__.return_value = False
 
             with patch("deepfind.bili_transcribe.ensure_segments", return_value=[seg1]):
-                with patch("deepfind.bili_transcribe.gpu_asr_slot", return_value=slot) as slot_mock:
-                    with patch(
-                        "deepfind.bili_transcribe.load_model",
-                        return_value=("qwen3_asr", object(), None, "cpu"),
-                    ):
-                        with patch("deepfind.bili_transcribe.transcribe_audio", return_value="line one"):
+                with patch("deepfind.asr.gpu_asr_slot", return_value=slot) as slot_mock:
+                    with patch("deepfind.asr.load_model", return_value=("qwen3_asr", object(), None, "cpu")):
+                        with patch("deepfind.asr.transcribe_audio", return_value="line one"):
                             transcribe_bili_audio(
                                 "BV1cgPSzeEj5",
                                 audio_dir=tmpdir,
