@@ -11,10 +11,10 @@ from .asr import (
     SEGMENT_SECONDS,
     MissingDependencyError,
     TranscriptionError,
-    gpu_asr_slot,
-    load_model,
+    load_text,
     resolve_audio_root,
-    transcribe_audio,
+    transcribe_segments,
+    write_text,
 )
 from .youtube_transcribe import InvalidYouTubeIdError, parse_youtube_id
 
@@ -33,21 +33,15 @@ def resolve_youtube_audio_transcript_path(audio_root: Path, youtube_id: str) -> 
 
 def load_cached_youtube_audio_transcript(audio_root: Path, youtube_id: str) -> tuple[Path, str] | None:
     candidate = resolve_youtube_audio_transcript_path(audio_root, youtube_id)
-    if not candidate.is_file():
+    transcript = load_text(candidate)
+    if transcript is None:
         return None
-    try:
-        transcript = candidate.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
-        return None
-    if transcript:
-        return candidate, transcript
-    return None
+    return candidate, transcript
 
 
 def store_youtube_audio_transcript(audio_root: Path, youtube_id: str, transcript: str) -> Path:
     path = resolve_youtube_audio_transcript_path(audio_root, youtube_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(transcript.strip() + "\n", encoding="utf-8")
+    write_text(path, transcript)
     return path
 
 
@@ -261,24 +255,7 @@ def transcribe_youtube_audio(
         ffmpeg_bin=ffmpeg_bin,
         timeout=timeout,
     )
-
-    with gpu_asr_slot():
-        backend, model, processor, device = load_model(asr_model)
-
-        transcripts: list[str] = []
-        for segment in segments:
-            try:
-                segment_text = transcribe_audio(segment, backend, model, processor, device)
-            except (MissingDependencyError, TranscriptionError):
-                raise
-            except Exception as exc:
-                raise TranscriptionError(f"Failed transcribing {segment.name}: {exc}") from exc
-            if segment_text:
-                transcripts.append(segment_text)
-
-    transcript = "\n".join(transcripts).strip()
-    if not transcript:
-        raise TranscriptionError("ASR produced an empty transcript.")
+    transcript = transcribe_segments(segments, asr_model=asr_model)
 
     transcript_path = store_youtube_audio_transcript(audio_root, youtube_id, transcript)
     return {

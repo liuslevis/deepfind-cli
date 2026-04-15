@@ -567,6 +567,106 @@ describe("App", () => {
     expect(openChatsButton).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("focuses the composer after creating a new chat", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({ chats: [] });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_new",
+            title: "Fresh chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const composer = screen.getByLabelText("Ask DeepFind");
+    const newChatButton = screen.getByRole("button", { name: "New chat" });
+    newChatButton.focus();
+    expect(newChatButton).toHaveFocus();
+
+    await userEvent.click(newChatButton);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Fresh chat" })).toBeInTheDocument());
+    await waitFor(() => expect(composer).toHaveFocus());
+  });
+
+  it("focuses the composer after switching chats", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_a",
+              title: "Alpha",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:01:00Z",
+              preview: "Alpha preview",
+            },
+            {
+              id: "chat_b",
+              title: "Bravo",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Bravo preview",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_a" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_a",
+            title: "Alpha",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:01:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_b" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_b",
+            title: "Bravo",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [],
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const composer = screen.getByLabelText("Ask DeepFind");
+    await screen.findByRole("heading", { name: "Alpha" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Bravo" }));
+
+    await screen.findByRole("heading", { name: "Bravo" });
+    await waitFor(() => expect(composer).toHaveFocus());
+  });
+
   it("deletes a chat from the sidebar without opening it or asking for confirmation", async () => {
     let bravoOpened = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

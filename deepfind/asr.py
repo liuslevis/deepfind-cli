@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from threading import Semaphore
@@ -28,6 +29,21 @@ def resolve_audio_root(audio_dir: str | None) -> Path:
     if not path.is_absolute():
         path = REPO_ROOT / path
     return path
+
+
+def load_text(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return None
+    return text or None
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.strip() + "\n", encoding="utf-8")
 
 
 def load_local_secrets() -> None:
@@ -186,6 +202,31 @@ def transcribe_audio(audio_path: Path, backend: str, model: Any, processor: Any,
     )[0].strip()
 
 
+def transcribe_segments(
+    segments: Sequence[Path],
+    *,
+    asr_model: str = DEFAULT_ASR_MODEL,
+) -> str:
+    with gpu_asr_slot():
+        backend, model, processor, device = load_model(asr_model)
+
+        transcripts: list[str] = []
+        for segment in segments:
+            try:
+                segment_text = transcribe_audio(segment, backend, model, processor, device)
+            except (MissingDependencyError, TranscriptionError):
+                raise
+            except Exception as exc:
+                raise TranscriptionError(f"Failed transcribing {segment.name}: {exc}") from exc
+            if segment_text:
+                transcripts.append(segment_text)
+
+    transcript = "\n".join(transcripts).strip()
+    if not transcript:
+        raise TranscriptionError("ASR produced an empty transcript.")
+    return transcript
+
+
 __all__ = [
     "AUDIO_SUFFIXES",
     "DEFAULT_ASR_MODEL",
@@ -195,9 +236,11 @@ __all__ = [
     "extract_qwen3_text",
     "gpu_asr_slot",
     "is_qwen3_asr_model",
+    "load_text",
     "load_local_secrets",
     "load_model",
     "resolve_audio_root",
+    "transcribe_segments",
     "transcribe_audio",
+    "write_text",
 ]
-

@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
+from deepfind.json_utils import dump_json
 from deepfind.llm import ResponseAgent
 
 
@@ -27,7 +28,10 @@ class FakeChatCompletionsAPI:
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
-        return self.items.pop(0)
+        item = self.items.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
 
 class FakeClient:
@@ -178,3 +182,69 @@ class ResponseAgentTests(unittest.TestCase):
 
         calls = settings.new_client().chat.completions.calls
         self.assertEqual(calls[0]["max_tokens"], 3200)
+
+    def test_compacts_large_tool_output_before_next_round(self) -> None:
+        tool_call = SimpleNamespace(
+            id="call-1",
+            function=SimpleNamespace(name="twitter_search", arguments='{"query":"openai"}'),
+        )
+        settings = FakeSettings(
+            [
+                message_response("", tool_calls=[tool_call]),
+                message_response('{"summary":"ok","facts":[],"gaps":[]}'),
+            ]
+        )
+        tools = FakeTools()
+        large_output = {
+            "ok": True,
+            "tool": "xhs_search",
+            "data": {
+                "query": "topic",
+                "items": [
+                    {
+                        "id": f"note-{index}",
+                        "title": f"Very long title {index}",
+                        "desc": "x" * 1200,
+                        "url": f"https://example.com/{index}",
+                    }
+                    for index in range(120)
+                ],
+            },
+        }
+        tools.output = dump_json(large_output)
+        agent = ResponseAgent(settings=settings, tools=tools, max_iter=3)
+
+        agent.run("worker", "short prompt", "q=test", use_tools=True)
+
+        calls = settings.new_client().chat.completions.calls
+        tool_message = calls[1]["messages"][3]["content"]
+        self.assertLess(len(tool_message), len(tools.output))
+        self.assertLessEqual(len(tool_message), 16000)
+        self.assertIn('"tool":"xhs_search"', tool_message)
+        self.assertIn("note-0", tool_message)
+
+    def test_retries_with_compacted_messages_after_input_length_error(self) -> None:
+        settings = FakeSettings(
+            [
+                Exception(
+                    "Error code: 400 - {'error': {'message': '<400> InternalError.Algo.InvalidParameter: "
+                    "Range of input length should be [1, 258048]'}}"
+                ),
+                message_response('{"summary":"ok","facts":[],"gaps":[]}'),
+            ]
+        )
+        agent = ResponseAgent(settings=settings, tools=FakeTools(), max_iter=1)
+
+        result = agent.run(
+            "lead",
+            "prompt",
+            "q=current",
+            use_tools=False,
+            history=[{"role": "user", "content": "x" * 8000}],
+        )
+
+        self.assertIn('"summary":"ok"', result.text)
+        calls = settings.new_client().chat.completions.calls
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls[0]["messages"][1]["content"]), 8000)
+        self.assertLessEqual(len(calls[1]["messages"][1]["content"]), 3000)

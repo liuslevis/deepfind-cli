@@ -292,6 +292,29 @@ def _xhs_video_url(data: Any) -> str:
     return candidates[0][1]
 
 
+def _tool_error_response(
+    tool_name: str,
+    exc: Exception,
+    mapping: tuple[tuple[type[BaseException], str], ...],
+    *,
+    default_code: str = "unknown_error",
+) -> dict[str, Any]:
+    for exc_type, code in mapping:
+        if isinstance(exc, exc_type):
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error_code": code,
+                "error": str(exc),
+            }
+    return {
+        "ok": False,
+        "tool": tool_name,
+        "error_code": default_code,
+        "error": str(exc),
+    }
+
+
 class Toolset:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -1505,17 +1528,19 @@ class Toolset:
             timeout=self.settings.subprocess_timeout,
         )
 
-    def _bili_summary_cache_path(self, audio_root: Path, bili_id: str, query: str) -> Path:
+    def _summary_cache_path(self, audio_root: Path, namespace: str, item_id: str, query: str) -> Path:
         digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
-        return audio_root / "transcripts" / "bili_summary" / bili_id / f"{digest}.json"
+        return audio_root / "transcripts" / namespace / item_id / f"{digest}.json"
 
-    def _load_cached_bili_summary(
+    def _load_cached_summary(
         self,
-        audio_root: Path,
-        bili_id: str,
+        cache_path: Path,
+        *,
+        id_key: str,
+        expected_id: str,
         query: str,
+        summary_model_default: str,
     ) -> dict[str, Any] | None:
-        cache_path = self._bili_summary_cache_path(audio_root, bili_id, query)
         if not cache_path.is_file():
             return None
 
@@ -1531,7 +1556,8 @@ class Toolset:
         cached_query = payload.get("query")
         summary = payload.get("summary")
         transcript_path = payload.get("transcript_path")
-        if payload.get("bili_id") != bili_id:
+        summary_model = payload.get("summary_model")
+        if payload.get(id_key) != expected_id:
             return None
         if not isinstance(cached_query, str) or cached_query != query:
             return None
@@ -1539,6 +1565,8 @@ class Toolset:
             return None
         if not isinstance(transcript_path, str) or not transcript_path.strip():
             return None
+        if not isinstance(summary_model, str) or not summary_model.strip():
+            summary_model = summary_model_default
 
         chunk_count = payload.get("chunk_count")
         transcript_chars = payload.get("transcript_chars")
@@ -1551,9 +1579,9 @@ class Toolset:
             summary_chars = len(summary)
 
         return {
-            "bili_id": bili_id,
+            id_key: expected_id,
             "query": query,
-            "summary_model": BILI_TRANSCRIPT_SUMMARY_MODEL,
+            "summary_model": summary_model,
             "transcript_path": transcript_path,
             "transcript_kind": "summary",
             "transcript_chars": transcript_chars,
@@ -1562,6 +1590,36 @@ class Toolset:
             "summary_chars": summary_chars,
             "transcript": summary,
         }
+
+    def _store_cached_summary(self, cache_path: Path, payload: dict[str, Any]) -> None:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(dump_json(payload), encoding="utf-8")
+        except OSError:
+            return
+
+    def _bili_summary_cache_path(self, audio_root: Path, bili_id: str, query: str) -> Path:
+        return self._summary_cache_path(audio_root, "bili_summary", bili_id, query)
+
+    def _load_cached_bili_summary(
+        self,
+        audio_root: Path,
+        bili_id: str,
+        query: str,
+    ) -> dict[str, Any] | None:
+        cache_path = self._bili_summary_cache_path(audio_root, bili_id, query)
+        cached = self._load_cached_summary(
+            cache_path,
+            id_key="bili_id",
+            expected_id=bili_id,
+            query=query,
+            summary_model_default=BILI_TRANSCRIPT_SUMMARY_MODEL,
+        )
+        if cached is None:
+            return None
+
+        cached["summary_model"] = BILI_TRANSCRIPT_SUMMARY_MODEL
+        return cached
 
     def _store_cached_bili_summary(
         self,
@@ -1581,15 +1639,10 @@ class Toolset:
             "summary": data.get("summary", ""),
             "summary_chars": data.get("summary_chars", 0),
         }
-        try:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(dump_json(payload), encoding="utf-8")
-        except OSError:
-            return
+        self._store_cached_summary(cache_path, payload)
 
     def _youtube_audio_summary_cache_path(self, audio_root: Path, youtube_id: str, query: str) -> Path:
-        digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
-        return audio_root / "transcripts" / "youtube_audio_summary" / youtube_id / f"{digest}.json"
+        return self._summary_cache_path(audio_root, "youtube_audio_summary", youtube_id, query)
 
     def _load_cached_youtube_audio_summary(
         self,
@@ -1598,55 +1651,13 @@ class Toolset:
         query: str,
     ) -> dict[str, Any] | None:
         cache_path = self._youtube_audio_summary_cache_path(audio_root, youtube_id, query)
-        if not cache_path.is_file():
-            return None
-
-        try:
-            raw = cache_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            return None
-
-        payload = try_load_json(raw)
-        if not isinstance(payload, dict):
-            return None
-
-        cached_query = payload.get("query")
-        summary = payload.get("summary")
-        transcript_path = payload.get("transcript_path")
-        summary_model = payload.get("summary_model")
-        if payload.get("youtube_id") != youtube_id:
-            return None
-        if not isinstance(cached_query, str) or cached_query != query:
-            return None
-        if not isinstance(summary, str) or not summary.strip():
-            return None
-        if not isinstance(transcript_path, str) or not transcript_path.strip():
-            return None
-        if not isinstance(summary_model, str) or not summary_model.strip():
-            summary_model = self.settings.model
-
-        chunk_count = payload.get("chunk_count")
-        transcript_chars = payload.get("transcript_chars")
-        summary_chars = payload.get("summary_chars")
-        if not isinstance(chunk_count, int) or chunk_count < 1:
-            chunk_count = 1
-        if not isinstance(transcript_chars, int) or transcript_chars < 0:
-            transcript_chars = 0
-        if not isinstance(summary_chars, int) or summary_chars < 0:
-            summary_chars = len(summary)
-
-        return {
-            "youtube_id": youtube_id,
-            "query": query,
-            "summary_model": summary_model,
-            "transcript_path": transcript_path,
-            "transcript_kind": "summary",
-            "transcript_chars": transcript_chars,
-            "chunk_count": chunk_count,
-            "summary": summary,
-            "summary_chars": summary_chars,
-            "transcript": summary,
-        }
+        return self._load_cached_summary(
+            cache_path,
+            id_key="youtube_id",
+            expected_id=youtube_id,
+            query=query,
+            summary_model_default=self.settings.model,
+        )
 
     def _store_cached_youtube_audio_summary(
         self,
@@ -1666,140 +1677,37 @@ class Toolset:
             "summary": data.get("summary", ""),
             "summary_chars": data.get("summary_chars", 0),
         }
-        try:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(dump_json(payload), encoding="utf-8")
-        except OSError:
-            return
+        self._store_cached_summary(cache_path, payload)
 
     def _youtube_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
-        if isinstance(exc, InvalidYouTubeIdError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "invalid_youtube_id",
-                "error": str(exc),
-            }
-        if isinstance(exc, MissingDependencyError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "missing_dependency",
-                "error": str(exc),
-            }
-        if isinstance(exc, YouTubeDownloadError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "download_failed",
-                "error": str(exc),
-            }
-        if isinstance(exc, TranscriptionError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "transcription_failed",
-                "error": str(exc),
-            }
-        if isinstance(exc, TranscriptSummaryError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "summary_failed",
-                "error": str(exc),
-            }
-        return {
-            "ok": False,
-            "tool": tool_name,
-            "error_code": "unknown_error",
-            "error": str(exc),
-        }
+        mapping = (
+            (InvalidYouTubeIdError, "invalid_youtube_id"),
+            (MissingDependencyError, "missing_dependency"),
+            (YouTubeDownloadError, "download_failed"),
+            (TranscriptionError, "transcription_failed"),
+            (TranscriptSummaryError, "summary_failed"),
+        )
+        return _tool_error_response(tool_name, exc, mapping)
 
     def _xhs_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
-        if isinstance(exc, InvalidXhsVideoError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "video_unavailable",
-                "error": str(exc),
-            }
-        if isinstance(exc, MissingDependencyError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "missing_dependency",
-                "error": str(exc),
-            }
-        if isinstance(exc, XhsDownloadError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "download_failed",
-                "error": str(exc),
-            }
-        if isinstance(exc, TranscriptionError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "transcription_failed",
-                "error": str(exc),
-            }
-        return {
-            "ok": False,
-            "tool": tool_name,
-            "error_code": "unknown_error",
-            "error": str(exc),
-        }
+        mapping = (
+            (InvalidXhsVideoError, "video_unavailable"),
+            (MissingDependencyError, "missing_dependency"),
+            (XhsDownloadError, "download_failed"),
+            (TranscriptionError, "transcription_failed"),
+        )
+        return _tool_error_response(tool_name, exc, mapping)
 
     def _bili_transcribe_error(self, tool_name: str, exc: Exception) -> dict[str, Any]:
-        if isinstance(exc, InvalidBiliIdError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "invalid_bili_id",
-                "error": str(exc),
-            }
-        if isinstance(exc, MissingDependencyError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "missing_dependency",
-                "error": str(exc),
-            }
-        if isinstance(exc, BiliDownloadError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "download_failed",
-                "error": str(exc),
-            }
-        if isinstance(exc, TranscriptionError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "transcription_failed",
-                "error": str(exc),
-            }
-        if isinstance(exc, TranscriptSummaryError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "summary_failed",
-                "error": str(exc),
-            }
-        if isinstance(exc, BiliTranscribeError):
-            return {
-                "ok": False,
-                "tool": tool_name,
-                "error_code": "transcription_error",
-                "error": str(exc),
-            }
-        return {
-            "ok": False,
-            "tool": tool_name,
-            "error_code": "unknown_error",
-            "error": str(exc),
-        }
+        mapping = (
+            (InvalidBiliIdError, "invalid_bili_id"),
+            (MissingDependencyError, "missing_dependency"),
+            (BiliDownloadError, "download_failed"),
+            (TranscriptionError, "transcription_failed"),
+            (TranscriptSummaryError, "summary_failed"),
+            (BiliTranscribeError, "transcription_error"),
+        )
+        return _tool_error_response(tool_name, exc, mapping)
 
     def bili_transcribe(self, bili_id: str, query: str) -> dict[str, Any]:
         normalized_query = query.strip()
