@@ -1204,50 +1204,173 @@ class ToolsetTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "download_failed")
 
-    def test_bili_search_uses_supported_flags(self) -> None:
+    def test_bili_search_enriches_video_results_via_bili_cli(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
-        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
-            with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+        with patch("deepfind.tools.resolve_bili_bin", return_value="/usr/bin/bili"):
+            with patch("deepfind.tools.shutil.which", side_effect=lambda binary: str(binary)):
                 with patch(
                     "deepfind.tools.subprocess.run",
                     side_effect=[
                         SimpleNamespace(
                             returncode=0,
-                            stdout=(
-                                '[{"command":"bilibili/search","args":['
-                                '{"name":"query","positional":true},'
-                                '{"name":"type","positional":false},'
-                                '{"name":"page","positional":false},'
-                                '{"name":"limit","positional":false}'
-                                ']}]'
+                            stdout=dump_json(
+                                {
+                                    "items": [
+                                        {
+                                            "bvid": "BV1jRQxBAERc",
+                                            "title": "Search title 1",
+                                            "author": "AI效率工具",
+                                            "play": "2.7万",
+                                            "duration": "20:41",
+                                        },
+                                        {
+                                            "bvid": "BV1bMQwBjETJ",
+                                            "title": "Search title 2",
+                                            "author": "AI超元域",
+                                            "play": "6.8万",
+                                            "duration": "13:45",
+                                        },
+                                    ]
+                                }
                             ),
                             stderr="",
                         ),
-                        SimpleNamespace(returncode=0, stdout='[{"title":"video"}]', stderr=""),
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=dump_json(
+                                {
+                                    "data": {
+                                        "video": {
+                                            "bvid": "BV1jRQxBAERc",
+                                            "title": "Detailed title 1",
+                                            "owner": {
+                                                "name": "AI效率工具",
+                                                "mid": "3546829067127641",
+                                            },
+                                            "duration": 1241,
+                                            "stat": {
+                                                "view": "2.7万",
+                                                "danmaku": 135,
+                                                "like": 608,
+                                                "coin": 428,
+                                                "favorite": 1501,
+                                                "share": 190,
+                                            },
+                                            "desc": "配套资料见评论区",
+                                        }
+                                    }
+                                }
+                            ),
+                            stderr="",
+                        ),
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=dump_json(
+                                {
+                                    "data": {
+                                        "video": {
+                                            "bvid": "BV1bMQwBjETJ",
+                                            "title": "Detailed title 2",
+                                            "owner": {
+                                                "name": "AI超元域",
+                                                "mid": "999",
+                                            },
+                                            "duration": 825,
+                                            "stat": {
+                                                "view": "6.8万",
+                                                "danmaku": 88,
+                                                "like": 456,
+                                                "coin": 123,
+                                                "favorite": 789,
+                                                "share": 12,
+                                            },
+                                            "desc": "安全防御与迁移",
+                                        }
+                                    }
+                                }
+                            ),
+                            stderr="",
+                        ),
                     ],
                 ) as run_mock:
-                    result = toolset.bili_search("deep research", search_type="user", page=2, limit=5)
+                    result = toolset.bili_search("hermes agent", search_type="video", page=2, limit=2)
+
         self.assertTrue(result["ok"])
         self.assertEqual(result["tool"], "bili_search")
-        self.assertEqual(result["query"], "deep research")
-        self.assertEqual(result["search_type"], "user")
+        self.assertEqual(result["query"], "hermes agent")
+        self.assertEqual(result["search_type"], "video")
+        self.assertEqual(result["data"]["enriched_items"], 2)
+        self.assertEqual(len(result["data"]["enrichment_errors"]), 0)
         self.assertEqual(
-            run_mock.call_args_list[1][0][0],
+            run_mock.call_args_list[0][0][0],
             [
-                "/usr/bin/opencli",
-                "bilibili",
+                "/usr/bin/bili",
                 "search",
-                "deep research",
-                "--type",
-                "user",
                 "--page",
                 "2",
-                "--limit",
-                "5",
-                "-f",
-                "json",
+                "--type",
+                "video",
+                "hermes agent",
+                "--json",
             ],
         )
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            ["/usr/bin/bili", "video", "BV1jRQxBAERc", "--json"],
+        )
+        self.assertEqual(
+            run_mock.call_args_list[2][0][0],
+            ["/usr/bin/bili", "video", "BV1bMQwBjETJ", "--json"],
+        )
+        item = result["data"]["items"][0]
+        self.assertEqual(item["bvid"], "BV1jRQxBAERc")
+        self.assertEqual(item["title"], "Detailed title 1")
+        self.assertEqual(item["uid"], "3546829067127641")
+        self.assertEqual(item["duration"], "20:41")
+        self.assertEqual(item["duration_seconds"], 1241)
+        self.assertEqual(item["play_count"], 27000)
+        self.assertEqual(item["danmaku_count"], 135)
+        self.assertEqual(item["like_count"], 608)
+        self.assertEqual(item["coin_count"], 428)
+        self.assertEqual(item["favorite_count"], 1501)
+        self.assertEqual(item["share_count"], 190)
+        self.assertEqual(item["desc"], "配套资料见评论区")
+
+    def test_bili_search_records_video_enrichment_failures_without_failing_search(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.resolve_bili_bin", return_value="/usr/bin/bili"):
+            with patch("deepfind.tools.shutil.which", side_effect=lambda binary: str(binary)):
+                with patch(
+                    "deepfind.tools.subprocess.run",
+                    side_effect=[
+                        SimpleNamespace(
+                            returncode=0,
+                            stdout=dump_json(
+                                {
+                                    "items": [
+                                        {
+                                            "bvid": "BV1jRQxBAERc",
+                                            "title": "Search title 1",
+                                        }
+                                    ]
+                                }
+                            ),
+                            stderr="",
+                        ),
+                        SimpleNamespace(returncode=1, stdout="", stderr="Aborted!"),
+                    ],
+                ):
+                    result = toolset.bili_search("hermes agent", search_type="video", page=1, limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["enriched_items"], 0)
+        self.assertEqual(len(result["data"]["enrichment_errors"]), 1)
+        error = result["data"]["enrichment_errors"][0]
+        self.assertEqual(error["phase"], "video")
+        self.assertEqual(error["bvid"], "BV1jRQxBAERc")
+        self.assertEqual(error["index"], 1)
+        self.assertEqual(error["error"], "Aborted!")
+        self.assertEqual(error["returncode"], 1)
 
     def test_bili_get_user_videos_uses_supported_flags(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

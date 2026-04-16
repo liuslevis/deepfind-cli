@@ -17,6 +17,7 @@ from .bili_transcribe import (
     MissingDependencyError,
     TranscriptionError,
     parse_bili_id,
+    resolve_bili_bin,
     transcribe_bili_audio,
 )
 from .browser_fetch import fetch_web_document_browser
@@ -389,6 +390,214 @@ def _xhs_video_url(data: Any) -> str:
     return candidates[0][1]
 
 
+def _bili_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    lines = [line.strip() for line in value.replace("\r", "").split("\n")]
+    return "\n".join(line for line in lines if line)
+
+
+def _bili_id(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return parse_bili_id(raw)
+    except InvalidBiliIdError:
+        return raw if raw.upper().startswith("BV") else ""
+
+
+def _bili_video_url(bvid: str) -> str:
+    bvid = _bili_id(bvid)
+    if not bvid:
+        return ""
+    return f"https://www.bilibili.com/video/{bvid}"
+
+
+def _bili_number(value: Any) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value or "").strip().replace(",", "")
+    if not text:
+        return 0
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)([万亿]?)", text)
+    if not match:
+        return 0
+    number = float(match.group(1))
+    unit = match.group(2)
+    if unit == "万":
+        number *= 10_000
+    elif unit == "亿":
+        number *= 100_000_000
+    return int(number)
+
+
+def _bili_duration_seconds(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(value, 0)
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    if text.isdigit():
+        return int(text)
+    parts = [part.strip() for part in text.split(":")]
+    if not parts or not all(part.isdigit() for part in parts):
+        return 0
+    values = [int(part) for part in parts]
+    if len(values) == 2:
+        minutes, seconds = values
+        return minutes * 60 + seconds
+    if len(values) == 3:
+        hours, minutes, seconds = values
+        return hours * 3600 + minutes * 60 + seconds
+    return 0
+
+
+def _format_duration(seconds: int) -> str:
+    total = max(seconds, 0)
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _bili_duration_text(value: Any) -> str:
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, (int, float)):
+        seconds = _bili_duration_seconds(value)
+        return _format_duration(seconds) if seconds > 0 else ""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if ":" in text:
+        return text
+    seconds = _bili_duration_seconds(text)
+    return _format_duration(seconds) if seconds > 0 else ""
+
+
+def _bili_payload(data: Any) -> Any:
+    if not isinstance(data, dict):
+        return data
+    payload = data.get("data")
+    if isinstance(payload, (dict, list)):
+        return payload
+    return data
+
+
+def _bili_owner(payload: dict[str, Any]) -> dict[str, Any]:
+    for key in ("owner", "uploader", "user", "up"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _bili_stat(payload: dict[str, Any]) -> dict[str, Any]:
+    stat = payload.get("stat")
+    return stat if isinstance(stat, dict) else {}
+
+
+def _bili_search_items(data: Any) -> list[dict[str, Any]]:
+    payload = _bili_payload(data)
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("items", "videos", "result", "results", "list"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _bili_search_item(item: dict[str, Any]) -> dict[str, Any]:
+    owner = _bili_owner(item)
+    stat = _bili_stat(item)
+    bvid = _bili_id(item.get("bvid") or item.get("bv") or item.get("id") or item.get("url"))
+    duration_source = item.get("duration") or item.get("length") or item.get("duration_text")
+    duration_seconds = _bili_duration_seconds(item.get("duration_seconds") or item.get("duration_sec") or duration_source)
+    return {
+        "id": bvid,
+        "bvid": bvid,
+        "url": str(item.get("url") or item.get("link") or _bili_video_url(bvid)).strip(),
+        "title": _bili_text(item.get("title") or item.get("name") or ""),
+        "author": _bili_text(item.get("author") or item.get("uploader") or owner.get("name") or ""),
+        "uid": str(item.get("uid") or item.get("mid") or owner.get("uid") or owner.get("mid") or "").strip(),
+        "duration": _bili_duration_text(duration_source),
+        "duration_seconds": duration_seconds,
+        "play_count": _bili_number(item.get("play") or item.get("view") or stat.get("view")),
+        "desc": _bili_text(item.get("desc") or item.get("description") or ""),
+    }
+
+
+def _bili_video_item(data: Any) -> dict[str, Any]:
+    payload = _bili_payload(data)
+    if isinstance(payload, dict) and isinstance(payload.get("video"), dict):
+        payload = payload["video"]
+    if not isinstance(payload, dict):
+        return {}
+    owner = _bili_owner(payload)
+    stat = _bili_stat(payload)
+    bvid = _bili_id(payload.get("bvid") or payload.get("bv") or payload.get("id") or payload.get("url"))
+    duration_source = payload.get("duration") or payload.get("length") or payload.get("duration_text")
+    duration_seconds = _bili_duration_seconds(payload.get("duration_seconds") or payload.get("duration_sec") or duration_source)
+    return {
+        "id": bvid,
+        "bvid": bvid,
+        "url": str(payload.get("url") or payload.get("link") or _bili_video_url(bvid)).strip(),
+        "title": _bili_text(payload.get("title") or payload.get("name") or ""),
+        "author": _bili_text(payload.get("author") or payload.get("uploader") or owner.get("name") or ""),
+        "uid": str(payload.get("uid") or payload.get("mid") or owner.get("uid") or owner.get("mid") or "").strip(),
+        "duration": _bili_duration_text(duration_source),
+        "duration_seconds": duration_seconds,
+        "play_count": _bili_number(payload.get("play") or payload.get("view") or stat.get("view")),
+        "danmaku_count": _bili_number(payload.get("danmaku") or stat.get("danmaku")),
+        "like_count": _bili_number(payload.get("likes") or payload.get("like") or stat.get("like")),
+        "coin_count": _bili_number(payload.get("coins") or payload.get("coin") or stat.get("coin")),
+        "favorite_count": _bili_number(payload.get("favorites") or payload.get("favorite") or stat.get("favorite")),
+        "share_count": _bili_number(payload.get("shares") or payload.get("share") or stat.get("share")),
+        "desc": _bili_text(payload.get("desc") or payload.get("description") or payload.get("intro") or ""),
+    }
+
+
+def _merge_bili_search_item_with_video(item: dict[str, Any], video: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(item)
+    for key, value in video.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        merged[key] = value
+    return merged
+
+
+def _bili_enrichment_error(bvid: str, index: int, result: dict[str, Any]) -> dict[str, Any]:
+    error: dict[str, Any] = {
+        "phase": "video",
+        "bvid": bvid,
+        "index": index,
+        "error_code": str(result.get("error_code") or "video_failed"),
+        "error": str(result.get("error") or "bili video failed").strip(),
+    }
+    if result.get("returncode") is not None:
+        error["returncode"] = _bili_number(result.get("returncode"))
+    stderr = str(result.get("stderr") or "").strip()
+    stdout = str(result.get("stdout") or "").strip()
+    if stderr:
+        error["stderr"] = stderr
+    if stdout:
+        error["stdout"] = stdout
+    return error
+
+
 def _tool_error_response(
     tool_name: str,
     exc: Exception,
@@ -731,15 +940,11 @@ class Toolset:
             ),
             self._function_spec(
                 "bili_search",
-                "Search Bilibili videos or users via opencli.",
+                "Search Bilibili videos via bilibili-cli, then enrich each hit with bili video details.",
                 {
                     "type": "object",
                     "properties": {
                         "query": {"type": "string"},
-                        "search_type": {
-                            "type": "string",
-                            "enum": ["video", "user"],
-                        },
                         "page": {"type": "integer", "minimum": 1, "maximum": 50},
                         "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                     },
@@ -1596,28 +1801,109 @@ class Toolset:
         page: int = 1,
         limit: int = 20,
     ) -> dict[str, Any]:
-        normalized_type = search_type.strip().lower() or "video"
-        if normalized_type not in {"video", "user"}:
-            normalized_type = "video"
+        normalized_type = "video"
         safe_page = max(1, min(50, page))
         safe_limit = max(1, min(50, limit))
-        return self._opencli_command(
-            site="bilibili",
-            action="search",
-            tool="bili_search",
-            values={
-                "query": query,
-                "type": normalized_type,
-                "page": safe_page,
-                "limit": safe_limit,
-            },
-            context={
+        try:
+            bili_bin = resolve_bili_bin(self.settings.bili_bin)
+        except MissingDependencyError as exc:
+            return {
+                "ok": False,
+                "tool": "bili_search",
                 "query": query,
                 "search_type": normalized_type,
                 "page": safe_page,
                 "limit": safe_limit,
-            },
+                "phase": "search",
+                "error_code": "missing_dependency",
+                "error": str(exc),
+            }
+
+        search_args = ["search", "--page", str(safe_page), "--type", normalized_type, query, "--json"]
+        search_result = self._run(
+            bili_bin,
+            search_args,
+            "bili_search",
         )
+        if not search_result.get("ok"):
+            return {
+                **search_result,
+                "query": query,
+                "search_type": normalized_type,
+                "page": safe_page,
+                "limit": safe_limit,
+                "phase": str(search_result.get("phase") or "search"),
+            }
+
+        commands: list[list[str]] = []
+        search_command = search_result.get("command")
+        if isinstance(search_command, list):
+            commands.append(search_command)
+
+        items: list[dict[str, Any]] = []
+        seen_bvids: set[str] = set()
+        for raw_item in _bili_search_items(search_result.get("data")):
+            normalized_item = _bili_search_item(raw_item)
+            bvid = str(normalized_item.get("bvid") or "").strip()
+            if not bvid or bvid in seen_bvids:
+                continue
+            seen_bvids.add(bvid)
+            items.append(normalized_item)
+            if len(items) >= safe_limit:
+                break
+
+        enrichment_errors: list[dict[str, Any]] = []
+        enriched_items = 0
+        for index, item in enumerate(items, start=1):
+            bvid = str(item.get("bvid") or "").strip()
+            if not bvid:
+                continue
+            video_result = self._run(
+                bili_bin,
+                ["video", bvid, "--json"],
+                "bili_search",
+            )
+            video_command = video_result.get("command")
+            if isinstance(video_command, list):
+                commands.append(video_command)
+            if not video_result.get("ok"):
+                enrichment_errors.append(_bili_enrichment_error(bvid, index, video_result))
+                continue
+            video_item = _bili_video_item(video_result.get("data"))
+            if not video_item:
+                enrichment_errors.append(
+                    _bili_enrichment_error(
+                        bvid,
+                        index,
+                        {
+                            "error_code": "invalid_video",
+                            "error": "bili video returned no video data",
+                        },
+                    )
+                )
+                continue
+            items[index - 1] = _merge_bili_search_item_with_video(item, video_item)
+            enriched_items += 1
+
+        return {
+            "ok": True,
+            "tool": "bili_search",
+            "query": query,
+            "search_type": normalized_type,
+            "page": safe_page,
+            "limit": safe_limit,
+            "command": search_command if isinstance(search_command, list) else [],
+            "commands": commands,
+            "data": {
+                "query": query,
+                "type": normalized_type,
+                "page": safe_page,
+                "limit": safe_limit,
+                "enriched_items": enriched_items,
+                "enrichment_errors": enrichment_errors,
+                "items": items,
+            },
+        }
 
     def bili_get_user_videos(
         self,
@@ -2201,19 +2487,23 @@ class Toolset:
                 code = payload.get("code")
                 message = payload.get("message")
                 if isinstance(message, str) and message.strip():
-                    return {
-                        "ok": False,
-                        "tool": tool,
-                        "command": command,
-                        "error_code": str(code or "command_failed"),
-                        "error": message.strip()[:4000],
-                    }
-            return {
-                "ok": False,
-                "tool": tool,
-                "command": command,
-                "error": error_text,
-            }
+                    error_payload = _subprocess_failure(
+                        tool,
+                        command,
+                        returncode=proc.returncode,
+                        stderr=proc.stderr or "",
+                        stdout=proc.stdout or "",
+                    )
+                    error_payload["error_code"] = str(code or "command_failed")
+                    error_payload["error"] = message.strip()[:4000]
+                    return error_payload
+            return _subprocess_failure(
+                tool,
+                command,
+                returncode=proc.returncode,
+                stderr=proc.stderr or "",
+                stdout=proc.stdout or "",
+            )
 
         parsed = try_load_json(proc.stdout)
         return {
