@@ -70,6 +70,35 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("xhs_read 美中央司令部：13日起封锁伊朗港口海上交通", line)
         self.assertNotIn("xhs_read xhs_read", line)
 
+    def test_console_progress_surfaces_returncode_and_stderr(self) -> None:
+        stream = io.StringIO()
+        progress = ConsoleProgress(stream=stream, use_color=False)
+
+        progress.tool_result(
+            "sub-1",
+            "xhs_search",
+            '{"ok": false, "tool": "xhs_search", "error": "Aborted!", "returncode": 1, "stderr": "Aborted!"}',
+        )
+
+        line = stream.getvalue().strip()
+        self.assertIn("xhs_search rc=1 stderr=Aborted!", line)
+
+    def test_console_progress_shows_xhs_search_read_error_count(self) -> None:
+        stream = io.StringIO()
+        progress = ConsoleProgress(stream=stream, use_color=False)
+
+        progress.tool_result(
+            "sub-1",
+            "xhs_search",
+            (
+                '{"ok":true,"tool":"xhs_search","data":{"items":[{"id":"note-1"}],'
+                '"pages_fetched":1,"enrichment_errors":[{"phase":"read","note_id":"note-1","error":"Aborted!"}]}}'
+            ),
+        )
+
+        line = stream.getvalue().strip()
+        self.assertIn("xhs_search items=1, pages=1, read_errors=1", line)
+
     def test_web_progress_summarizes_enveloped_xhs_read_output(self) -> None:
         progress = WebProgress()
 

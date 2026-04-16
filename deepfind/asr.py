@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Sequence
 from contextlib import contextmanager
@@ -13,6 +14,13 @@ SEGMENT_SECONDS = 300
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac"}
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _GPU_ASR_SEMAPHORE = Semaphore(1)
+
+
+def _logger() -> logging.Logger:
+    uvicorn_logger = logging.getLogger("uvicorn.error")
+    if uvicorn_logger.hasHandlers():
+        return uvicorn_logger
+    return logging.getLogger(__name__)
 
 
 class MissingDependencyError(RuntimeError):
@@ -106,6 +114,8 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
     else:
         device = "cpu"
         dtype = torch.float32
+
+    _logger().info("Loading ASR model '%s' on %s", model_name, device.upper())
 
     if is_qwen3_asr_model(model_name):
         try:
