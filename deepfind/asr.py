@@ -97,6 +97,59 @@ def is_qwen3_asr_model(model_name: str) -> bool:
     return "Qwen3-ASR" in model_name
 
 
+def _candidate_hf_cache_dirs() -> list[Path]:
+    cache_dirs: list[Path] = []
+    env_cache = os.environ.get("HUGGINGFACE_HUB_CACHE")
+    env_home = os.environ.get("HF_HOME")
+    if env_cache:
+        cache_dirs.append(Path(env_cache).expanduser())
+    if env_home:
+        cache_dirs.append(Path(env_home).expanduser() / "hub")
+    cache_dirs.append(Path.home() / ".cache" / "huggingface" / "hub")
+
+    unique_dirs: list[Path] = []
+    for cache_dir in cache_dirs:
+        if cache_dir not in unique_dirs:
+            unique_dirs.append(cache_dir)
+    return unique_dirs
+
+
+def _resolve_cached_hf_snapshot(model_name: str) -> Path | None:
+    if "/" not in model_name:
+        return None
+
+    repo_dirname = f"models--{model_name.replace('/', '--')}"
+    for cache_dir in _candidate_hf_cache_dirs():
+        repo_dir = cache_dir / repo_dirname
+        snapshots_dir = repo_dir / "snapshots"
+        if not snapshots_dir.is_dir():
+            continue
+
+        revision = load_text(repo_dir / "refs" / "main")
+        if revision:
+            snapshot_dir = snapshots_dir / revision
+            if snapshot_dir.is_dir():
+                return snapshot_dir
+
+        snapshot_candidates = sorted(path for path in snapshots_dir.iterdir() if path.is_dir())
+        if len(snapshot_candidates) == 1:
+            return snapshot_candidates[0]
+
+    return None
+
+
+def resolve_model_source(model_name: str) -> str:
+    candidate_path = Path(model_name).expanduser()
+    if candidate_path.exists():
+        return str(candidate_path.resolve())
+
+    cached_snapshot = _resolve_cached_hf_snapshot(model_name)
+    if cached_snapshot is not None:
+        return str(cached_snapshot)
+
+    return model_name
+
+
 def load_model(model_name: str) -> tuple[str, Any, Any, str]:
     load_local_secrets()
     hf_token = os.environ.get("HF_TOKEN")
@@ -115,6 +168,9 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
         device = "cpu"
         dtype = torch.float32
 
+    source = resolve_model_source(model_name)
+    if source != model_name:
+        _logger().info("Using cached ASR model '%s' from %s", model_name, source)
     _logger().info("Loading ASR model '%s' on %s", model_name, device.upper())
 
     if is_qwen3_asr_model(model_name):
@@ -130,7 +186,7 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
 
             try:
                 model = Qwen3ASRModel.from_pretrained(
-                    model_name,
+                    source,
                     dtype=torch.bfloat16 if device == "cuda" else torch.float32,
                     device_map="cuda:0" if device == "cuda" else "cpu",
                 )
@@ -140,7 +196,7 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
 
         try:
             model = QwenASR.from_pretrained(
-                model_name,
+                source,
                 torch_dtype="bfloat16" if device == "cuda" else "float32",
                 device=device,
             )
@@ -156,9 +212,9 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
         ) from exc
 
     try:
-        processor = AutoProcessor.from_pretrained(model_name, token=hf_token)
+        processor = AutoProcessor.from_pretrained(source, token=hf_token)
         model = Qwen2AudioForConditionalGeneration.from_pretrained(
-            model_name,
+            source,
             token=hf_token,
             torch_dtype=dtype,
             device_map=None,
@@ -250,6 +306,7 @@ __all__ = [
     "load_local_secrets",
     "load_model",
     "resolve_audio_root",
+    "resolve_model_source",
     "transcribe_segments",
     "transcribe_audio",
     "write_text",
