@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
-import torch 
+import torch
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,9 @@ from .web_models import (
     SendMessageRequest,
 )
 from .web_service import DeepFindWebService
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def _encode_sse(event: ProgressEvent) -> str:
@@ -127,7 +131,7 @@ def create_app() -> FastAPI:
 
 
 def main(argv: list[str] | None = None) -> int:
-    print("cuda: ", torch.cuda.is_available())
+    logger.info("PyTorch CUDA available: %s", torch.cuda.is_available())
 
     parser = argparse.ArgumentParser(prog="deepfind-web")
     parser.add_argument("--host", default="127.0.0.1")

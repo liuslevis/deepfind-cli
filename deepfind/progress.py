@@ -42,7 +42,18 @@ def _note_title_from_items(data: dict[str, Any]) -> str:
 
 def _tool_summary(parsed: dict[str, Any], *, width: int = 64) -> str:
     if parsed.get("error"):
-        return _short(parsed["error"], width)
+        details: list[str] = []
+        if parsed.get("returncode") is not None:
+            details.append(f"rc={parsed['returncode']}")
+        stderr = str(parsed.get("stderr") or "").strip()
+        stdout = str(parsed.get("stdout") or "").strip()
+        if stderr:
+            details.append(f"stderr={stderr}")
+        elif stdout:
+            details.append(f"stdout={stdout}")
+        else:
+            details.append(str(parsed["error"]))
+        return _short(" ".join(details), width)
 
     data = _tool_payload(parsed)
     if data:
@@ -51,9 +62,13 @@ def _tool_summary(parsed: dict[str, Any], *, width: int = 64) -> str:
             return _short(note_title, width)
         if isinstance(data.get("items"), list):
             pages = data.get("pages_fetched")
+            read_errors = data.get("enrichment_errors")
+            suffix = ""
+            if isinstance(read_errors, list) and read_errors:
+                suffix = f", read_errors={len(read_errors)}"
             if pages:
-                return f"items={len(data['items'])}, pages={pages}"
-            return f"items={len(data['items'])}"
+                return f"items={len(data['items'])}, pages={pages}{suffix}"
+            return f"items={len(data['items'])}{suffix}"
         if isinstance(data.get("notes"), list):
             return f"notes={len(data['notes'])}"
         if isinstance(data.get("user_info_dtos"), list):

@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -52,6 +53,8 @@ _WEB_SEARCH_ENGINES = frozenset({"google", "bing", "baidu"})
 _OPENCLI_REGISTRY_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 _OPENCLI_REGISTRY_LOCK = Lock()
 _XHS_TOPIC_TAG_RE = re.compile(r"#[^#\n]+#")
+_XHS_TIMEZONE = timezone(timedelta(hours=8))
+_XHS_SEARCH_ENRICH_LIMIT = 20
 
 
 def _twitter_type(value: str) -> str | None:
@@ -183,6 +186,96 @@ def _xhs_note_url(note_id: str) -> str:
     return f"https://www.xiaohongshu.com/explore/{note_id}"
 
 
+def _xhs_search_result_ref(note_id: str) -> str:
+    note_id = note_id.strip()
+    if not note_id:
+        return ""
+    return f"search_result/{note_id}"
+
+
+def _xhs_format_timestamp_ms(timestamp_ms: int) -> str:
+    if timestamp_ms <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).astimezone(_XHS_TIMEZONE).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def _xhs_search_media_type(item: dict[str, Any], note_card: dict[str, Any]) -> str:
+    if note_card:
+        return _xhs_media_type(note_card)
+    item_type = str(item.get("type") or "").strip().lower()
+    if item_type in {"video", "image"}:
+        return item_type
+    return ""
+
+
+def _xhs_search_item(item: dict[str, Any]) -> dict[str, Any]:
+    note_card = item.get("note_card") if isinstance(item.get("note_card"), dict) else {}
+    user = note_card.get("user") if isinstance(note_card.get("user"), dict) else {}
+    interact = note_card.get("interact_info") if isinstance(note_card.get("interact_info"), dict) else {}
+    note_id = str(note_card.get("note_id") or item.get("id") or "").strip()
+    published_at_ms = _xhs_int(note_card.get("time") or item.get("publish_time") or item.get("time"))
+    published_at = _xhs_format_timestamp_ms(published_at_ms)
+    return {
+        "id": note_id,
+        "ref": _xhs_search_result_ref(note_id),
+        "url": _xhs_note_url(note_id),
+        "title": _xhs_text(note_card.get("title") or note_card.get("display_title") or item.get("title") or ""),
+        "author": _xhs_text(user.get("nickname") or item.get("author") or item.get("nickname") or ""),
+        "likes": _xhs_int(interact.get("liked_count") or item.get("liked_count") or item.get("likes")),
+        "media_type": _xhs_search_media_type(item, note_card),
+        "published_at": published_at,
+        "published_date": published_at.split(" ", 1)[0] if published_at else "",
+        "published_at_ms": published_at_ms,
+    }
+
+
+def _xhs_merge_search_item_with_note(item: dict[str, Any], note: dict[str, Any]) -> dict[str, Any]:
+    stats = note.get("stats") if isinstance(note.get("stats"), dict) else {}
+    merged = dict(note)
+    merged["id"] = str(merged.get("id") or item.get("id") or "").strip()
+    merged["ref"] = str(item.get("ref") or _xhs_search_result_ref(merged["id"])).strip()
+    merged["url"] = str(merged.get("url") or item.get("url") or _xhs_note_url(merged["id"])).strip()
+    merged["title"] = _xhs_text(merged.get("title") or item.get("title") or "")
+    merged["author"] = _xhs_text(merged.get("author") or item.get("author") or "")
+    merged["media_type"] = str(merged.get("media_type") or item.get("media_type") or "").strip()
+    merged["published_at"] = str(
+        merged.get("published_at") or _xhs_format_timestamp_ms(_xhs_int(merged.get("published_at_ms"))) or item.get("published_at") or ""
+    ).strip()
+    merged["published_date"] = str(merged.get("published_date") or item.get("published_date") or "").strip()
+    if not merged["published_date"] and merged["published_at"]:
+        merged["published_date"] = merged["published_at"].split(" ", 1)[0]
+    merged["published_at_ms"] = _xhs_int(merged.get("published_at_ms") or item.get("published_at_ms"))
+    merged["likes"] = _xhs_int(stats.get("likes") or item.get("likes"))
+    merged["collects"] = _xhs_int(stats.get("collects"))
+    merged["comments"] = _xhs_int(stats.get("comments"))
+    merged["shares"] = _xhs_int(stats.get("shares"))
+    return merged
+
+
+def _xhs_enrichment_error(note_id: str, index: int, result: dict[str, Any]) -> dict[str, Any]:
+    error: dict[str, Any] = {
+        "phase": "read",
+        "note_id": note_id,
+        "index": index,
+        "error_code": str(result.get("error_code") or "read_failed"),
+        "error": str(result.get("error") or "xhs_read failed").strip(),
+    }
+    if result.get("returncode") is not None:
+        error["returncode"] = _xhs_int(result.get("returncode"))
+    stderr = str(result.get("stderr") or "").strip()
+    stdout = str(result.get("stdout") or "").strip()
+    if stderr:
+        error["stderr"] = stderr
+    if stdout:
+        error["stdout"] = stdout
+    return error
+
+
 def _xhs_content_text(note: dict[str, Any]) -> str:
     lines: list[str] = []
     title = str(note.get("title", "")).strip()
@@ -256,6 +349,10 @@ def _xhs_note(data: Any) -> dict[str, Any]:
             "shares": _xhs_int(interact.get("share_count")),
         },
     }
+    note["published_at"] = _xhs_format_timestamp_ms(_xhs_int(note["published_at_ms"]))
+    note["published_date"] = note["published_at"].split(" ", 1)[0] if note["published_at"] else ""
+    note["updated_at"] = _xhs_format_timestamp_ms(_xhs_int(note["updated_at_ms"]))
+    note["updated_date"] = note["updated_at"].split(" ", 1)[0] if note["updated_at"] else ""
     note["content_text"] = _xhs_content_text(note)
     return note
 
@@ -313,6 +410,34 @@ def _tool_error_response(
         "error_code": default_code,
         "error": str(exc),
     }
+
+
+def _subprocess_failure(
+    tool: str,
+    command: list[str],
+    *,
+    returncode: int,
+    stderr: str,
+    stdout: str,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    stderr_text = stderr.strip()[:4000]
+    stdout_text = stdout.strip()[:4000]
+    error_text = stderr_text or stdout_text or f"process exited with code {returncode}"
+    payload = {
+        "ok": False,
+        "tool": tool,
+        **(context or {}),
+        "command": command,
+        "error_code": "command_failed",
+        "error": error_text,
+        "returncode": returncode,
+    }
+    if stderr_text:
+        payload["stderr"] = stderr_text
+    if stdout_text:
+        payload["stdout"] = stdout_text
+    return payload
 
 
 class Toolset:
@@ -799,15 +924,17 @@ class Toolset:
             timeout=self.settings.subprocess_timeout,
         )
         if proc.returncode != 0:
-            return {
-                "ok": False,
-                "tool": "web_search",
-                "engine": engine,
-                "query": query,
-                "command": command,
-                "error_code": "command_failed",
-                "error": (proc.stderr or proc.stdout or "").strip()[:4000],
-            }
+            return _subprocess_failure(
+                "web_search",
+                command,
+                returncode=proc.returncode,
+                stderr=proc.stderr or "",
+                stdout=proc.stdout or "",
+                context={
+                    "engine": engine,
+                    "query": query,
+                },
+            )
 
         parsed = try_load_json(proc.stdout or "")
         if parsed is None:
@@ -1110,14 +1237,14 @@ class Toolset:
             timeout=self.settings.subprocess_timeout,
         )
         if proc.returncode != 0:
-            return {
-                "ok": False,
-                "tool": tool,
-                "query": query,
-                "command": command,
-                "error_code": "command_failed",
-                "error": (proc.stderr or proc.stdout or "").strip()[:4000],
-            }
+            return _subprocess_failure(
+                tool,
+                command,
+                returncode=proc.returncode,
+                stderr=proc.stderr or "",
+                stdout=proc.stdout or "",
+                context={"query": query},
+            )
 
         parsed = try_load_json(proc.stdout or "")
         if parsed is None:
@@ -1219,14 +1346,14 @@ class Toolset:
             timeout=self.settings.subprocess_timeout,
         )
         if proc.returncode != 0:
-            return {
-                "ok": False,
-                "tool": tool,
-                **(context or {}),
-                "command": command,
-                "error_code": "command_failed",
-                "error": (proc.stderr or proc.stdout or "").strip()[:4000],
-            }
+            return _subprocess_failure(
+                tool,
+                command,
+                returncode=proc.returncode,
+                stderr=proc.stderr or "",
+                stdout=proc.stdout or "",
+                context=context,
+            )
 
         parsed = try_load_json(proc.stdout or "")
         if parsed is None:
@@ -1266,6 +1393,7 @@ class Toolset:
         page_limit = max(1, min(10, page_limit))
         seen_ids: set[str] = set()
         merged_items: list[dict[str, Any]] = []
+        enrichment_errors: list[dict[str, Any]] = []
         commands: list[list[str]] = []
         pages_fetched = 0
         has_more = False
@@ -1287,7 +1415,11 @@ class Toolset:
                 "xhs_search",
             )
             if not result.get("ok"):
-                return result
+                return {
+                    **result,
+                    "phase": str(result.get("phase") or "search"),
+                    "page": current_page,
+                }
 
             command = result.get("command")
             if isinstance(command, list):
@@ -1297,15 +1429,31 @@ class Toolset:
             payload = _xhs_payload(data)
             items = _xhs_items(data)
             for item in items:
-                item_id = str(item.get("id", ""))
+                normalized_item = _xhs_search_item(item)
+                item_id = str(normalized_item.get("id", ""))
                 if item_id and item_id in seen_ids:
                     continue
                 if item_id:
                     seen_ids.add(item_id)
-                merged_items.append(item)
+                merged_items.append(normalized_item)
 
             pages_fetched += 1
             has_more = bool(payload.get("has_more"))
+
+        enrich_limit = min(_XHS_SEARCH_ENRICH_LIMIT, len(merged_items))
+        for index in range(enrich_limit):
+            item = merged_items[index]
+            note_id = str(item.get("id") or "").strip()
+            if not note_id:
+                continue
+            read_result = self.xhs_read(note_id)
+            if not read_result.get("ok"):
+                enrichment_errors.append(_xhs_enrichment_error(note_id, index + 1, read_result))
+                continue
+            data = read_result.get("data") if isinstance(read_result, dict) else None
+            note = data.get("note") if isinstance(data, dict) else None
+            if isinstance(note, dict) and note:
+                merged_items[index] = _xhs_merge_search_item_with_note(item, note)
 
         return {
             "ok": True,
@@ -1320,6 +1468,8 @@ class Toolset:
                 "pages_requested": page_limit,
                 "pages_fetched": pages_fetched,
                 "has_more": has_more,
+                "enriched_items": enrich_limit - len(enrichment_errors),
+                "enrichment_errors": enrichment_errors,
                 "items": merged_items,
             },
         }

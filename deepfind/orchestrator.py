@@ -200,38 +200,6 @@ def _format_followup_payload(query: str, prior_answer: str, prior_user_request: 
     return dump_json(payload)
 
 
-def _truncate_for_prompt(text: str, limit: int) -> str:
-    cleaned = text.strip()
-    if len(cleaned) <= limit:
-        return cleaned
-    notice = "...[truncated for prompt]..."
-    if limit <= len(notice) + 8:
-        return cleaned[:limit]
-    head = max(1, limit - len(notice) - 1)
-    return f"{cleaned[:head].rstrip()} {notice}"
-
-
-def _synthesis_report_payload(report: WorkerReport) -> dict[str, Any]:
-    claims = _normalize_claims(report.parsed.get("claims") or report.parsed.get("facts"))
-    return {
-        "agent_id": report.agent_id,
-        "task": _truncate_for_prompt(report.task, 300),
-        "summary": _truncate_for_prompt(str(report.parsed.get("summary") or ""), 1_200),
-        "claims": [
-            {
-                "text": _truncate_for_prompt(str(claim.get("text") or ""), 500),
-                "citations": _normalize_url_list(claim.get("citations"))[:5],
-                "confidence": _normalize_confidence(claim.get("confidence")),
-            }
-            for claim in claims[:6]
-            if str(claim.get("text") or "").strip()
-        ],
-        "gaps": [_truncate_for_prompt(gap, 200) for gap in _normalize_string_list(report.parsed.get("gaps"))[:5]],
-        "citations": report.citations[:10],
-        "text_preview": _truncate_for_prompt(report.text, 800),
-    }
-
-
 def _normalize_task(item: object) -> str:
     if isinstance(item, dict):
         task = item.get("task") or item.get("title") or item.get("summary")
@@ -993,7 +961,20 @@ class DeepFind:
             self.progress.synthesize_started(len(reports))
         history = _history_messages(transcript)
         agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
-        report_blob = dump_json([_synthesis_report_payload(report) for report in reports])
+        report_blob = dump_json(
+            [
+                {
+                    "agent_id": report.agent_id,
+                    "task": report.task,
+                    "text": report.text,
+                    "summary": report.parsed.get("summary", ""),
+                    "claims": report.parsed.get("claims", []),
+                    "gaps": report.parsed.get("gaps", []),
+                    "citations": report.citations,
+                }
+                for report in reports
+            ]
+        )
         result = agent.run(
             name="lead-synthesis",
             instructions=SYNTHESIS_PROMPT,

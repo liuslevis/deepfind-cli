@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 import httpx
@@ -17,6 +18,7 @@ from deepfind.bili_transcribe import (
 from deepfind.config import Settings
 from deepfind.gen_slides import SlideGenerationError
 from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
+from deepfind.json_utils import dump_json
 from deepfind.tools import Toolset
 from deepfind.youtube_audio_transcribe import YouTubeDownloadError
 from deepfind.web_fetch import WEB_FETCH_MAX_MARKDOWN_CHARS
@@ -451,6 +453,8 @@ class ToolsetTests(unittest.TestCase):
                     result = toolset.web_search("google", "topic")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "command_failed")
+        self.assertEqual(result["returncode"], 1)
+        self.assertEqual(result["stderr"], "search failed")
 
     def test_web_search_returns_invalid_json_when_search_output_is_not_json(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -528,7 +532,23 @@ class ToolsetTests(unittest.TestCase):
             ):
                 result = toolset.xhs_search("topic", page=1)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["data"]["items"], [{"id": "note-1", "title": "hello"}])
+        self.assertEqual(
+            result["data"]["items"],
+            [
+                {
+                    "id": "note-1",
+                    "ref": "search_result/note-1",
+                    "url": "https://www.xiaohongshu.com/explore/note-1",
+                    "title": "hello",
+                    "author": "",
+                    "likes": 0,
+                    "media_type": "",
+                    "published_at": "",
+                    "published_date": "",
+                    "published_at_ms": 0,
+                }
+            ],
+        )
         self.assertFalse(result["data"]["has_more"])
 
     def test_twitter_search_uses_supported_flags(self) -> None:
@@ -821,8 +841,233 @@ class ToolsetTests(unittest.TestCase):
             with patch("deepfind.tools.subprocess.run", return_value=page_payload):
                 result = toolset.xhs_search("keyword", page=1, sort="latest")
         self.assertTrue(result["ok"])
-        self.assertEqual(result["data"]["items"], [{"id": "note-1"}, {"id": "note-2"}])
+        self.assertEqual(
+            result["data"]["items"],
+            [
+                {
+                    "id": "note-1",
+                    "ref": "search_result/note-1",
+                    "url": "https://www.xiaohongshu.com/explore/note-1",
+                    "title": "",
+                    "author": "",
+                    "likes": 0,
+                    "media_type": "",
+                    "published_at": "",
+                    "published_date": "",
+                    "published_at_ms": 0,
+                },
+                {
+                    "id": "note-2",
+                    "ref": "search_result/note-2",
+                    "url": "https://www.xiaohongshu.com/explore/note-2",
+                    "title": "",
+                    "author": "",
+                    "likes": 0,
+                    "media_type": "",
+                    "published_at": "",
+                    "published_date": "",
+                    "published_at_ms": 0,
+                },
+            ],
+        )
         self.assertTrue(result["data"]["has_more"])
+
+    def test_xhs_search_keeps_main_fields_for_model_consumption(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        page_payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"items":[{"id":"note-1","note_card":{"note_id":"note-1","title":"局势速览","type":"video",'
+                '"time":1776182400000,"user":{"nickname":"国际观察员"},'
+                '"interact_info":{"liked_count":"61"}}}],"has_more":false}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=page_payload):
+                result = toolset.xhs_search("局势", page=1)
+        self.assertTrue(result["ok"])
+        item = result["data"]["items"][0]
+        self.assertEqual(item["id"], "note-1")
+        self.assertEqual(item["ref"], "search_result/note-1")
+        self.assertEqual(item["url"], "https://www.xiaohongshu.com/explore/note-1")
+        self.assertEqual(item["title"], "局势速览")
+        self.assertEqual(item["author"], "国际观察员")
+        self.assertEqual(item["likes"], 61)
+        self.assertEqual(item["media_type"], "video")
+        self.assertEqual(item["published_at"], "2026-04-15 00:00:00")
+        self.assertEqual(item["published_date"], "2026-04-15")
+        self.assertEqual(item["published_at_ms"], 1776182400000)
+
+    def test_xhs_search_merges_xhs_read_details_into_first_results(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        page_payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"items":[{"id":"note-1","note_card":{"note_id":"note-1","title":"Situation brief","type":"video",'
+                '"time":1776182400000,"user":{"nickname":"Analyst"},'
+                '"interact_info":{"liked_count":"61"}}}],"has_more":false}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=page_payload):
+                with patch.object(
+                    toolset,
+                    "xhs_read",
+                    return_value={
+                        "ok": True,
+                        "tool": "xhs_read",
+                        "data": {
+                            "ref": "note-1",
+                            "note": {
+                                "id": "note-1",
+                                "url": "https://www.xiaohongshu.com/explore/note-1",
+                                "title": "Situation brief",
+                                "author": "Analyst",
+                                "author_id": "user-1",
+                                "desc": "Detailed body",
+                                "tags": ["tag-a"],
+                                "media_type": "video",
+                                "text_mode": "full",
+                                "content_hint": "",
+                                "ip_location": "Shanghai",
+                                "published_at_ms": 1776182400000,
+                                "published_at": "2026-04-15 00:00:00",
+                                "published_date": "2026-04-15",
+                                "updated_at_ms": 1776186000000,
+                                "updated_at": "2026-04-15 01:00:00",
+                                "updated_date": "2026-04-15",
+                                "image_count": 1,
+                                "video_duration_sec": 18,
+                                "stats": {
+                                    "likes": 102,
+                                    "collects": 45,
+                                    "comments": 164,
+                                    "shares": 62,
+                                },
+                                "content_text": "Title: Situation brief",
+                            }
+                        },
+                    },
+                ) as read_mock:
+                    result = toolset.xhs_search("topic", page=1)
+        self.assertTrue(result["ok"])
+        item = result["data"]["items"][0]
+        self.assertEqual(read_mock.call_count, 1)
+        self.assertEqual(read_mock.call_args.args[0], "note-1")
+        self.assertEqual(item["likes"], 102)
+        self.assertEqual(item["collects"], 45)
+        self.assertEqual(item["comments"], 164)
+        self.assertEqual(item["shares"], 62)
+        self.assertEqual(item["desc"], "Detailed body")
+        self.assertEqual(item["tags"], ["tag-a"])
+        self.assertEqual(item["image_count"], 1)
+        self.assertEqual(item["published_date"], "2026-04-15")
+
+    def test_xhs_search_reads_only_first_twenty_notes(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        items = [{"id": f"note-{index}", "title": f"title-{index}"} for index in range(1, 22)]
+        page_payload = SimpleNamespace(
+            returncode=0,
+            stdout=dump_json({"items": items, "has_more": False}),
+            stderr="",
+        )
+
+        def _fake_read(ref: str) -> dict[str, Any]:
+            return {
+                "ok": True,
+                "tool": "xhs_read",
+                "data": {
+                    "ref": ref,
+                    "note": {
+                        "id": ref,
+                        "url": f"https://www.xiaohongshu.com/explore/{ref}",
+                        "title": f"detail-{ref}",
+                        "author": "reader",
+                        "author_id": "user-1",
+                        "desc": f"body-{ref}",
+                        "tags": [],
+                        "media_type": "image",
+                        "text_mode": "full",
+                        "content_hint": "",
+                        "ip_location": "",
+                        "published_at_ms": 0,
+                        "published_at": "",
+                        "published_date": "",
+                        "updated_at_ms": 0,
+                        "updated_at": "",
+                        "updated_date": "",
+                        "image_count": 1,
+                        "video_duration_sec": 0,
+                        "stats": {
+                            "likes": 10,
+                            "collects": 2,
+                            "comments": 3,
+                            "shares": 4,
+                        },
+                        "content_text": "",
+                    }
+                },
+            }
+
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=page_payload):
+                with patch.object(toolset, "xhs_read", side_effect=_fake_read) as read_mock:
+                    result = toolset.xhs_search("topic", page=1)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(read_mock.call_count, 20)
+        self.assertEqual(read_mock.call_args_list[0].args[0], "note-1")
+        self.assertEqual(read_mock.call_args_list[-1].args[0], "note-20")
+        self.assertEqual(result["data"]["items"][0]["desc"], "body-note-1")
+        self.assertEqual(result["data"]["items"][19]["desc"], "body-note-20")
+        self.assertNotIn("desc", result["data"]["items"][20])
+
+    def test_xhs_search_marks_search_phase_failures(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch(
+                "deepfind.tools.subprocess.run",
+                return_value=SimpleNamespace(returncode=1, stdout="", stderr="Aborted!"),
+            ):
+                result = toolset.xhs_search("topic", page=1)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["phase"], "search")
+        self.assertEqual(result["page"], 1)
+        self.assertEqual(result["error"], "Aborted!")
+
+    def test_xhs_search_records_read_phase_failures_without_failing_search(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        page_payload = SimpleNamespace(
+            returncode=0,
+            stdout=dump_json({"items": [{"id": "note-1", "title": "title-1"}], "has_more": False}),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=page_payload):
+                with patch.object(
+                    toolset,
+                    "xhs_read",
+                    return_value={
+                        "ok": False,
+                        "tool": "xhs_read",
+                        "error_code": "command_failed",
+                        "error": "Aborted!",
+                        "returncode": 1,
+                        "stderr": "Aborted!",
+                    },
+                ):
+                    result = toolset.xhs_search("topic", page=1)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["enriched_items"], 0)
+        self.assertEqual(len(result["data"]["enrichment_errors"]), 1)
+        error = result["data"]["enrichment_errors"][0]
+        self.assertEqual(error["phase"], "read")
+        self.assertEqual(error["note_id"], "note-1")
+        self.assertEqual(error["index"], 1)
+        self.assertEqual(error["error"], "Aborted!")
+        self.assertEqual(error["returncode"], 1)
 
     def test_xhs_read_normalizes_note_for_model_consumption(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
