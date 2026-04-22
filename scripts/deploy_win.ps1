@@ -60,7 +60,14 @@ if (-not (Test-CommandAvailable -Name 'npm')) {
     throw 'npm is not available in PATH. Install Node.js or add npm to PATH first.'
 }
 
+if (-not (Test-CommandAvailable -Name 'xhs')) {
+    throw 'xhs is not available in PATH. Install xiaohongshu-cli or add xhs to PATH first.'
+}
+
 Invoke-SetupStep
+
+Write-Host 'Logging into Xiaohongshu via QR code...' -ForegroundColor Cyan
+& xhs login --qrcode
 
 $backendCommand = "Set-Location -LiteralPath '$repoRoot'; uv run deepfind-web --reload"
 $frontendCommand = "Set-Location -LiteralPath '$webRoot'; npm run dev -- --host"
