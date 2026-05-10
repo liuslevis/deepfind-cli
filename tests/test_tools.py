@@ -479,7 +479,13 @@ class ToolsetTests(unittest.TestCase):
         toolset = Toolset(Settings(api_key="x", opencli_bin="/tmp/opencli/dist/main.js"))
         with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
             with patch("deepfind.tools.Path.exists", return_value=True):
-                with patch("deepfind.tools.shutil.which", side_effect=["/usr/bin/node"]):
+                with patch(
+                    "deepfind.tools.shutil.which",
+                    side_effect=lambda binary: {
+                        "opencli": "/usr/bin/opencli",
+                        "node": "/usr/bin/node",
+                    }.get(binary),
+                ):
                     with patch(
                         "deepfind.tools.subprocess.run",
                         side_effect=[
@@ -510,6 +516,38 @@ class ToolsetTests(unittest.TestCase):
                 "-f",
                 "json",
             ],
+        )
+
+    def test_web_search_falls_back_to_installed_opencli_when_js_path_is_missing(self) -> None:
+        toolset = Toolset(Settings(api_key="x", opencli_bin="/tmp/opencli/dist/main.js"))
+        with patch.dict("deepfind.tools._OPENCLI_REGISTRY_CACHE", {}, clear=True):
+            with patch("deepfind.tools.Path.exists", return_value=False):
+                with patch(
+                    "deepfind.tools.shutil.which",
+                    side_effect=lambda binary: {
+                        "opencli": "/usr/bin/opencli",
+                    }.get(binary),
+                ):
+                    with patch(
+                        "deepfind.tools.subprocess.run",
+                        side_effect=[
+                            SimpleNamespace(
+                                returncode=0,
+                                stdout='[{"command":"google/search","args":[{"name":"query"},{"name":"limit"}]}]',
+                                stderr="",
+                            ),
+                            SimpleNamespace(returncode=0, stdout='[{"title":"item"}]', stderr=""),
+                        ],
+                    ) as run_mock:
+                        result = toolset.web_search("google", "topic")
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            run_mock.call_args_list[0][0][0],
+            ["/usr/bin/opencli", "list", "-f", "json"],
+        )
+        self.assertEqual(
+            run_mock.call_args_list[1][0][0],
+            ["/usr/bin/opencli", "google", "search", "topic", "--limit", "10", "-f", "json"],
         )
 
     def test_missing_binary_returns_error(self) -> None:

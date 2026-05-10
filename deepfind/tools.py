@@ -2368,11 +2368,14 @@ class Toolset:
         }
 
     def _opencli_command_prefix(self) -> tuple[list[str] | None, str | None]:
-        binary = self.settings.opencli_bin.strip()
+        binary = self.settings.opencli_bin.strip() or "opencli"
         path = Path(binary)
+        fallback = self._opencli_fallback_prefix(binary)
         if path.suffix.lower() == ".js" and path.exists():
             node = shutil.which("node")
             if not node:
+                if fallback:
+                    return fallback, None
                 return None, "node not found"
             return [node, str(path)], None
         if path.exists():
@@ -2380,7 +2383,19 @@ class Toolset:
         resolved = shutil.which(binary)
         if resolved:
             return [resolved], None
+        if fallback:
+            return fallback, None
         return None, f"{binary} not found"
+
+    def _opencli_fallback_prefix(self, configured_binary: str) -> list[str] | None:
+        if configured_binary.lower() == "opencli":
+            return None
+        if "\\" not in configured_binary and "/" not in configured_binary:
+            return None
+        resolved = shutil.which("opencli")
+        if resolved:
+            return [resolved]
+        return None
 
     def _opencli_registry(self, command_prefix: list[str]) -> dict[str, Any]:
         cache_key = "\0".join(command_prefix)
