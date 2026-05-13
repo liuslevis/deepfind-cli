@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
 deepfind/__init__.py
+deepfind/asr.py
 deepfind/bili_transcribe.py
 deepfind/browser_fetch.py
 deepfind/chat_store.py
@@ -22,6 +23,8 @@ deepfind/web_fetch.py
 deepfind/web_models.py
 deepfind/web_progress.py
 deepfind/web_service.py
+deepfind/xhs_transcribe.py
+deepfind/youtube_audio_transcribe.py
 deepfind/youtube_transcribe.py
 deepfind_cli.egg-info/PKG-INFO
 deepfind_cli.egg-info/SOURCES.txt
@@ -29,6 +32,7 @@ deepfind_cli.egg-info/dependency_links.txt
 deepfind_cli.egg-info/entry_points.txt
 deepfind_cli.egg-info/requires.txt
 deepfind_cli.egg-info/top_level.txt
+tests/test_asr.py
 tests/test_bili_transcribe.py
 tests/test_chat_store.py
 tests/test_cli.py
