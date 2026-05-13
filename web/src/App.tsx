@@ -3,7 +3,7 @@ import { Children, isValidElement, memo, useEffect, useRef, useState } from "rea
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { createChat, deleteChat, getChat, listChats, streamChatMessage } from "./api";
+import { checkHealth, createChat, deleteChat, getChat, getAuthToken, listChats, setAuthToken, streamChatMessage } from "./api";
 import type {
   ActivityPhase,
   ActivitySummary,
@@ -1097,6 +1097,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [requiresToken, setRequiresToken] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
   const transcriptRef = useRef<HTMLElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
@@ -1244,6 +1246,13 @@ export default function App() {
       setLoading(true);
       setPageError(null);
       try {
+        const health = await checkHealth();
+        if (health.requires_token && !getAuthToken()) {
+          setRequiresToken(true);
+          setLoading(false);
+          return;
+        }
+        setRequiresToken(false);
         const payload = await listChats();
         const nextChats = payload.chats;
         if (cancelled) {
@@ -1689,6 +1698,59 @@ export default function App() {
   const selectedSummary = selectedChatId ? summaryForChat(selectedChatId) : null;
   const selectedTitle =
     currentChat?.id === selectedChatId ? currentChat.title : selectedSummary?.title ?? "New chat";
+
+  if (requiresToken) {
+    const handleTokenSubmit = (e: FormEvent) => {
+      e.preventDefault();
+      const trimmed = tokenInput.trim();
+      if (!trimmed) return;
+      setAuthToken(trimmed);
+      setTokenInput("");
+      setRequiresToken(false);
+      setLoading(true);
+      void (async () => {
+        try {
+          const payload = await listChats();
+          setChats(payload.chats);
+          applyLocalModel(payload.local_model);
+          const first = payload.chats[0];
+          if (first) {
+            const chat = await getChat(first.id);
+            setCurrentChat(chat);
+            ensureChatRuntime(chat.id, chat.messages.map(messageFromServer));
+            setSelectedChatId(first.id);
+            storageSetItem(STORAGE_KEY, first.id);
+          }
+        } catch (err) {
+          setAuthToken(null);
+          setRequiresToken(true);
+          setPageError(err instanceof Error ? err.message : "Authentication failed");
+        } finally {
+          setLoading(false);
+        }
+      })();
+    };
+    return (
+      <div className="app-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <form onSubmit={handleTokenSubmit} style={{ maxWidth: 360, width: "100%", textAlign: "center" }}>
+          <h2>DeepFind-CLI</h2>
+          <p style={{ marginBottom: 16, opacity: 0.7 }}>This instance requires an access token.</p>
+          {pageError && <p className="composer__error">{pageError}</p>}
+          <input
+            type="password"
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            placeholder="Paste your token"
+            autoFocus
+            style={{ width: "100%", padding: "8px 12px", fontSize: 14, marginBottom: 12, boxSizing: "border-box" }}
+          />
+          <button type="submit" style={{ width: "100%", padding: "8px 12px" }}>
+            Authenticate
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className={`app-shell${sidebarOpen ? " app-shell--sidebar-open" : ""}`}>

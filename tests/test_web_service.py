@@ -66,8 +66,10 @@ class WebServiceTests(unittest.TestCase):
     def test_build_turn_result_collects_sources_and_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(store=ChatStore(Path(temp_dir)))
-            image_path = repo_root() / "tmp" / f"{uuid4().hex}.png"
-            html_path = repo_root() / "tmp" / f"{uuid4().hex}.html"
+            image_name = f"{uuid4().hex}.png"
+            html_name = f"{uuid4().hex}.html"
+            image_path = repo_root() / "tmp" / image_name
+            html_path = repo_root() / "tmp" / html_name
             image_path.parent.mkdir(parents=True, exist_ok=True)
             image_path.write_text("png", encoding="utf-8")
             html_path.write_text("<html></html>", encoding="utf-8")
@@ -98,7 +100,7 @@ class WebServiceTests(unittest.TestCase):
                                 {
                                     "ok": True,
                                     "tool": "gen_img",
-                                    "data": {"image_path": str(image_path)},
+                                    "data": {"image_path": f"tmp/{image_name}"},
                                 }
                             ),
                         ),
@@ -108,7 +110,7 @@ class WebServiceTests(unittest.TestCase):
                                 {
                                     "ok": True,
                                     "tool": "gen_slides",
-                                    "data": {"html_path": str(html_path)},
+                                    "data": {"html_path": f"tmp/{html_name}"},
                                 }
                             ),
                         ),

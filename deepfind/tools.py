@@ -1206,7 +1206,7 @@ class Toolset:
             document = fetch_web_document_browser(
                 clean_url,
                 timeout=self.settings.subprocess_timeout,
-                headless=headless,
+                headless=True,  # forced for security
             )
             summary = summarize_web_document(
                 self.settings.new_client(),

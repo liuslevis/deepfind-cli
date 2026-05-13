@@ -1,5 +1,32 @@
 import type { ChatListResponse, ChatMode, ModelTarget, ProgressEvent, WebChatDetail } from "./types";
 
+const TOKEN_KEY = "deepfind_auth_token";
+
+export function getAuthToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function readErrorMessage(response: Response): Promise<string> {
   const text = await response.text();
   if (!text) {
@@ -59,8 +86,18 @@ function parseEventBlock(block: string): ProgressEvent | null {
   };
 }
 
+export interface HealthResponse {
+  status: string;
+  requires_token: boolean;
+}
+
+export async function checkHealth(): Promise<HealthResponse> {
+  const response = await fetch("/api/health");
+  return readJson<HealthResponse>(response);
+}
+
 export async function listChats(): Promise<ChatListResponse> {
-  const response = await fetch("/api/chats");
+  const response = await fetch("/api/chats", { headers: authHeaders() });
   return readJson<ChatListResponse>(response);
 }
 
@@ -69,6 +106,7 @@ export async function createChat(title?: string): Promise<WebChatDetail> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(title ? { title } : {}),
   });
@@ -77,7 +115,7 @@ export async function createChat(title?: string): Promise<WebChatDetail> {
 }
 
 export async function getChat(chatId: string): Promise<WebChatDetail> {
-  const response = await fetch(`/api/chats/${chatId}`);
+  const response = await fetch(`/api/chats/${chatId}`, { headers: authHeaders() });
   const payload = await readJson<{ chat: WebChatDetail }>(response);
   return payload.chat;
 }
@@ -85,6 +123,7 @@ export async function getChat(chatId: string): Promise<WebChatDetail> {
 export async function deleteChat(chatId: string): Promise<void> {
   const response = await fetch(`/api/chats/${chatId}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
@@ -102,6 +141,7 @@ export async function streamChatMessage(
     headers: {
       Accept: "text/event-stream",
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(payload),
     signal: options?.signal,

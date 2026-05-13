@@ -132,7 +132,7 @@ class CreateChatRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    content: str
+    content: str = Field(..., max_length=20000)
     mode: ChatMode
     model_target: ModelTarget = "qwen"
 
@@ -146,3 +146,4 @@ class HealthResponse(BaseModel):
     ok: bool
     service: str
     local_model: LocalModelInfo | None = None
+    requires_token: bool = False

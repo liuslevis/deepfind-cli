@@ -152,6 +152,9 @@ describe("App", () => {
           { type: "done", data: { chat_id: "chat_cmd" } },
         ]);
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -219,6 +222,9 @@ describe("App", () => {
           },
           { type: "done", data: { chat_id: "chat_1" } },
         ]);
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -301,6 +307,9 @@ describe("App", () => {
           { type: "done", data: { chat_id: "chat_models" } },
         ]);
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -377,6 +386,9 @@ describe("App", () => {
           },
         });
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -445,6 +457,9 @@ describe("App", () => {
           },
         });
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -495,6 +510,9 @@ describe("App", () => {
             ],
           },
         });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -551,6 +569,9 @@ describe("App", () => {
             ],
           },
         });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -617,6 +638,9 @@ describe("App", () => {
             ],
           },
         });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -707,6 +731,9 @@ describe("App", () => {
           },
         });
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -746,6 +773,9 @@ describe("App", () => {
             messages: [],
           },
         });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -811,6 +841,9 @@ describe("App", () => {
             messages: [],
           },
         });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -879,6 +912,9 @@ describe("App", () => {
       }
       if (url === "/api/chats/chat_b" && method === "DELETE") {
         return new Response(null, { status: 204 });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -984,6 +1020,9 @@ describe("App", () => {
           },
         });
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -1040,6 +1079,9 @@ describe("App", () => {
       }
       if (url === "/api/chats/chat_2/messages/stream") {
         return stream.response;
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -1198,6 +1240,9 @@ describe("App", () => {
       if (url === "/api/chats/chat_scroll/messages/stream") {
         return stream.response;
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -1256,6 +1301,9 @@ describe("App", () => {
       }
       if (url === "/api/chats/chat_err/messages/stream") {
         return stream.response;
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -1350,6 +1398,9 @@ describe("App", () => {
           { type: "done", data: { chat_id: "chat_3" } },
         ]);
       }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
 
@@ -1428,6 +1479,9 @@ describe("App", () => {
       }
       if (url === "/api/chats/chat_b/messages/stream") {
         return streamB.response;
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });
@@ -1532,6 +1586,9 @@ describe("App", () => {
       }
       if (url === "/api/chats/chat_a/messages/stream") {
         return streamA.response;
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
       }
       throw new Error(`Unhandled request: ${method} ${url}`);
     });

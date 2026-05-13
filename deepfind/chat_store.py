@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
 from .web_models import WebChatDetail, WebChatSummary
+
+_CHAT_ID_RE = re.compile(r"^chat_[a-zA-Z0-9_-]{1,64}$")
 
 
 def repo_root() -> Path:
@@ -81,6 +84,8 @@ class ChatStore:
         return WebChatDetail.model_validate(data)
 
     def _path(self, chat_id: str) -> Path:
+        if not _CHAT_ID_RE.match(chat_id):
+            raise FileNotFoundError(f"invalid chat_id: {chat_id}")
         return self.root / f"{chat_id}.json"
 
     def _to_summary(self, chat: WebChatDetail) -> WebChatSummary:

@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import secrets
 from pathlib import Path
 import torch
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .chat_store import repo_root
 from .web_models import (
@@ -28,6 +31,38 @@ from .web_service import DeepFindWebService
 logger = logging.getLogger("uvicorn.error")
 
 
+def _configured_token() -> str:
+    return (os.environ.get("DEEPFIND_WEB_TOKEN") or "").strip()
+
+
+def require_auth(authorization: str = Header(default="")) -> None:
+    token = _configured_token()
+    if not token:
+        return
+    provided = authorization.removeprefix("Bearer ").strip()
+    if not provided or not secrets.compare_digest(provided, token):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=()"
+        return response
+
+
+def _allowed_origins() -> list[str]:
+    raw = (os.environ.get("DEEPFIND_CORS_ORIGINS") or "").strip()
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if _configured_token():
+        return []
+    return ["*"]
+
+
 def _encode_sse(event: ProgressEvent) -> str:
     payload = json.dumps(
         {
@@ -41,33 +76,44 @@ def _encode_sse(event: ProgressEvent) -> str:
 
 def build_app(service: DeepFindWebService | None = None) -> FastAPI:
     app = FastAPI(title="DeepFind Web")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+
+    origins = _allowed_origins()
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "DELETE"],
+            allow_headers=["Content-Type", "Authorization", "Accept"],
+        )
+
+    app.add_middleware(SecurityHeadersMiddleware)
     app.state.service = service or DeepFindWebService()
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        return HealthResponse(ok=True, service="deepfind-web", local_model=app.state.service.local_model_info())
+        requires_token = bool(_configured_token())
+        return HealthResponse(
+            ok=True,
+            service="deepfind-web",
+            local_model=app.state.service.local_model_info(),
+            requires_token=requires_token,
+        )
 
     @app.get("/api/chats", response_model=ChatListResponse)
-    def list_chats() -> ChatListResponse:
+    def list_chats(_auth: None = Depends(require_auth)) -> ChatListResponse:
         return ChatListResponse(
             chats=app.state.service.list_chats(),
             local_model=app.state.service.local_model_info(),
         )
 
     @app.post("/api/chats", response_model=CreateChatResponse)
-    def create_chat(payload: CreateChatRequest | None = None) -> CreateChatResponse:
+    def create_chat(payload: CreateChatRequest | None = None, _auth: None = Depends(require_auth)) -> CreateChatResponse:
         chat = app.state.service.create_chat(title=payload.title if payload else None)
         return CreateChatResponse(chat=chat)
 
     @app.get("/api/chats/{chat_id}", response_model=ChatDetailResponse)
-    def get_chat(chat_id: str) -> ChatDetailResponse:
+    def get_chat(chat_id: str, _auth: None = Depends(require_auth)) -> ChatDetailResponse:
         try:
             chat = app.state.service.get_chat(chat_id)
         except FileNotFoundError as exc:
@@ -75,7 +121,7 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
         return ChatDetailResponse(chat=chat)
 
     @app.delete("/api/chats/{chat_id}", status_code=204)
-    def delete_chat(chat_id: str) -> Response:
+    def delete_chat(chat_id: str, _auth: None = Depends(require_auth)) -> Response:
         try:
             app.state.service.delete_chat(chat_id)
         except FileNotFoundError as exc:
@@ -83,7 +129,7 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
         return Response(status_code=204)
 
     @app.post("/api/chats/{chat_id}/messages/stream")
-    def stream_message(chat_id: str, payload: SendMessageRequest) -> StreamingResponse:
+    def stream_message(chat_id: str, payload: SendMessageRequest, _auth: None = Depends(require_auth)) -> StreamingResponse:
         try:
             stream = app.state.service.stream_message(
                 chat_id,
@@ -107,8 +153,11 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
         )
 
     @app.get("/api/files")
-    def get_file(path: str = Query(...)) -> FileResponse:
-        resolved = app.state.service.resolve_file_path(path)
+    def get_file(path: str = Query(...), _auth: None = Depends(require_auth)) -> FileResponse:
+        try:
+            resolved = app.state.service.resolve_file_path(path)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         root = repo_root().resolve()
         try:
             resolved.relative_to(root)

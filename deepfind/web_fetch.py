@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 from dataclasses import dataclass
 from io import BytesIO
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -20,6 +23,19 @@ _HTMLISH_MARKERS = ("text/html", "application/xhtml+xml")
 _MARKDOWNISH_MARKERS = ("text/markdown", "text/x-markdown")
 _PDFISH_MARKERS = ("application/pdf", "application/x-pdf")
 _TEXTISH_MARKERS = ("text/plain",)
+
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
 _NOISE_SELECTORS = (
     "script",
     "style",
@@ -70,6 +86,29 @@ class WebSummaryError(WebFetchError):
     error_code = "summary_failed"
 
 
+class SsrfBlockedError(WebFetchError):
+    error_code = "ssrf_blocked"
+
+
+def validate_fetch_url(url: str) -> None:
+    """Reject URLs targeting private/loopback networks."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise SsrfBlockedError(f"unsupported URL scheme: {parsed.scheme}")
+    hostname = parsed.hostname
+    if not hostname:
+        raise SsrfBlockedError("missing hostname in URL")
+    try:
+        addr_infos = socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except socket.gaierror:
+        return
+    for addr_info in addr_infos:
+        ip = ipaddress.ip_address(addr_info[4][0])
+        for network in _BLOCKED_NETWORKS:
+            if ip in network:
+                raise SsrfBlockedError(f"access to private/loopback network blocked ({ip})")
+
+
 @dataclass(frozen=True)
 class PreparedWebDocument:
     url: str
@@ -82,6 +121,7 @@ class PreparedWebDocument:
 
 
 def fetch_web_document(url: str, timeout: int) -> PreparedWebDocument:
+    validate_fetch_url(url)
     try:
         with httpx.Client(
             follow_redirects=True,

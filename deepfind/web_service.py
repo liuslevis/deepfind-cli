@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -421,7 +422,10 @@ class DeepFindWebService:
             paths.extend((path, "image") for path in _path_from_value(parsed, "image_path"))
             paths.extend((path, "slides") for path in _path_from_value(parsed, "html_path"))
             for raw_path, kind in paths:
-                resolved = self.resolve_file_path(raw_path)
+                try:
+                    resolved = self.resolve_file_path(raw_path)
+                except ValueError:
+                    continue
                 key = str(resolved)
                 if key in seen or not resolved.exists():
                     continue
@@ -437,16 +441,27 @@ class DeepFindWebService:
         return artifacts
 
     def resolve_file_path(self, raw_path: str) -> Path:
-        path = Path(raw_path)
-        if not path.is_absolute():
-            path = (self._repo_root / path).resolve()
-        else:
-            path = path.resolve()
+        if os.path.isabs(raw_path):
+            raise ValueError("absolute paths not allowed")
+        normalized = os.path.normpath(raw_path)
+        if normalized.startswith("..") or "/.." in normalized or "\\.." in normalized:
+            raise ValueError("path traversal not allowed")
+        path = (self._repo_root / normalized).resolve()
+        root_str = str(self._repo_root.resolve())
+        if not str(path).startswith(root_str):
+            raise ValueError("path escapes repository root")
+        _BLOCKED_NAMES = {".env", ".git", ".gitignore"}
+        if path.name in _BLOCKED_NAMES or any(part.startswith(".") for part in Path(normalized).parts):
+            raise ValueError("access denied")
         return path
 
     def file_url_for(self, path: Path | str) -> str:
-        resolved = self.resolve_file_path(str(path))
-        return f"/api/files?path={quote(str(resolved))}"
+        p = Path(path).resolve()
+        try:
+            rel = p.relative_to(self._repo_root.resolve())
+        except ValueError:
+            rel = p
+        return f"/api/files?path={quote(str(rel))}"
 
     def _settings_for_target(self, model_target: ModelTarget) -> Settings:
         base_settings = Settings.from_env(require_api_key=False)
