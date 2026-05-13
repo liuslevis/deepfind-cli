@@ -21,6 +21,7 @@ from .web_models import (
     ProgressEvent,
     SendMessageRequest,
 )
+from .config import SettingsError
 from .web_service import DeepFindWebService
 
 
@@ -94,6 +95,8 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"chat not found: {chat_id}") from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except SettingsError as exc:
+            return PlainTextResponse(str(exc), status_code=400)
         return StreamingResponse(
             (_encode_sse(event) for event in stream),
             media_type="text/event-stream",

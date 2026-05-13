@@ -6,7 +6,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from deepfind.config import DEFAULT_BASE_URL, DEFAULT_MODEL, Settings, _clean_env_value
+from deepfind.config import (
+    DEFAULT_BASE_URL,
+    DEFAULT_MINIMAX_BASE_URL,
+    DEFAULT_MINIMAX_MODEL,
+    DEFAULT_MIMO_BASE_URL,
+    DEFAULT_MIMO_MODEL,
+    DEFAULT_MODEL,
+    Settings,
+    _clean_env_value,
+)
 from deepfind.gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
 
 
@@ -40,6 +49,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.api_key, "sk-test")
         self.assertEqual(settings.model, DEFAULT_MODEL)
         self.assertEqual(settings.base_url, DEFAULT_BASE_URL)
+        self.assertEqual(settings.qwen_api_key, "sk-test")
+        self.assertEqual(settings.qwen_model, DEFAULT_MODEL)
+        self.assertEqual(settings.qwen_base_url, DEFAULT_BASE_URL)
+        self.assertEqual(settings.mimo_api_key, "")
+        self.assertEqual(settings.mimo_model, DEFAULT_MIMO_MODEL)
+        self.assertEqual(settings.mimo_base_url, DEFAULT_MIMO_BASE_URL)
+        self.assertEqual(settings.minimax_api_key, "")
+        self.assertEqual(settings.minimax_model, DEFAULT_MINIMAX_MODEL)
+        self.assertEqual(settings.minimax_base_url, DEFAULT_MINIMAX_BASE_URL)
         self.assertEqual(settings.nano_banana_api_key, "nb-key")
         self.assertEqual(settings.nano_banana_model, DEFAULT_IMAGE_MODEL)
         self.assertEqual(settings.image_dir, DEFAULT_IMAGE_DIR)
@@ -80,6 +98,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.api_key, "sk-from-dotenv")
         self.assertEqual(settings.model, DEFAULT_MODEL)
         self.assertEqual(settings.base_url, DEFAULT_BASE_URL)
+        self.assertEqual(settings.qwen_api_key, "sk-from-dotenv")
+        self.assertEqual(settings.qwen_model, DEFAULT_MODEL)
+        self.assertEqual(settings.qwen_base_url, DEFAULT_BASE_URL)
+        self.assertEqual(settings.mimo_api_key, "")
+        self.assertEqual(settings.mimo_model, DEFAULT_MIMO_MODEL)
+        self.assertEqual(settings.mimo_base_url, DEFAULT_MIMO_BASE_URL)
+        self.assertEqual(settings.minimax_api_key, "")
+        self.assertEqual(settings.minimax_model, DEFAULT_MINIMAX_MODEL)
+        self.assertEqual(settings.minimax_base_url, DEFAULT_MINIMAX_BASE_URL)
         self.assertEqual(settings.nano_banana_api_key, "nb-key")
         self.assertEqual(settings.nano_banana_model, DEFAULT_IMAGE_MODEL)
         self.assertEqual(settings.image_dir, DEFAULT_IMAGE_DIR)
@@ -88,3 +115,38 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.bili_bin, "bili")
         self.assertEqual(settings.audio_dir, "audio")
         self.assertEqual(settings.subprocess_timeout, 30)
+
+    def test_from_env_falls_back_to_mimo_when_qwen_is_missing(self) -> None:
+        env = {
+            "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+            "MIMO_API_KEY": "sk-mimo",
+            "MIMO_MODEL_NAME": "mimo-v2.5-pro # comment",
+            "MIMO_BASE_URL": f"{DEFAULT_MIMO_BASE_URL} # comment",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.api_key, "sk-mimo")
+        self.assertEqual(settings.model, DEFAULT_MIMO_MODEL)
+        self.assertEqual(settings.base_url, DEFAULT_MIMO_BASE_URL)
+        self.assertEqual(settings.qwen_api_key, "")
+        self.assertEqual(settings.mimo_api_key, "sk-mimo")
+        self.assertEqual(settings.mimo_model, DEFAULT_MIMO_MODEL)
+        self.assertEqual(settings.mimo_base_url, DEFAULT_MIMO_BASE_URL)
+
+    def test_from_env_falls_back_to_minimax_when_qwen_and_mimo_are_missing(self) -> None:
+        env = {
+            "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+            "MINIMAX_API_KEY": "sk-minimax",
+            "MINIMAX_MODEL_NAME": "MiniMax-M2.7 # comment",
+            "MINIMAX_BASE_URL": f"{DEFAULT_MINIMAX_BASE_URL} # comment",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.api_key, "sk-minimax")
+        self.assertEqual(settings.model, DEFAULT_MINIMAX_MODEL)
+        self.assertEqual(settings.base_url, DEFAULT_MINIMAX_BASE_URL)
+        self.assertEqual(settings.qwen_api_key, "")
+        self.assertEqual(settings.mimo_api_key, "")
+        self.assertEqual(settings.minimax_api_key, "sk-minimax")
+        self.assertEqual(settings.minimax_model, DEFAULT_MINIMAX_MODEL)
+        self.assertEqual(settings.minimax_base_url, DEFAULT_MINIMAX_BASE_URL)

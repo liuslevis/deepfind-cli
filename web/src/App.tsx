@@ -25,7 +25,8 @@ const MERMAID_STRUCTURAL_LINE =
   /^(subgraph|end|style|classDef|class|linkStyle|click|section|accTitle|accDescr|title|todayMarker)\b/;
 let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
 
-interface ClientMessage extends WebMessage {
+interface ClientMessage extends Omit<WebMessage, "model_target"> {
+  model_target?: ModelTarget;
   pending?: boolean;
   error?: string | null;
   activity?: ProgressEvent[];
@@ -62,6 +63,28 @@ const SLASH_COMMANDS: SlashCommandOption[] = [
     description: "List all available tools and their descriptions.",
   },
 ];
+const DEFAULT_MODEL_TARGET: ModelTarget = "qwen";
+const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax"] as const;
+
+function normalizeModelTarget(target: ModelTarget | "cloud" | null | undefined): ModelTarget {
+  if (target === "gpu" || target === "mimo" || target === "minimax" || target === "qwen") {
+    return target;
+  }
+  return DEFAULT_MODEL_TARGET;
+}
+
+function availableModelTargets(gpuAvailable: boolean): ModelTarget[] {
+  return gpuAvailable ? [...REMOTE_MODEL_TARGETS, "gpu"] : [...REMOTE_MODEL_TARGETS];
+}
+
+function nextModelTarget(current: ModelTarget, gpuAvailable: boolean): ModelTarget {
+  const options = availableModelTargets(gpuAvailable);
+  const currentIndex = options.indexOf(normalizeModelTarget(current));
+  if (currentIndex === -1) {
+    return options[0] ?? DEFAULT_MODEL_TARGET;
+  }
+  return options[(currentIndex + 1) % options.length] ?? DEFAULT_MODEL_TARGET;
+}
 
 function normalizeSlashValue(value: string): string {
   return value.trimStart().toLowerCase();
@@ -129,19 +152,44 @@ function modeLabel(mode: ChatMode | null): string {
   return "Fast (1 agent)";
 }
 
-function modelTargetButtonLabel(target: ModelTarget, localModel: LocalModelInfo | null): string {
+function modelTargetButtonLabel(target: ModelTarget): string {
   if (target === "gpu") {
-    return localModel?.model || "GPU";
+    return "GPU";
   }
-  return "Cloud";
+  if (target === "mimo") {
+    return "Mimo";
+  }
+  if (target === "minimax") {
+    return "Minimax";
+  }
+  return "Qwen";
+}
+
+function modelTargetButtonTitle(target: ModelTarget, localModel: LocalModelInfo | null): string {
+  if (target === "gpu") {
+    return localModel?.model ? `${localModel.model} via Ollama` : "Local GPU model";
+  }
+  if (target === "mimo") {
+    return "Xiaomi Mimo API";
+  }
+  if (target === "minimax") {
+    return "MiniMax API";
+  }
+  return "Qwen API";
 }
 
 function messageModelLabel(modelTarget: ModelTarget | undefined, modelLabel: string | undefined): string | null {
   if (modelTarget === "gpu") {
-    return modelLabel || "GPU";
+    return modelLabel ? `GPU: ${modelLabel}` : "GPU";
   }
-  if (modelTarget === "cloud") {
-    return modelLabel ? `Cloud: ${modelLabel}` : "Cloud";
+  if (modelTarget === "mimo") {
+    return modelLabel ? `Mimo: ${modelLabel}` : "Mimo";
+  }
+  if (modelTarget === "minimax") {
+    return modelLabel ? `Minimax: ${modelLabel}` : "Minimax";
+  }
+  if (modelTarget === "qwen") {
+    return modelLabel ? `Qwen: ${modelLabel}` : "Qwen";
   }
   return null;
 }
@@ -305,7 +353,7 @@ function messageFromServer(message: WebMessage): ClientMessage {
     ...message,
     key_points: message.key_points ?? [],
     citations: message.citations ?? [],
-    model_target: message.model_target ?? "cloud",
+    model_target: normalizeModelTarget(message.model_target),
     model_label: message.model_label ?? "",
     activity: [],
     error: null,
@@ -1038,7 +1086,7 @@ MessageCard.displayName = "MessageCard";
 
 export default function App() {
   const [mode, setMode] = useState<ChatMode>("fast");
-  const [modelTarget, setModelTarget] = useState<ModelTarget>("cloud");
+  const [modelTarget, setModelTarget] = useState<ModelTarget>(DEFAULT_MODEL_TARGET);
   const [composerValue, setComposerValue] = useState("");
   const [localModel, setLocalModel] = useState<LocalModelInfo | null>(null);
   const [chats, setChats] = useState<WebChatSummary[]>([]);
@@ -1060,6 +1108,8 @@ export default function App() {
   const activeMessages = activeRuntime?.messages ?? [];
   const sending = activeRuntime?.pending ?? false;
   const gpuToggleAvailable = Boolean(localModel?.available);
+  const effectiveModelTarget =
+    !gpuToggleAvailable && modelTarget === "gpu" ? DEFAULT_MODEL_TARGET : normalizeModelTarget(modelTarget);
   const slashMatches = matchSlashCommands(composerValue);
   const showSlashAutocomplete = slashMatches.length > 0;
 
@@ -1114,7 +1164,7 @@ export default function App() {
     const normalized = nextLocalModel ?? null;
     setLocalModel(normalized);
     if (!normalized?.available) {
-      setModelTarget("cloud");
+      setModelTarget((current) => (current === "gpu" ? DEFAULT_MODEL_TARGET : current));
     }
   }
 
@@ -1445,7 +1495,7 @@ export default function App() {
               artifacts: turnResult.artifacts,
               key_points: turnResult.key_points ?? [],
               citations: turnResult.citations ?? [],
-              model_target: turnResult.model_target ?? message.model_target ?? "cloud",
+              model_target: normalizeModelTarget(turnResult.model_target ?? message.model_target),
               model_label: turnResult.model_label ?? message.model_label ?? "",
               pending: false,
               error: null,
@@ -1509,7 +1559,8 @@ export default function App() {
 
     const controller = new AbortController();
     let activeChat: WebChatDetail | null = null;
-    const currentModelTarget = gpuToggleAvailable ? modelTarget : "cloud";
+    let pendingAssistantMessageId: string | null = null;
+    const currentModelTarget = effectiveModelTarget;
     const currentModelLabel = currentModelTarget === "gpu" ? localModel?.model ?? "GPU" : "";
 
     try {
@@ -1517,6 +1568,7 @@ export default function App() {
       activeChat = chat;
       const userMessage = newClientMessage("user", content, mode, currentModelTarget, currentModelLabel);
       const assistantMessage = newClientMessage("assistant", "", mode, currentModelTarget, currentModelLabel);
+      pendingAssistantMessageId = assistantMessage.id;
       const nextTitle = currentChat?.title && currentChat.title !== "New chat" ? currentChat.title : summarize(content, 48);
       const chatSnapshot = {
         ...chat,
@@ -1604,20 +1656,28 @@ export default function App() {
         return;
       }
       const message = error instanceof Error ? error.message : "Failed to send message";
-      if (activeChat && selectedChatIdRef.current === activeChat.id) {
-        setPageError(message);
-      }
+      setPageError(message);
       if (activeChat) {
-        updateExistingChatRuntime(activeChat.id, (runtime) => ({
+        updateChatRuntime(activeChat.id, (runtime) => ({
           ...runtime,
           pending: false,
           error: message,
           abortController: undefined,
+          messages: runtime.messages.map((runtimeMessage) =>
+            runtimeMessage.id === pendingAssistantMessageId
+              ? {
+                  ...runtimeMessage,
+                  pending: false,
+                  error: message,
+                  content: runtimeMessage.content || "The run ended before a final answer was produced.",
+                }
+              : runtimeMessage,
+          ),
         }));
       }
     } finally {
       if (activeChat) {
-        updateExistingChatRuntime(activeChat.id, (runtime) => ({
+        updateChatRuntime(activeChat.id, (runtime) => ({
           ...runtime,
           pending: false,
           abortController: undefined,
@@ -1810,21 +1870,15 @@ export default function App() {
                 </div>
               ) : null}
             </div>
-            {gpuToggleAvailable ? (
-              <button
-                type="button"
-                className={`model-toggle__button${modelTarget === "gpu" ? " model-toggle__button--active" : ""}`}
-                aria-label="Model"
-                title={
-                  modelTarget === "gpu"
-                    ? `${localModel?.model ?? "GPU"} via Hugging Face`
-                    : "Cloud Qwen API"
-                }
-                onClick={() => setModelTarget((current) => (current === "cloud" ? "gpu" : "cloud"))}
-              >
-                {modelTargetButtonLabel(modelTarget, localModel)}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className={`model-toggle__button model-toggle__button--${effectiveModelTarget}`}
+              aria-label="Model"
+              title={modelTargetButtonTitle(effectiveModelTarget, localModel)}
+              onClick={() => setModelTarget((current) => nextModelTarget(current, gpuToggleAvailable))}
+            >
+              {modelTargetButtonLabel(effectiveModelTarget)}
+            </button>
             <button className="send-button" type="submit" disabled={sending}>
               {sending ? "Running..." : "Send"}
             </button>

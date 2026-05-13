@@ -9,7 +9,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from .chat_store import ChatStore, repo_root, summarize_text, utc_now
-from .config import Settings
+from .config import Settings, SettingsError
 from .json_utils import try_load_json
 from .local_runtime import detect_local_model
 from .models import ChatMessage, WorkerReport
@@ -248,7 +248,7 @@ class DeepFindWebService:
     def delete_chat(self, chat_id: str) -> None:
         self.store.delete_chat(chat_id)
 
-    def stream_message(self, chat_id: str, content: str, mode: ChatMode, model_target: ModelTarget = "cloud"):
+    def stream_message(self, chat_id: str, content: str, mode: ChatMode, model_target: ModelTarget = "qwen"):
         query = content.strip()
         if not query:
             raise ValueError("message content must not be empty")
@@ -387,7 +387,7 @@ class DeepFindWebService:
         observations: list[ToolObservation],
         mode: ChatMode,
         envelope: dict[str, object] | None = None,
-        model_target: ModelTarget = "cloud",
+        model_target: ModelTarget = "qwen",
         model_label: str = "",
     ) -> TurnResult:
         urls: list[str] = []
@@ -453,11 +453,15 @@ class DeepFindWebService:
         if model_target == "gpu":
             local_status = detect_local_model(base_settings)
             if not local_status.available:
-                raise RuntimeError(
+                raise SettingsError(
                     local_status.reason or f"Local model {base_settings.local_model} is unavailable."
                 )
             return base_settings.with_local_gpu()
-        return base_settings.ensure_remote_ready()
+        if model_target == "mimo":
+            return base_settings.with_mimo_remote()
+        if model_target == "minimax":
+            return base_settings.with_minimax_remote()
+        return base_settings.with_qwen_remote()
 
     def _app_for_settings(self, progress: WebProgress, settings: Settings):
         if self.app_factory is None:

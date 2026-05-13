@@ -89,6 +89,84 @@ class CliTests(unittest.TestCase):
         app_cls.assert_called_once()
         self.assertEqual(app_cls.call_args.kwargs["settings"], expected_settings)
 
+    def test_main_mimo_uses_mimo_settings(self) -> None:
+        base_settings = Settings(
+            api_key="qwen-key",
+            model="qwen3-max",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            qwen_api_key="qwen-key",
+            qwen_model="qwen3-max",
+            qwen_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            mimo_api_key="mimo-key",
+            mimo_model="mimo-v2.5-pro",
+            mimo_base_url="https://api.xiaomimimo.com/v1",
+        )
+
+        with (
+            patch("deepfind.cli.Settings.from_env", return_value=base_settings),
+            patch("deepfind.cli.DeepFind") as app_cls,
+        ):
+            session = app_cls.return_value.session.return_value
+            session.ask.return_value = "mimo answer"
+            stdout = io.StringIO()
+
+            code = main(
+                ["test query", "--mimo", "--once"],
+                stdin=NonTtyStringIO(),
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "mimo answer")
+        expected_settings = replace(
+            base_settings,
+            api_key=base_settings.mimo_api_key,
+            model=base_settings.mimo_model,
+            base_url=base_settings.mimo_base_url,
+        )
+        app_cls.assert_called_once()
+        self.assertEqual(app_cls.call_args.kwargs["settings"], expected_settings)
+
+    def test_main_minimax_uses_minimax_settings(self) -> None:
+        base_settings = Settings(
+            api_key="qwen-key",
+            model="qwen3-max",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            qwen_api_key="qwen-key",
+            qwen_model="qwen3-max",
+            qwen_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            minimax_api_key="minimax-key",
+            minimax_model="MiniMax-M2.7",
+            minimax_base_url="https://api.minimax.io/v1",
+        )
+
+        with (
+            patch("deepfind.cli.Settings.from_env", return_value=base_settings),
+            patch("deepfind.cli.DeepFind") as app_cls,
+        ):
+            session = app_cls.return_value.session.return_value
+            session.ask.return_value = "minimax answer"
+            stdout = io.StringIO()
+
+            code = main(
+                ["test query", "--minimax", "--once"],
+                stdin=NonTtyStringIO(),
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "minimax answer")
+        expected_settings = replace(
+            base_settings,
+            api_key=base_settings.minimax_api_key,
+            model=base_settings.minimax_model,
+            base_url=base_settings.minimax_base_url,
+        )
+        app_cls.assert_called_once()
+        self.assertEqual(app_cls.call_args.kwargs["settings"], expected_settings)
+
     def test_main_passes_long_report_mode_to_session(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:
             session = app_cls.return_value.session.return_value

@@ -1026,6 +1026,48 @@ img {
   transition: border-color 160ms ease, background 160ms ease;
 }
 
+.model-toggle__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 88px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(16, 20, 27, 0.85);
+  color: var(--text);
+  font-size: 0.95rem;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.model-toggle__button:hover,
+.model-toggle__button:focus-visible {
+  border-color: rgba(93, 225, 255, 0.24);
+  background: rgba(93, 225, 255, 0.12);
+}
+
+.model-toggle__button:focus-visible {
+  outline: 2px solid rgba(93, 225, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.model-toggle__button--mimo {
+  border-color: rgba(255, 180, 92, 0.22);
+  background: rgba(255, 180, 92, 0.1);
+}
+
+.model-toggle__button--minimax {
+  border-color: rgba(184, 133, 255, 0.24);
+  background: rgba(184, 133, 255, 0.1);
+}
+
+.model-toggle__button--gpu {
+  border-color: rgba(132, 244, 139, 0.24);
+  background: rgba(132, 244, 139, 0.1);
+}
+
 .mode-select__button:focus-visible {
   outline: 2px solid rgba(93, 225, 255, 0.4);
   outline-offset: 2px;
@@ -1341,10 +1383,10 @@ img {
 
   .composer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:
-      "input send"
-      "mode mode";
+      "input model send"
+      "mode mode mode";
     align-items: center;
     gap: 10px 12px;
     padding: 12px;
@@ -1366,6 +1408,12 @@ img {
   .mode-select {
     width: 100%;
     grid-area: mode;
+  }
+
+  .model-toggle__button {
+    grid-area: model;
+    min-width: 78px;
+    height: 42px;
   }
 
   .mode-select__button {

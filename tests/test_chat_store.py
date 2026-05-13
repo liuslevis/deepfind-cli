@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,3 +36,31 @@ class ChatStoreTests(unittest.TestCase):
 
             store.delete_chat(chat.id)
             self.assertEqual(store.list_chats(), [])
+
+    def test_get_chat_normalizes_legacy_cloud_model_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            payload = {
+                "id": "chat_legacy",
+                "title": "Legacy",
+                "created_at": "2026-03-22T00:00:00+00:00",
+                "updated_at": "2026-03-22T00:00:00+00:00",
+                "messages": [
+                    {
+                        "id": "msg_1",
+                        "role": "assistant",
+                        "content": "legacy",
+                        "created_at": "2026-03-22T00:00:00+00:00",
+                        "mode": "fast",
+                        "sources": [],
+                        "artifacts": [],
+                        "model_target": "cloud",
+                        "model_label": "qwen3-max",
+                    }
+                ],
+            }
+            (root / "chat_legacy.json").write_text(json.dumps(payload), encoding="utf-8")
+
+            chat = ChatStore(root).get_chat("chat_legacy")
+
+        self.assertEqual(chat.messages[0].model_target, "qwen")

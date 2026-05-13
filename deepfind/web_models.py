@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ChatMode = Literal["fast", "expert"]
 MessageRole = Literal["user", "assistant"]
 ArtifactKind = Literal["image", "slides", "file"]
-ModelTarget = Literal["cloud", "gpu"]
+ModelTarget = Literal["qwen", "mimo", "minimax", "gpu"]
+
+
+def normalize_model_target(value: Any) -> ModelTarget:
+    if value is None:
+        return "qwen"
+    normalized = str(value).strip().lower()
+    if not normalized or normalized == "cloud":
+        return "qwen"
+    if normalized in {"qwen", "mimo", "minimax", "gpu"}:
+        return normalized
+    raise ValueError(f"unsupported model target: {value}")
 
 
 class ArtifactLink(BaseModel):
@@ -56,8 +67,13 @@ class WebMessage(BaseModel):
     artifacts: list[ArtifactLink] = Field(default_factory=list)
     key_points: list[KeyPoint] = Field(default_factory=list)
     citations: list[CitationLink] = Field(default_factory=list)
-    model_target: ModelTarget = "cloud"
+    model_target: ModelTarget = "qwen"
     model_label: str = ""
+
+    @field_validator("model_target", mode="before")
+    @classmethod
+    def _normalize_model_target(cls, value: Any) -> ModelTarget:
+        return normalize_model_target(value)
 
 
 class WebChatSummary(BaseModel):
@@ -83,8 +99,13 @@ class TurnResult(BaseModel):
     key_points: list[KeyPoint] = Field(default_factory=list)
     citations: list[CitationLink] = Field(default_factory=list)
     mode: ChatMode
-    model_target: ModelTarget = "cloud"
+    model_target: ModelTarget = "qwen"
     model_label: str = ""
+
+    @field_validator("model_target", mode="before")
+    @classmethod
+    def _normalize_model_target(cls, value: Any) -> ModelTarget:
+        return normalize_model_target(value)
 
 
 class ProgressEvent(BaseModel):
@@ -113,7 +134,12 @@ class CreateChatRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str
     mode: ChatMode
-    model_target: ModelTarget = "cloud"
+    model_target: ModelTarget = "qwen"
+
+    @field_validator("model_target", mode="before")
+    @classmethod
+    def _normalize_model_target(cls, value: Any) -> ModelTarget:
+        return normalize_model_target(value)
 
 
 class HealthResponse(BaseModel):

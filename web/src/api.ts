@@ -1,8 +1,27 @@
 import type { ChatListResponse, ChatMode, ModelTarget, ProgressEvent, WebChatDetail } from "./types";
 
+async function readErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  if (!text) {
+    return response.statusText || `Request failed (${response.status})`;
+  }
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail;
+    }
+    if (typeof parsed.message === "string" && parsed.message.trim()) {
+      return parsed.message;
+    }
+  } catch {
+    // Non-JSON error bodies should fall back to the raw response text.
+  }
+  return text;
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await readErrorMessage(response));
   }
   return (await response.json()) as T;
 }
@@ -68,7 +87,7 @@ export async function deleteChat(chatId: string): Promise<void> {
     method: "DELETE",
   });
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await readErrorMessage(response));
   }
 }
 
@@ -88,7 +107,7 @@ export async function streamChatMessage(
     signal: options?.signal,
   });
   if (!response.ok || !response.body) {
-    throw new Error(await response.text());
+    throw new Error(await readErrorMessage(response));
   }
 
   const reader = response.body.getReader();

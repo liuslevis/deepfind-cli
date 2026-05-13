@@ -1,7 +1,8 @@
 export type ChatMode = "fast" | "expert";
 export type ArtifactKind = "image" | "slides" | "file";
 export type MessageRole = "user" | "assistant";
-export type ModelTarget = "cloud" | "gpu";
+export type ModelTarget = "qwen" | "mimo" | "minimax" | "gpu";
+export type ServerModelTarget = ModelTarget | "cloud";
 
 export interface ArtifactLink {
   kind: ArtifactKind;
@@ -49,7 +50,7 @@ export interface WebMessage {
   artifacts: ArtifactLink[];
   key_points?: KeyPoint[];
   citations?: CitationLink[];
-  model_target?: ModelTarget;
+  model_target?: ServerModelTarget;
   model_label?: string;
 }
 
@@ -81,7 +82,7 @@ export interface TurnResult {
   key_points?: KeyPoint[];
   citations?: CitationLink[];
   mode: ChatMode;
-  model_target?: ModelTarget;
+  model_target?: ServerModelTarget;
   model_label?: string;
 }
 

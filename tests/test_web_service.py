@@ -4,9 +4,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
+from unittest.mock import patch
 
 from deepfind.chat_store import ChatStore, repo_root
+from deepfind.config import Settings
 from deepfind.models import WorkerReport
 from deepfind.web_service import DeepFindWebService, mode_to_agent_count
 from deepfind.web_progress import ToolObservation
@@ -47,6 +50,12 @@ class FakeApp:
             },
         )
         return "Answer with https://example.com/final", [report]
+
+
+class CapturingApp(FakeApp):
+    def __init__(self, progress, *, settings: Settings, seen: dict[str, Any]) -> None:
+        super().__init__(progress)
+        seen["settings"] = settings
 
 
 class WebServiceTests(unittest.TestCase):
@@ -229,6 +238,62 @@ class WebServiceTests(unittest.TestCase):
 
         self.assertEqual(events[-2].type, "error")
         self.assertEqual(events[-1].type, "done")
+
+    def test_stream_message_uses_mimo_settings_for_mimo_target(self) -> None:
+        seen: dict[str, Any] = {}
+        base_settings = Settings(
+            api_key="qwen-key",
+            model="qwen3-max",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            qwen_api_key="qwen-key",
+            qwen_model="qwen3-max",
+            qwen_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            mimo_api_key="mimo-key",
+            mimo_model="mimo-v2.5-pro",
+            mimo_base_url="https://api.xiaomimimo.com/v1",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                app_factory=lambda progress, settings: CapturingApp(progress, settings=settings, seen=seen),
+            )
+            chat = service.create_chat()
+            with patch("deepfind.web_service.Settings.from_env", return_value=base_settings):
+                events = list(service.stream_message(chat.id, "hello", "fast", "mimo"))
+
+        self.assertEqual(events[-2].type, "answer_final")
+        self.assertEqual(seen["settings"].api_key, "mimo-key")
+        self.assertEqual(seen["settings"].model, "mimo-v2.5-pro")
+        self.assertEqual(seen["settings"].base_url, "https://api.xiaomimimo.com/v1")
+
+    def test_stream_message_uses_minimax_settings_for_minimax_target(self) -> None:
+        seen: dict[str, Any] = {}
+        base_settings = Settings(
+            api_key="qwen-key",
+            model="qwen3-max",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            qwen_api_key="qwen-key",
+            qwen_model="qwen3-max",
+            qwen_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            minimax_api_key="minimax-key",
+            minimax_model="MiniMax-M2.7",
+            minimax_base_url="https://api.minimax.io/v1",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                app_factory=lambda progress, settings: CapturingApp(progress, settings=settings, seen=seen),
+            )
+            chat = service.create_chat()
+            with patch("deepfind.web_service.Settings.from_env", return_value=base_settings):
+                events = list(service.stream_message(chat.id, "hello", "fast", "minimax"))
+
+        self.assertEqual(events[-2].type, "answer_final")
+        self.assertEqual(seen["settings"].api_key, "minimax-key")
+        self.assertEqual(seen["settings"].model, "MiniMax-M2.7")
+        self.assertEqual(seen["settings"].base_url, "https://api.minimax.io/v1")
 
     def test_stream_message_list_tool_returns_catalog_without_research_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

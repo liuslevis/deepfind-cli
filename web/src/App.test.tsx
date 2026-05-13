@@ -236,6 +236,167 @@ describe("App", () => {
     expect(JSON.parse(capturedBody)).toMatchObject({ mode: "expert" });
   });
 
+  it("cycles the model button through Qwen, Mimo, Minimax, and GPU and sends the selected target", async () => {
+    let capturedBody = "";
+    let chatsRequestCount = 0;
+    const localModel = {
+      available: true,
+      backend: "ollama",
+      model: "qwen3.5:9b",
+      base_url: "http://127.0.0.1:11434/v1",
+      reason: "",
+      gpu: {
+        available: true,
+        name: "RTX",
+        memory_total_mb: 16384,
+      },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        chatsRequestCount += 1;
+        if (chatsRequestCount === 1) {
+          return jsonResponse({ chats: [], local_model: localModel });
+        }
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_models",
+              title: "Minimax answer",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Minimax answer",
+            },
+          ],
+          local_model: localModel,
+        });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_models",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_models/messages/stream") {
+        capturedBody = String(init?.body ?? "");
+        return streamResponse([
+          {
+            type: "answer_final",
+            data: {
+              answer_markdown: "Minimax answer",
+              sources: [],
+              artifacts: [],
+              mode: "fast",
+              model_target: "minimax",
+              model_label: "MiniMax-M2.7",
+            },
+          },
+          { type: "done", data: { chat_id: "chat_models" } },
+        ]);
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const modelButton = await screen.findByRole("button", { name: "Model" });
+    expect(modelButton).toHaveTextContent("Qwen");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("Mimo");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("Minimax");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("GPU");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("Qwen");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("Mimo");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("Minimax");
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Use MiniMax M2.7");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findAllByText("Minimax answer");
+    expect(JSON.parse(capturedBody)).toMatchObject({ model_target: "minimax" });
+  });
+
+  it("shows a clear error when the selected model is not configured", async () => {
+    let chatsRequestCount = 0;
+    const localModel = {
+      available: true,
+      backend: "ollama",
+      model: "qwen3.5:9b",
+      base_url: "http://127.0.0.1:11434/v1",
+      reason: "",
+      gpu: {
+        available: true,
+        name: "RTX",
+        memory_total_mb: 16384,
+      },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        chatsRequestCount += 1;
+        return jsonResponse({ chats: [], local_model: localModel });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_error",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_error/messages/stream") {
+        return new Response("Set MIMO_API_KEY or XIAOMI_API_KEY, or switch to another model.", {
+          status: 400,
+          headers: {
+            "Content-Type": "text/plain",
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const modelButton = await screen.findByRole("button", { name: "Model" });
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("Mimo");
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "你是什么模型");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const errorElements = await screen.findAllByText(
+      "Set MIMO_API_KEY or XIAOMI_API_KEY, or switch to another model.",
+    );
+    expect(errorElements.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("restores the selected chat from local storage", async () => {
     localStorage.setItem("deepfind.web.selected-chat", "chat_b");
 

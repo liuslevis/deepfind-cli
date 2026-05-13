@@ -47,10 +47,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use long-form final report output instead of the default concise overview",
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--gpu",
         action="store_true",
-        help="run the research pipeline with the local Ollama GPU model instead of the remote Qwen API",
+        help="run the research pipeline with the local Ollama GPU model instead of the configured remote API",
+    )
+    mode_group.add_argument(
+        "--mimo",
+        action="store_true",
+        help="run the research pipeline with the Xiaomi MiMo model configured by MIMO_API_KEY and MIMO_MODEL_NAME",
+    )
+    mode_group.add_argument(
+        "--minimax",
+        action="store_true",
+        help="run the research pipeline with the MiniMax model configured by MINIMAX_API_KEY and MINIMAX_MODEL_NAME",
     )
     return parser
 
@@ -128,12 +139,17 @@ def main(
         app_kwargs = {
             "progress": ConsoleProgress(enabled=not args.quiet, stream=stderr),
         }
-        if args.gpu:
+        if args.gpu or args.mimo or args.minimax:
             base_settings = Settings.from_env(require_api_key=False)
+        if args.gpu:
             local_status = detect_local_model(base_settings)
             if not local_status.available:
                 raise RuntimeError(local_status.reason or f"Local model {base_settings.local_model} is unavailable.")
             app_kwargs["settings"] = base_settings.with_local_gpu()
+        elif args.mimo:
+            app_kwargs["settings"] = base_settings.with_mimo_remote()
+        elif args.minimax:
+            app_kwargs["settings"] = base_settings.with_minimax_remote()
 
         app = DeepFind(**app_kwargs)
         session = app.session(
