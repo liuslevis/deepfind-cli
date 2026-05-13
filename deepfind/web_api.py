@@ -24,9 +24,11 @@ from .web_models import (
     ProgressEvent,
     SendMessageRequest,
 )
-from .config import SettingsError
+from .config import SettingsError, _load_dotenv
 from .web_service import DeepFindWebService
 
+# Load .env file at module import time
+_load_dotenv()
 
 logger = logging.getLogger("uvicorn.error")
 
