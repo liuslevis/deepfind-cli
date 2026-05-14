@@ -10,3 +10,4 @@ web/.vite/
 web/coverage/
 web/*.tsbuildinfo
 slide
+audio
