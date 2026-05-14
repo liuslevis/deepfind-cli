@@ -1042,12 +1042,21 @@ class Toolset:
             ),
             self._function_spec(
                 "gen_slides",
-                "Generate a standalone HTML slide deck and save it under the local tmp directory.",
+                "Generate a beautiful HTML slide deck using a template from beautiful-html-templates. "
+                "Output is saved under the slide/ directory. Supports editing existing decks via html_path.",
                 {
                     "type": "object",
                     "properties": {
                         "prompt": {"type": "string"},
                         "slide_count": {"type": "integer", "minimum": 1, "maximum": 12},
+                        "template_name": {
+                            "type": "string",
+                            "description": "Template name (e.g. '8-bit-orbit', 'monochrome'). Defaults to 'monochrome'.",
+                        },
+                        "html_path": {
+                            "type": "string",
+                            "description": "Path to existing deck HTML for editing. If provided, prompt is treated as an edit instruction.",
+                        },
                     },
                     "required": ["prompt"],
                     "additionalProperties": False,
@@ -2343,6 +2352,8 @@ class Toolset:
         self,
         prompt: str,
         slide_count: int = 1,
+        template_name: str | None = None,
+        html_path: str | None = None,
     ) -> dict[str, Any]:
         try:
             data = generate_slides(
@@ -2351,7 +2362,9 @@ class Toolset:
                 base_url=self.settings.base_url,
                 model=self.settings.model,
                 slide_count=slide_count,
+                template_name=template_name,
                 timeout=self.settings.subprocess_timeout,
+                html_path=html_path,
             )
         except SlideGenerationError as exc:
             return {

@@ -1063,14 +1063,39 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
       {message.artifacts.length > 0 ? (
         <div className="artifact-grid">
           {message.artifacts.map((artifact) => (
-            <a key={artifact.url} className="artifact-card" href={artifact.url} target="_blank" rel="noreferrer">
-              {artifact.kind === "image" ? (
-                <img className="artifact-card__image" src={artifact.url} alt={artifact.label} />
-              ) : null}
-              <span className="artifact-card__kind">{artifact.kind}</span>
-              <strong>{artifact.label}</strong>
-              <span className="artifact-card__path">{artifact.path}</span>
-            </a>
+            <div key={artifact.url} className={artifact.kind === "slides" ? "artifact-slides-wrapper" : ""}>
+              {artifact.kind === "slides" ? (
+                <div className="artifact-slides-bubble">
+                  <iframe
+                    className="artifact-slides-iframe"
+                    src={artifact.url}
+                    title={artifact.label}
+                    sandbox="allow-scripts allow-same-origin"
+                  />
+                  <div className="artifact-slides-bar">
+                    <strong>{artifact.label}</strong>
+                    <span className="artifact-card__path">{artifact.path}</span>
+                    <div className="artifact-slides-actions">
+                      <a href={artifact.url} target="_blank" rel="noreferrer" className="artifact-slides-btn">
+                        Open
+                      </a>
+                      <a href={artifact.url} download={artifact.label} className="artifact-slides-btn artifact-slides-btn--download">
+                        ↓ Download
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <a className="artifact-card" href={artifact.url} target="_blank" rel="noreferrer">
+                  {artifact.kind === "image" ? (
+                    <img className="artifact-card__image" src={artifact.url} alt={artifact.label} />
+                  ) : null}
+                  <span className="artifact-card__kind">{artifact.kind}</span>
+                  <strong>{artifact.label}</strong>
+                  <span className="artifact-card__path">{artifact.path}</span>
+                </a>
+              )}
+            </div>
           ))}
         </div>
       ) : null}

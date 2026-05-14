@@ -785,6 +785,67 @@ img {
   word-break: break-all;
 }
 
+.artifact-slides-wrapper {
+  grid-column: 1 / -1;
+}
+
+.artifact-slides-bubble {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(9, 16, 25, 0.88);
+  overflow: hidden;
+}
+
+.artifact-slides-iframe {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: none;
+  display: block;
+  border-radius: 18px 18px 0 0;
+  background: #0a0e17;
+}
+
+.artifact-slides-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.artifact-slides-bar strong {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.artifact-slides-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.artifact-slides-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--bg);
+  background: var(--accent);
+  transition: opacity 0.15s;
+}
+
+.artifact-slides-btn:hover {
+  opacity: 0.85;
+}
+
+.artifact-slides-btn--download {
+  background: var(--text-soft);
+}
+
 .activity-panel {
   margin-top: 14px;
   padding: 12px 14px;

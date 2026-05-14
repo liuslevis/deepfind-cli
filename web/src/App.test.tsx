@@ -1204,7 +1204,8 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "zhihu.com source 1" })).toHaveAttribute("href", "https://zhihu.com/question/1");
     expect(screen.getByRole("link", { name: "zhihu.com source 2" })).toHaveAttribute("href", "https://zhihu.com/question/2");
     expect(screen.getByRole("link", { name: "baidu.com source 3" })).toHaveAttribute("href", "https://baidu.com/s?wd=atlas");
-    expect(screen.getByRole("link", { name: /deck.html/i })).toHaveAttribute("href", "/api/files?path=deck");
+    expect(screen.getByRole("link", { name: /Open/i })).toHaveAttribute("href", "/api/files?path=deck");
+    expect(screen.getByRole("link", { name: /Download/i })).toHaveAttribute("href", "/api/files?path=deck");
   });
 
   it("uses instant bottom scrolling while a response is streaming", async () => {

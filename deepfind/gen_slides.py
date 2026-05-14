@@ -1,28 +1,21 @@
 from __future__ import annotations
 
-import hashlib
-import html
+import json
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
 
 from .config import DEFAULT_BASE_URL, DEFAULT_MODEL
-from .json_utils import try_load_json
 
 
-DEFAULT_SLIDE_DIR = "tmp"
+DEFAULT_SLIDE_DIR = "slide"
 DEFAULT_SLIDE_COUNT = 1
 MAX_SLIDE_COUNT = 12
+DEFAULT_TEMPLATE_NAME = "monochrome"
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-SLIDE_SYSTEM_PROMPT = (
-    "You create concise slide deck outlines for HTML presentations. "
-    'Return JSON only using this exact schema: {"title":"string","slides":[{"title":"string","bullets":["string"]}]}. '
-    "Create exactly the requested number of slides. Do not wrap the JSON in markdown."
-)
+TEMPLATES_DIR = REPO_ROOT / "beautiful-html-templates" / "templates"
 
 
 class SlideGenerationError(RuntimeError):
@@ -51,363 +44,135 @@ def _normalize_slide_count(value: int | None) -> int:
     return slide_count
 
 
-def _file_name(title: str, prompt: str) -> str:
-    base = title.strip() or prompt.strip()
-    slug = re.sub(r"[^A-Za-z0-9]+", "-", base).strip("-").lower()[:24] or "slides"
-    digest = hashlib.sha1(f"{title}\n{prompt}".encode("utf-8")).hexdigest()[:8]
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{stamp}-{slug}-{digest}.html"
+def _validate_template_name(template_name: str | None) -> str:
+    name = (template_name or "").strip() or DEFAULT_TEMPLATE_NAME
+    template_dir = TEMPLATES_DIR / name
+    if not template_dir.is_dir() or not (template_dir / "template.html").exists():
+        available = sorted(
+            d.name
+            for d in TEMPLATES_DIR.iterdir()
+            if d.is_dir() and (d / "template.html").exists()
+        )
+        raise SlideGenerationError(
+            f"Template '{name}' not found. Available: {', '.join(available)}"
+        )
+    return name
 
 
-def _non_empty_string(value: Any, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise SlideGenerationError(f"{field} must be a non-empty string.")
-    return value.strip()
+def _load_template(template_name: str) -> dict[str, Any]:
+    """Load a template and split it into prefix, example slides, and suffix."""
+    template_dir = TEMPLATES_DIR / template_name
+    html_text = (template_dir / "template.html").read_text(encoding="utf-8")
+
+    meta: dict[str, Any] = {}
+    meta_path = template_dir / "template.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    prefix, slides_html, suffix = _split_template(html_text)
+
+    return {
+        "prefix": prefix,
+        "slides_html": slides_html,
+        "suffix": suffix,
+        "full_html": html_text,
+        "meta": meta,
+    }
 
 
-def _normalize_outline(payload: Any, slide_count: int) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise SlideGenerationError("Slide model returned invalid JSON.")
+def _split_template(html_text: str) -> tuple[str, str, str]:
+    """Split template HTML into (prefix, slides, suffix).
 
-    title = _non_empty_string(payload.get("title"), "title")
-    raw_slides = payload.get("slides")
-    if not isinstance(raw_slides, list):
-        raise SlideGenerationError("slides must be a list.")
-    if len(raw_slides) != slide_count:
-        raise SlideGenerationError(f"Expected {slide_count} slides, got {len(raw_slides)}.")
+    Finds the first ``<section`` with a ``slide`` class and the last
+    ``</section>`` to delineate the slide region.
+    """
+    first_match = re.search(r"<section\b[^>]*class=\"[^\"]*\bslide\b", html_text)
+    if not first_match:
+        raise SlideGenerationError("Template has no slide sections.")
 
-    slides: list[dict[str, Any]] = []
-    for index, raw_slide in enumerate(raw_slides, 1):
-        if not isinstance(raw_slide, dict):
-            raise SlideGenerationError(f"slides[{index}] must be an object.")
-        slide_title = _non_empty_string(raw_slide.get("title"), f"slides[{index}].title")
-        raw_bullets = raw_slide.get("bullets")
-        if not isinstance(raw_bullets, list):
-            raise SlideGenerationError(f"slides[{index}].bullets must be a list.")
-        bullets = [str(item).strip() for item in raw_bullets if str(item).strip()]
-        if not bullets:
-            raise SlideGenerationError(f"slides[{index}] must contain at least one bullet.")
-        slides.append({"title": slide_title, "bullets": bullets[:6]})
+    prefix_end = first_match.start()
 
-    return {"title": title, "slides": slides}
+    last_close = html_text.rfind("</section>")
+    if last_close < prefix_end:
+        raise SlideGenerationError("Template has no closing </section> tags after slides.")
+    suffix_start = last_close + len("</section>")
+
+    return html_text[:prefix_end], html_text[prefix_end:suffix_start], html_text[suffix_start:]
 
 
-def _slide_markup(deck_title: str, slide: dict[str, Any], index: int, total: int) -> str:
-    bullets_html = "\n".join(
-        f"            <li>{html.escape(bullet)}</li>"
-        for bullet in slide["bullets"]
+def _build_system_prompt(template: dict[str, Any]) -> str:
+    meta_json = json.dumps(template["meta"], ensure_ascii=False, indent=2) if template["meta"] else "{}"
+    return (
+        "You are a professional slide deck designer. You create HTML slide <section> elements "
+        "for presentations using the exact design system from the template below.\n\n"
+        "RULES:\n"
+        "1. Output ONLY the <section> elements — no <!doctype>, <html>, <head>, <body>, <style>, or <script> tags.\n"
+        "2. Use the EXACT same CSS classes, HTML structure, and data-anim/data-delay attributes "
+        "from the template's slide sections.\n"
+        "3. The first slide MUST be a cover/title slide.\n"
+        "4. The last slide MUST be a closing/end slide.\n"
+        "5. Middle slides should use varied layout types from the template "
+        "(e.g. statement, list, stats, split, compare, quote, etc.).\n"
+        "6. Replace ALL placeholder content with content matching the user's request.\n"
+        "7. Generate EXACTLY the requested number of slides.\n"
+        "8. Write content in the same language as the user's prompt.\n"
+        "9. Do NOT wrap the output in markdown code blocks.\n"
+        "10. Do NOT output any text before or after the <section> elements.\n\n"
+        f"TEMPLATE METADATA:\n{meta_json}\n\n"
+        f"FULL TEMPLATE HTML (study the CSS classes and all slide structures):\n"
+        f"{template['full_html']}\n"
     )
-    return f"""      <section class="slide" data-slide="{index}">
-        <div class="slide-panel">
-          <div class="slide-kicker">{html.escape(deck_title)}</div>
-          <div class="slide-counter">{index + 1:02d} / {total:02d}</div>
-          <h2>{html.escape(slide["title"])}</h2>
-          <ul>
-{bullets_html}
-          </ul>
-        </div>
-      </section>"""
 
 
-def render_slides_html(title: str, slides: list[dict[str, Any]]) -> str:
-    slide_sections = "\n".join(
-        _slide_markup(title, slide, index, len(slides))
-        for index, slide in enumerate(slides)
+def _extract_title_from_html(html_text: str) -> str:
+    """Extract deck title from the first h1 or h2 element."""
+    match = re.search(r"<h[12][^>]*>(.*?)</h[12]>", html_text, re.DOTALL)
+    if match:
+        title = re.sub(r"<[^>]+>", " ", match.group(1))
+        return re.sub(r"\s+", " ", title).strip()
+    return ""
+
+
+def _title_slug(title: str, prompt: str) -> str:
+    base = title or prompt
+    slug = re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]+", "-", base).strip("-")[:40] or "slides"
+    return slug
+
+
+def _fix_slide_count_in_suffix(suffix: str, slide_count: int) -> str:
+    """Replace hardcoded ``totalSlides`` constants in JS with the actual count."""
+    return re.sub(
+        r"(const\s+totalSlides\s*=\s*)\d+",
+        rf"\g<1>{slide_count}",
+        suffix,
     )
-    return f"""<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{html.escape(title)}</title>
-    <style>
-      :root {{
-        color-scheme: light;
-        --bg: radial-gradient(circle at top, #1d4ed8 0%, #0f172a 45%, #020617 100%);
-        --panel: rgba(15, 23, 42, 0.82);
-        --panel-border: rgba(148, 163, 184, 0.18);
-        --text: #e2e8f0;
-        --muted: #bfdbfe;
-        --accent: #f59e0b;
-        --accent-2: #38bdf8;
-      }}
 
-      * {{
-        box-sizing: border-box;
-      }}
 
-      body {{
-        margin: 0;
-        min-height: 100vh;
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
-        background: var(--bg);
-        color: var(--text);
-      }}
+def _fix_slide_count_in_prefix(prefix: str, slide_count: int) -> str:
+    """Replace hardcoded slide counter text like ``01 / 10`` in the prefix."""
+    return re.sub(
+        r">\s*\d{1,2}\s*/\s*\d{1,2}\s*<",
+        f">01 / {slide_count:02d}<",
+        prefix,
+        count=1,
+    )
 
-      .app {{
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 24px;
-      }}
 
-      .deck {{
-        width: min(100%, 1200px);
-      }}
+def _extract_slides_from_html(html_text: str) -> str:
+    """Extract slide ``<section>`` elements from a complete HTML file."""
+    _, slides_html, _ = _split_template(html_text)
+    return slides_html
 
-      .topbar {{
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 16px;
-      }}
 
-      .brand {{
-        font-size: 0.88rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }}
-
-      .title {{
-        font-size: clamp(1.2rem, 2vw, 1.6rem);
-        font-weight: 700;
-      }}
-
-      .frame {{
-        position: relative;
-        width: 100%;
-        aspect-ratio: 16 / 9;
-        border-radius: 28px;
-        overflow: hidden;
-        background: linear-gradient(160deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88));
-        border: 1px solid var(--panel-border);
-        box-shadow: 0 26px 70px rgba(2, 6, 23, 0.45);
-      }}
-
-      .slide {{
-        position: absolute;
-        inset: 0;
-        display: none;
-        padding: clamp(28px, 4vw, 52px);
-      }}
-
-      .slide.is-active {{
-        display: block;
-      }}
-
-      .slide-panel {{
-        position: relative;
-        height: 100%;
-        border-radius: 24px;
-        padding: clamp(28px, 4vw, 48px);
-        background:
-          linear-gradient(135deg, rgba(56, 189, 248, 0.1), transparent 36%),
-          linear-gradient(220deg, rgba(245, 158, 11, 0.13), transparent 28%),
-          var(--panel);
-        border: 1px solid var(--panel-border);
-      }}
-
-      .slide-panel::after {{
-        content: "";
-        position: absolute;
-        inset: auto 28px 24px auto;
-        width: 140px;
-        height: 140px;
-        border-radius: 999px;
-        background: radial-gradient(circle, rgba(245, 158, 11, 0.32), rgba(245, 158, 11, 0));
-        pointer-events: none;
-      }}
-
-      .slide-kicker {{
-        font-size: 0.82rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--muted);
-        margin-bottom: 18px;
-      }}
-
-      .slide-counter {{
-        position: absolute;
-        top: 28px;
-        right: 28px;
-        font-weight: 700;
-        color: var(--accent-2);
-      }}
-
-      h2 {{
-        margin: 0;
-        max-width: 80%;
-        font-size: clamp(2rem, 4vw, 3.5rem);
-        line-height: 1.05;
-      }}
-
-      ul {{
-        margin: 28px 0 0;
-        padding-left: 1.2em;
-        max-width: 72%;
-        font-size: clamp(1rem, 1.8vw, 1.5rem);
-        line-height: 1.5;
-      }}
-
-      li + li {{
-        margin-top: 0.7em;
-      }}
-
-      .controls {{
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-top: 16px;
-      }}
-
-      .hint {{
-        color: var(--muted);
-        font-size: 0.95rem;
-      }}
-
-      .buttons {{
-        display: flex;
-        gap: 10px;
-      }}
-
-      button {{
-        appearance: none;
-        border: 0;
-        border-radius: 999px;
-        padding: 12px 18px;
-        font: inherit;
-        font-weight: 700;
-        cursor: pointer;
-        color: #0f172a;
-        background: linear-gradient(135deg, #f8fafc, #bae6fd);
-      }}
-
-      button:disabled {{
-        cursor: default;
-        opacity: 0.45;
-      }}
-
-      .pager {{
-        min-width: 5ch;
-        text-align: center;
-        font-weight: 700;
-        color: var(--accent);
-      }}
-
-      @media (max-width: 860px) {{
-        .topbar,
-        .controls {{
-          flex-direction: column;
-          align-items: flex-start;
-        }}
-
-        .frame {{
-          aspect-ratio: auto;
-          min-height: 70vh;
-        }}
-
-        .slide {{
-          position: static;
-          min-height: 70vh;
-        }}
-
-        .slide-panel {{
-          min-height: calc(70vh - 48px);
-        }}
-
-        h2,
-        ul {{
-          max-width: 100%;
-        }}
-      }}
-    </style>
-  </head>
-  <body>
-    <div class="app">
-      <div class="deck">
-        <div class="topbar">
-          <div>
-            <div class="brand">deepfind slides</div>
-            <div class="title">{html.escape(title)}</div>
-          </div>
-          <div class="pager"><span id="current">01</span> / <span id="total">{len(slides):02d}</span></div>
-        </div>
-        <div class="frame">
-{slide_sections}
-        </div>
-        <div class="controls">
-          <div class="hint">Use arrow keys, Page Up/Page Down, Home, or End to navigate.</div>
-          <div class="buttons">
-            <button id="prev" type="button">Previous</button>
-            <button id="next" type="button">Next</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <script>
-      const slides = Array.from(document.querySelectorAll(".slide"));
-      const prevButton = document.getElementById("prev");
-      const nextButton = document.getElementById("next");
-      const current = document.getElementById("current");
-      const total = document.getElementById("total");
-      let index = 0;
-
-      function clamp(value) {{
-        return Math.max(0, Math.min(value, slides.length - 1));
-      }}
-
-      function indexFromHash() {{
-        const match = window.location.hash.match(/^#slide-(\\d+)$/);
-        if (!match) {{
-          return 0;
-        }}
-        return clamp(Number(match[1]) - 1);
-      }}
-
-      function show(nextIndex) {{
-        index = clamp(nextIndex);
-        slides.forEach((slide, slideIndex) => {{
-          slide.classList.toggle("is-active", slideIndex === index);
-        }});
-        current.textContent = String(index + 1).padStart(2, "0");
-        total.textContent = String(slides.length).padStart(2, "0");
-        prevButton.disabled = index === 0;
-        nextButton.disabled = index === slides.length - 1;
-        const targetHash = `#slide-${{index + 1}}`;
-        if (window.location.hash !== targetHash) {{
-          window.history.replaceState(null, "", targetHash);
-        }}
-      }}
-
-      prevButton.addEventListener("click", () => show(index - 1));
-      nextButton.addEventListener("click", () => show(index + 1));
-      document.addEventListener("keydown", (event) => {{
-        if (["ArrowRight", "PageDown", " "].includes(event.key)) {{
-          event.preventDefault();
-          show(index + 1);
-        }}
-        if (["ArrowLeft", "PageUp"].includes(event.key)) {{
-          event.preventDefault();
-          show(index - 1);
-        }}
-        if (event.key === "Home") {{
-          event.preventDefault();
-          show(0);
-        }}
-        if (event.key === "End") {{
-          event.preventDefault();
-          show(slides.length - 1);
-        }}
-      }});
-      window.addEventListener("hashchange", () => show(indexFromHash()));
-      show(indexFromHash());
-    </script>
-  </body>
-</html>
-"""
+def _clean_llm_output(content: str) -> str:
+    """Strip markdown code fences and leading/trailing whitespace."""
+    content = content.strip()
+    if content.startswith("```"):
+        first_newline = content.find("\n")
+        content = content[first_newline + 1 :] if first_newline != -1 else content[3:]
+    if content.endswith("```"):
+        content = content[:-3]
+    return content.strip()
 
 
 def generate_slides(
@@ -418,55 +183,103 @@ def generate_slides(
     model: str = DEFAULT_MODEL,
     slide_dir: str | None = None,
     slide_count: int = DEFAULT_SLIDE_COUNT,
+    template_name: str | None = None,
     timeout: int = 90,
+    html_path: str | None = None,
 ) -> dict[str, Any]:
     prompt = _normalize_prompt(prompt)
     slide_count = _normalize_slide_count(slide_count)
+    validated_template = _validate_template_name(template_name)
+
     resolved_key = api_key.strip()
     if not resolved_key:
         raise SlideGenerationError("api_key cannot be empty.")
 
+    template = _load_template(validated_template)
+    system_prompt = _build_system_prompt(template)
+
+    if html_path:
+        existing_path = Path(html_path)
+        if not existing_path.is_absolute():
+            existing_path = REPO_ROOT / existing_path
+        if not existing_path.exists():
+            raise SlideGenerationError(f"Existing HTML not found: {html_path}")
+        existing_slides = _extract_slides_from_html(
+            existing_path.read_text(encoding="utf-8")
+        )
+        user_prompt = (
+            f"Here are the current slide sections of an existing deck:\n\n"
+            f"{existing_slides}\n\n"
+            f"Modification request: {prompt}\n\n"
+            f"Output the complete updated set of <section> elements, keeping unchanged slides "
+            f"as-is and applying the requested modifications."
+        )
+    else:
+        user_prompt = (
+            f"Create a slide deck with exactly {slide_count} slides.\n"
+            f"Topic/Request: {prompt}\n\n"
+            f"Output only the <section> elements."
+        )
+
     client = OpenAI(api_key=resolved_key, base_url=base_url)
-    user_prompt = (
-        f"Create a standalone slide deck outline with exactly {slide_count} slides.\n"
-        f"Keep each slide concise and presentation-ready.\n"
-        f"Request:\n{prompt}"
-    )
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": SLIDE_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=max(600, slide_count * 220),
+            max_tokens=max(4000, slide_count * 800),
             timeout=max(timeout, 1),
         )
     except Exception as exc:
-        raise SlideGenerationError(f"Slide outline request failed: {exc}") from exc
+        raise SlideGenerationError(f"Slide generation request failed: {exc}") from exc
 
     content = response.choices[0].message.content or ""
-    outline = _normalize_outline(try_load_json(content), slide_count)
-    html_text = render_slides_html(outline["title"], outline["slides"])
+    slides_html = _clean_llm_output(content)
 
-    slide_root = resolve_slide_root(slide_dir)
-    slide_root.mkdir(parents=True, exist_ok=True)
-    html_path = slide_root / _file_name(outline["title"], prompt)
-    html_path.write_text(html_text, encoding="utf-8")
+    if not slides_html or "<section" not in slides_html:
+        raise SlideGenerationError("LLM did not generate valid slide HTML sections.")
+
+    actual_count = len(re.findall(r"<section\b", slides_html))
+    title = _extract_title_from_html(slides_html) or prompt[:40]
+
+    prefix = _fix_slide_count_in_prefix(template["prefix"], actual_count)
+    suffix = _fix_slide_count_in_suffix(template["suffix"], actual_count)
+    final_html = prefix + slides_html + suffix
+
+    if html_path:
+        output_path = Path(html_path)
+        if not output_path.is_absolute():
+            output_path = REPO_ROOT / output_path
+    else:
+        slug = _title_slug(title, prompt)
+        slide_root = resolve_slide_root(slide_dir)
+        output_dir = slide_root / slug
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "index.html"
+
+    output_path.write_text(final_html, encoding="utf-8")
+
+    try:
+        relative_path = output_path.resolve().relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        relative_path = output_path.resolve()
 
     return {
-        "title": outline["title"],
-        "slide_count": slide_count,
-        "html_path": str(html_path),
+        "title": title,
+        "slide_count": actual_count,
+        "html_path": str(relative_path),
+        "template_name": validated_template,
     }
 
 
 __all__ = [
     "DEFAULT_SLIDE_COUNT",
     "DEFAULT_SLIDE_DIR",
+    "DEFAULT_TEMPLATE_NAME",
     "MAX_SLIDE_COUNT",
     "SlideGenerationError",
     "generate_slides",
-    "render_slides_html",
     "resolve_slide_root",
 ]

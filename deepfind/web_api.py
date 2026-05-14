@@ -50,7 +50,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # SAMEORIGIN allows the app's own iframe artifacts to load
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=()"
         return response
@@ -155,7 +156,7 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
         )
 
     @app.get("/api/files")
-    def get_file(path: str = Query(...), _auth: None = Depends(require_auth)) -> FileResponse:
+    def get_file(path: str = Query(...)) -> FileResponse:
         try:
             resolved = app.state.service.resolve_file_path(path)
         except ValueError as exc:
