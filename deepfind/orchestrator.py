@@ -103,8 +103,8 @@ _TRACKING_QUERY_KEYS = frozenset(
     }
 )
 _ALLOWED_CONFIDENCE = frozenset({"high", "medium", "low"})
-_DEFAULT_MAX_TOKENS = 64000
-_LONG_REPORT_LEAD_MAX_TOKENS = 128000
+_DEFAULT_MAX_TOKENS = 32000
+_LONG_REPORT_LEAD_MAX_TOKENS = 65000
 _REFERENCE_SECTION_FRAGMENT_RE = re.compile(
     r"(?im)^\s{0,3}(?:#{1,6}\s*)?(?:ref|refe|refer|refere|referen|referenc|reference|references)\s*$"
 )
