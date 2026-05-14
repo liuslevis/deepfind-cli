@@ -9,3 +9,4 @@ web/dist/
 web/.vite/
 web/coverage/
 web/*.tsbuildinfo
+slide

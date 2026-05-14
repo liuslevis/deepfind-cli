@@ -7,6 +7,7 @@ import { checkHealth, createChat, deleteChat, getChat, getAuthToken, listChats, 
 import type {
   ActivityPhase,
   ActivitySummary,
+  ArtifactLink,
   CitationLink,
   ChatMode,
   LocalModelInfo,
@@ -943,6 +944,57 @@ function CollapsibleSection({
   );
 }
 
+function SlidesArtifact({ artifact }: { artifact: ArtifactLink }) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      const isMainlyVertical = Math.abs(e.deltaY) >= Math.abs(e.deltaX);
+      if (!isMainlyVertical) return;
+
+      // Prevent the parent page from scrolling vertically
+      e.preventDefault();
+
+      // Translate vertical wheel to left/right arrow keys inside the iframe
+      const iframe = el.querySelector("iframe");
+      const iframeDoc = iframe?.contentDocument;
+      if (iframeDoc) {
+        const key = e.deltaY > 0 ? "ArrowRight" : "ArrowLeft";
+        iframeDoc.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      }
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="artifact-slides-bubble">
+      <iframe
+        className="artifact-slides-iframe"
+        src={artifact.url}
+        title={artifact.label}
+        sandbox="allow-scripts allow-same-origin"
+      />
+      <div className="artifact-slides-bar">
+        <strong>{artifact.label}</strong>
+        <span className="artifact-card__path">{artifact.path}</span>
+        <div className="artifact-slides-actions">
+          <a href={artifact.url} target="_blank" rel="noreferrer" className="artifact-slides-btn">
+            Open
+          </a>
+          <a href={artifact.url} download={artifact.label} className="artifact-slides-btn artifact-slides-btn--download">
+            ↓ Download
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const MessageCard = memo(function MessageCard({ message }: { message: ClientMessage }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
   const markdownBody = normalizeMermaidMarkdown(body);
@@ -1065,26 +1117,7 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
           {message.artifacts.map((artifact) => (
             <div key={artifact.url} className={artifact.kind === "slides" ? "artifact-slides-wrapper" : ""}>
               {artifact.kind === "slides" ? (
-                <div className="artifact-slides-bubble">
-                  <iframe
-                    className="artifact-slides-iframe"
-                    src={artifact.url}
-                    title={artifact.label}
-                    sandbox="allow-scripts allow-same-origin"
-                  />
-                  <div className="artifact-slides-bar">
-                    <strong>{artifact.label}</strong>
-                    <span className="artifact-card__path">{artifact.path}</span>
-                    <div className="artifact-slides-actions">
-                      <a href={artifact.url} target="_blank" rel="noreferrer" className="artifact-slides-btn">
-                        Open
-                      </a>
-                      <a href={artifact.url} download={artifact.label} className="artifact-slides-btn artifact-slides-btn--download">
-                        ↓ Download
-                      </a>
-                    </div>
-                  </div>
-                </div>
+                <SlidesArtifact artifact={artifact} />
               ) : (
                 <a className="artifact-card" href={artifact.url} target="_blank" rel="noreferrer">
                   {artifact.kind === "image" ? (
