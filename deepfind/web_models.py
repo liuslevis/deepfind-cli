@@ -135,6 +135,7 @@ class SendMessageRequest(BaseModel):
     content: str = Field(..., max_length=20000)
     mode: ChatMode
     model_target: ModelTarget = "qwen"
+    deep_mode: bool = False
 
     @field_validator("model_target", mode="before")
     @classmethod

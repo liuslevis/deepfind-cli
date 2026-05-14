@@ -20,7 +20,7 @@ class FakeApp:
         self.progress = progress
         self.should_fail = should_fail
 
-    def _run_turn_detailed(self, *, query, transcript, num_agent, max_iter_per_agent):
+    def _run_turn_detailed(self, *, query, transcript, num_agent, max_iter_per_agent, long_report_mode: bool = False):
         self.progress.run_started(query, num_agent, max_iter_per_agent)
         self.progress.plan_ready(["core facts"])
         self.progress.worker_started("sub-1", "core facts")

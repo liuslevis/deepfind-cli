@@ -1129,6 +1129,39 @@ img {
   background: rgba(132, 244, 139, 0.1);
 }
 
+.deep-toggle__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 72px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(16, 20, 27, 0.85);
+  color: var(--text);
+  font-size: 0.95rem;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.deep-toggle__button:hover,
+.deep-toggle__button:focus-visible {
+  border-color: rgba(255, 200, 80, 0.3);
+  background: rgba(255, 200, 80, 0.1);
+}
+
+.deep-toggle__button:focus-visible {
+  outline: 2px solid rgba(255, 200, 80, 0.4);
+  outline-offset: 2px;
+}
+
+.deep-toggle__button--active {
+  border-color: rgba(255, 185, 40, 0.5);
+  background: rgba(255, 185, 40, 0.15);
+  color: rgb(255, 210, 100);
+}
+
 .mode-select__button:focus-visible {
   outline: 2px solid rgba(93, 225, 255, 0.4);
   outline-offset: 2px;
@@ -1444,10 +1477,10 @@ img {
 
   .composer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     grid-template-areas:
-      "input model send"
-      "mode mode mode";
+      "input deep model send"
+      "mode mode mode mode";
     align-items: center;
     gap: 10px 12px;
     padding: 12px;
@@ -1474,6 +1507,12 @@ img {
   .model-toggle__button {
     grid-area: model;
     min-width: 78px;
+    height: 42px;
+  }
+
+  .deep-toggle__button {
+    grid-area: deep;
+    min-width: 68px;
     height: 42px;
   }
 

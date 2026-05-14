@@ -249,7 +249,7 @@ class DeepFindWebService:
     def delete_chat(self, chat_id: str) -> None:
         self.store.delete_chat(chat_id)
 
-    def stream_message(self, chat_id: str, content: str, mode: ChatMode, model_target: ModelTarget = "qwen"):
+    def stream_message(self, chat_id: str, content: str, mode: ChatMode, model_target: ModelTarget = "qwen", *, deep_mode: bool = False):
         query = content.strip()
         if not query:
             raise ValueError("message content must not be empty")
@@ -299,6 +299,7 @@ class DeepFindWebService:
                         transcript=prior_transcript,
                         num_agent=mode_to_agent_count(mode),
                         max_iter_per_agent=self.max_iter_per_agent,
+                        long_report_mode=deep_mode,
                     )
                     answer = _overview_from_envelope(envelope)
                 else:
@@ -307,6 +308,7 @@ class DeepFindWebService:
                         transcript=prior_transcript,
                         num_agent=mode_to_agent_count(mode),
                         max_iter_per_agent=self.max_iter_per_agent,
+                        long_report_mode=deep_mode,
                     )
                 turn_result = self._build_turn_result(
                     answer=answer,

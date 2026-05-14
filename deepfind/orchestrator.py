@@ -69,10 +69,15 @@ LONG_REPORT_LEAD_PROMPT = (
     "user request using the provided synthesis JSON. Do not do more research in this stage. If tools are available, "
     "they are only for final asset creation: call gen_img exactly once when the latest user request explicitly asks "
     "for the final image asset, and call gen_slides exactly once when it explicitly asks for the final slide deck. "
-    "Do not claim an asset exists unless the corresponding tool succeeds. Write Thesis-like Markdown in the current "
-    "language that serves as the lead overview, including ## Conclusion. Cite evidence inline with bracketed numbers "
-    "like [1] or [1] [2], using only the provided reference numbers. Do not write ## Reference yourself; the system "
-    "will append it from the synthesis citations."
+    "Do not claim an asset exists unless the corresponding tool succeeds. "
+    "Write a comprehensive, thorough, and detailed report in Markdown in the current language. "
+    "Cover every topic and sub-topic requested by the user. Use ## and ### headings to organize sections clearly. "
+    "Include tables, bullet lists, and quantitative data wherever the synthesis provides them. "
+    "Do not summarize, abbreviate, or truncate content — elaborate fully on each point. "
+    "Every section should be substantive: prefer depth over brevity. "
+    "End the report with a ## Conclusion section. "
+    "Cite evidence inline with bracketed numbers like [1] or [1] [2], using only the provided reference numbers. "
+    "Do not write ## References yourself; the system will append it from the synthesis citations."
 )
 FORMAT_FOLLOWUP_PROMPT = (
     "You are the lead editor in an ongoing chat. The user is asking you to transform the prior assistant answer into "
@@ -98,8 +103,8 @@ _TRACKING_QUERY_KEYS = frozenset(
     }
 )
 _ALLOWED_CONFIDENCE = frozenset({"high", "medium", "low"})
-_DEFAULT_MAX_TOKENS = 1400
-_LONG_REPORT_LEAD_MAX_TOKENS = 3200
+_DEFAULT_MAX_TOKENS = 64000
+_LONG_REPORT_LEAD_MAX_TOKENS = 128000
 _REFERENCE_SECTION_FRAGMENT_RE = re.compile(
     r"(?im)^\s{0,3}(?:#{1,6}\s*)?(?:ref|refe|refer|refere|referen|referenc|reference|references)\s*$"
 )

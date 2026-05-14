@@ -1145,6 +1145,7 @@ MessageCard.displayName = "MessageCard";
 export default function App() {
   const [mode, setMode] = useState<ChatMode>("fast");
   const [modelTarget, setModelTarget] = useState<ModelTarget>(DEFAULT_MODEL_TARGET);
+  const [deepMode, setDeepMode] = useState(false);
   const [composerValue, setComposerValue] = useState("");
   const [localModel, setLocalModel] = useState<LocalModelInfo | null>(null);
   const [chats, setChats] = useState<WebChatSummary[]>([]);
@@ -1659,7 +1660,7 @@ export default function App() {
 
       await streamChatMessage(
         chat.id,
-        { content, mode, model_target: currentModelTarget },
+        { content, mode, model_target: currentModelTarget, deep_mode: deepMode },
         (progressEvent) => {
           appendActivity(chat.id, assistantMessage.id, progressEvent);
           if (progressEvent.type === "answer_delta") {
@@ -1990,6 +1991,16 @@ export default function App() {
                 </div>
               ) : null}
             </div>
+            <button
+              type="button"
+              className={`deep-toggle__button${deepMode ? " deep-toggle__button--active" : ""}`}
+              aria-label="Deep mode"
+              aria-pressed={deepMode}
+              title={deepMode ? "Deep mode on: longer, more comprehensive reports" : "Deep mode off"}
+              onClick={() => setDeepMode((v) => !v)}
+            >
+              Deep
+            </button>
             <button
               type="button"
               className={`model-toggle__button model-toggle__button--${effectiveModelTarget}`}

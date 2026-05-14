@@ -132,7 +132,7 @@ export async function deleteChat(chatId: string): Promise<void> {
 
 export async function streamChatMessage(
   chatId: string,
-  payload: { content: string; mode: ChatMode; model_target: ModelTarget },
+  payload: { content: string; mode: ChatMode; model_target: ModelTarget; deep_mode?: boolean },
   onEvent: (event: ProgressEvent) => void,
   options?: { signal?: AbortSignal },
 ): Promise<void> {
