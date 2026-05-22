@@ -8,7 +8,7 @@ from dataclasses import replace
 from itertools import count
 from unittest.mock import patch
 
-from deepfind.config import Settings
+from deepfind.config import Settings, DEFAULT_LOCAL_MODEL
 from deepfind.cli import main
 
 
@@ -55,7 +55,7 @@ class CliTests(unittest.TestCase):
         session.ask_detailed.assert_not_called()
 
     def test_main_gpu_uses_local_settings(self) -> None:
-        base_settings = Settings(api_key="", local_model="qwen3.5:9b")
+        base_settings = Settings(api_key="", local_model=DEFAULT_LOCAL_MODEL)
 
         with (
             patch("deepfind.cli.Settings.from_env", return_value=base_settings),

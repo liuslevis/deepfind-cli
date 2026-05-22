@@ -22,7 +22,7 @@ class LocalRuntimeTests(unittest.TestCase):
         self.assertIn("No NVIDIA GPU", status.reason)
 
     def test_detect_local_model_requires_running_ollama(self) -> None:
-        settings = Settings(api_key="", local_model="qwen3.5:9b")
+        settings = Settings(api_key="", local_model="qwen3.5:9B")
 
         with (
             patch("deepfind.local_runtime.detect_gpu") as detect_gpu,
@@ -36,7 +36,7 @@ class LocalRuntimeTests(unittest.TestCase):
         self.assertIn("Ollama is not reachable", status.reason)
 
     def test_detect_local_model_requires_loaded_model(self) -> None:
-        settings = Settings(api_key="", local_model="qwen3.5:9b")
+        settings = Settings(api_key="", local_model="qwen3.5:9B")
 
         with (
             patch("deepfind.local_runtime.detect_gpu") as detect_gpu,
@@ -49,11 +49,11 @@ class LocalRuntimeTests(unittest.TestCase):
         self.assertIn("is not loaded in Ollama", status.reason)
 
     def test_detect_local_model_accepts_ollama_runtime(self) -> None:
-        settings = Settings(api_key="", local_model="qwen3.5:9b")
+        settings = Settings(api_key="", local_model="qwen3.5:9B")
 
         with (
             patch("deepfind.local_runtime.detect_gpu") as detect_gpu,
-            patch("deepfind.local_runtime.list_ollama_models", return_value=["qwen3.5:9b"]),
+            patch("deepfind.local_runtime.list_ollama_models", return_value=["qwen3.5:9B"]),
         ):
             detect_gpu.return_value = type("Gpu", (), {"available": True, "name": "RTX", "memory_total_mb": 16384})()
             status = detect_local_model(settings)

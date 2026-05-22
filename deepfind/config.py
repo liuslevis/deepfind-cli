@@ -18,7 +18,7 @@ DEFAULT_MIMO_MODEL = "mimo-v2.5-pro"
 DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 DEFAULT_MINIMAX_MODEL = "MiniMax-M2.7"
 DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
-DEFAULT_LOCAL_MODEL = "qwen3.5:latest"
+DEFAULT_LOCAL_MODEL = "qwen3.5:9B"  # Change this to upgrade (e.g., "qwen3.6:27B")
 DEFAULT_LOCAL_API_KEY = "ollama"
 
 

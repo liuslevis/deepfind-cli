@@ -248,7 +248,7 @@ describe("App", () => {
     const localModel = {
       available: true,
       backend: "ollama",
-      model: "qwen3.5:9b",
+      model: "qwen3.5:9B",
       base_url: "http://127.0.0.1:11434/v1",
       reason: "",
       gpu: {
@@ -350,7 +350,7 @@ describe("App", () => {
     const localModel = {
       available: true,
       backend: "ollama",
-      model: "qwen3.5:9b",
+      model: "qwen3.5:9B",
       base_url: "http://127.0.0.1:11434/v1",
       reason: "",
       gpu: {
