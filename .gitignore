@@ -1,0 +1,13 @@
+__pycache__/
+.DS_Store
+*.py[cod]
+.venv/
+.env
+tmp/
+web/node_modules/
+web/dist/
+web/.vite/
+web/coverage/
+web/*.tsbuildinfo
+slide
+audio
