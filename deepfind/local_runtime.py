@@ -96,24 +96,18 @@ def list_ollama_models(base_url: str) -> list[str]:
 
 def detect_local_model(settings: Settings) -> LocalModelStatus:
     gpu = detect_gpu()
-    if not gpu.available:
-        return LocalModelStatus(
-            available=False,
-            model=settings.local_model,
-            base_url=settings.local_base_url,
-            gpu=gpu,
-            reason="No NVIDIA GPU was detected.",
-        )
 
+    # Check if model name is configured
     if not settings.local_model.strip():
         return LocalModelStatus(
             available=False,
             model=settings.local_model,
             base_url=settings.local_base_url,
             gpu=gpu,
-            reason="Set DEEPFIND_LOCAL_MODEL to an Ollama model name before enabling GPU mode.",
+            reason="Set DEEPFIND_LOCAL_MODEL to an Ollama model name before enabling local mode.",
         )
 
+    # Try to connect to Ollama (works on both NVIDIA GPU systems and Mac)
     try:
         model_names = list_ollama_models(settings.local_base_url)
     except httpx.HTTPError:
@@ -122,7 +116,7 @@ def detect_local_model(settings: Settings) -> LocalModelStatus:
             model=settings.local_model,
             base_url=settings.local_base_url,
             gpu=gpu,
-            reason=f"Ollama is not reachable at {settings.local_base_url}.",
+            reason=f"Ollama is not reachable at {settings.local_base_url}. Make sure Ollama is running.",
         )
 
     if settings.local_model not in model_names:
@@ -131,7 +125,7 @@ def detect_local_model(settings: Settings) -> LocalModelStatus:
             model=settings.local_model,
             base_url=settings.local_base_url,
             gpu=gpu,
-            reason=f"Model {settings.local_model} is not loaded in Ollama.",
+            reason=f"Model {settings.local_model} is not loaded in Ollama. Available models: {', '.join(model_names)}",
         )
 
     return LocalModelStatus(

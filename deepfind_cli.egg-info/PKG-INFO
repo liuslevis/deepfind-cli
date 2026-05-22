@@ -82,7 +82,7 @@ Install Playwright for `browser_fetch` (renders pages in a real Chrome to handle
 
 ```bash
 uv sync --extra browser
-playwright install
+uv run playwright install
 ```
 
 When a site still shows a verification page in `browser_fetch`, retry with `headless=false`.
@@ -92,6 +92,7 @@ Pre-download the ASR model on Windows (PowerShell) to avoid first-run delay:
 
 ```bash
 hf download Qwen/Qwen3-ASR-1.7B --repo-type model
+hf download mlx-community/whisper-large-v3-mlx --repo-type model
 ```
 
 ```bash
