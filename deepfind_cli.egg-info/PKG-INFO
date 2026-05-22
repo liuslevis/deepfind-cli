@@ -27,7 +27,7 @@ Requires-Dist: transformers>=4.37.0; extra == "media"
 
 A multi-agent research tool in both Web App and CLI, which can:
 
-- Search (no limit) in Google / Brave / Xiaohongshu via opencli
+- Search (no limit) in Google / Baidu / Xiaohongshu via opencli
 - Search BOSS Zhipin jobs via opencli
 - Follow up on BOSS Zhipin job chats via opencli
 - Watch video in Bilibili / YouTube and summarize via opencli

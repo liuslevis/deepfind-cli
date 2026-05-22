@@ -78,7 +78,7 @@ class TestMLXWhisperLoadModel(unittest.TestCase):
             backend, model, processor, device = load_model("mlx-whisper:large-v3")
 
             self.assertEqual(backend, "mlx_whisper")
-            self.assertEqual(model, "large-v3")  # Model size extracted
+            self.assertEqual(model, "large-v3-mlx")  # Model size extracted
             self.assertIsNone(processor)
             self.assertEqual(device, "mps")
 

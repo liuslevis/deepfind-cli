@@ -50,7 +50,7 @@ from .xhs_transcribe import (
     transcribe_xhs_video,
 )
 
-_WEB_SEARCH_ENGINES = frozenset({"google", "brave"})
+_WEB_SEARCH_ENGINES = frozenset({"google", "baidu", "bing"})
 _OPENCLI_REGISTRY_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
 _OPENCLI_REGISTRY_LOCK = Lock()
 _XHS_TOPIC_TAG_RE = re.compile(r"#[^#\n]+#")

@@ -277,7 +277,10 @@ def transcribe_audio(audio_path: Path, backend: str, model: Any, processor: Any,
         # MLX Whisper expects full HF repo path like "mlx-community/whisper-large-v3"
         model_size = model
         hf_repo = f"mlx-community/whisper-{model_size}"
-        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=hf_repo)
+
+        # Try to use cached model first
+        cached_path = resolve_model_source(hf_repo)
+        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=cached_path)
         return result.get("text", "").strip()
 
     try:
