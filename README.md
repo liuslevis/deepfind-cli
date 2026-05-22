@@ -86,29 +86,19 @@ twitter whoami
 
 ## Env
 
-The CLI auto-loads `.env` from the repo root.
+Copy `.env.example` to `.env` and add your API key:
 
 ```bash
 cp .env.example .env
+# Edit .env and fill in QWEN_API_KEY (required)
+# Other services are optional - see # TODO comments in the file
 ```
 
-Minimal `.env`:
+**Required**: Only `QWEN_API_KEY` ([get it here](https://dashscope.console.aliyun.com/))
 
-```bash
-QWEN_API_KEY=...
-QWEN_MODEL_NAME=qwen3-max
-```
+**Optional**: MiMo, MiniMax, Google (for image gen), Ollama (for local GPU)
 
-Optional Xiaomi MiMo / Minimax / Google remote model:
-
-```bash
-MIMO_API_KEY=...
-
-MINIMAX_API_KEY=...
-
-GOOGLE_NANO_BANANA_API_KEY=...
-GOOGLE_NANO_BANANA_MODEL=gemini-3.1-flash-image-preview
-```
+All settings are documented in `.env.example` with helpful comments and defaults.
 
 ## Run
 
