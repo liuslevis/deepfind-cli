@@ -995,6 +995,83 @@ function SlidesArtifact({ artifact }: { artifact: ArtifactLink }) {
   );
 }
 
+async function writeTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document === "undefined" || typeof document.execCommand !== "function") {
+    throw new Error("Clipboard API unavailable");
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.append(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  const copied = document.execCommand("copy");
+  textarea.remove();
+
+  if (!copied) {
+    throw new Error("Clipboard copy failed");
+  }
+}
+
+function CopyMarkdownButton({ text }: { text: string }) {
+  const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current !== null) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
+  async function handleCopy() {
+    if (!text.trim()) {
+      return;
+    }
+
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+
+    try {
+      await writeTextToClipboard(text);
+      setStatus("copied");
+    } catch {
+      setStatus("error");
+    }
+
+    resetTimerRef.current = window.setTimeout(() => {
+      setStatus("idle");
+      resetTimerRef.current = null;
+    }, 2000);
+  }
+
+  const label = status === "copied" ? "Copied" : status === "error" ? "Copy failed" : "Copy";
+
+  return (
+    <button
+      type="button"
+      className={`message__copy-button${status === "copied" ? " message__copy-button--success" : ""}`}
+      onClick={() => void handleCopy()}
+      aria-label="Copy markdown"
+      title="Copy markdown"
+    >
+      {label}
+    </button>
+  );
+}
+
 const MessageCard = memo(function MessageCard({ message }: { message: ClientMessage }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
   const markdownBody = normalizeMermaidMarkdown(body);
@@ -1005,6 +1082,7 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
   const referenceGroups = citations.length > 0 ? groupCitations(citations) : groupSources(message.sources);
   const referenceCount = referenceGroups.reduce((total, group) => total + group.links.length, 0);
   const keyPoints = message.key_points ?? [];
+  const copyableMarkdown = message.role === "assistant" ? message.content.trim() : "";
 
   return (
     <article
@@ -1019,6 +1097,12 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
         ) : null}
         {message.role === "assistant" && messageModelLabel(message.model_target, message.model_label) ? (
           <span className="message__mode">{messageModelLabel(message.model_target, message.model_label)}</span>
+        ) : null}
+        {message.role === "assistant" && copyableMarkdown ? (
+          <>
+            <span className="message__meta-spacer" />
+            <CopyMarkdownButton text={copyableMarkdown} />
+          </>
         ) : null}
       </div>
 

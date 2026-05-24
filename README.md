@@ -50,7 +50,10 @@ uv sync --extra media --extra browser --extra local-llm --extra-index-url https:
 Install `opencli` for web search and video download:
 
 ```bash
-npm install -g @jackwener/opencli
+git clone https://github.com/liuslevis/opencli
+cd opencli
+npm install -g .
+# drag ./extension to chrome extension
 ```
 
 Install Playwright for `browser_fetch` (renders pages in a real Chrome to handle JS/cookies):

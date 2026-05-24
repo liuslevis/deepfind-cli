@@ -684,6 +684,70 @@ describe("App", () => {
     }
   });
 
+  it("copies assistant markdown from the response card", async () => {
+    const clipboard = {
+      writeText: vi.fn(async () => undefined),
+    };
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: clipboard,
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_copy",
+              title: "Copy",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "Markdown answer",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_copy" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_copy",
+            title: "Copy",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [
+              {
+                id: "msg_1",
+                role: "assistant",
+                content: "**Bold**\n\n- item",
+                created_at: "2026-03-22T00:02:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("Bold");
+    await userEvent.click(screen.getByRole("button", { name: "Copy markdown" }));
+
+    expect(clipboard.writeText).toHaveBeenCalledWith("**Bold**\n\n- item");
+    expect(screen.getByRole("button", { name: "Copy markdown" })).toHaveTextContent("Copied");
+  });
+
   it("toggles the mobile chat drawer and closes it after selecting a chat", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();

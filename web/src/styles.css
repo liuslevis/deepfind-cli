@@ -440,12 +440,32 @@ img {
   font-weight: 700;
 }
 
+.message__meta-spacer {
+  flex: 1 1 auto;
+}
+
 .message__mode {
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(93, 225, 255, 0.08);
   font-size: 0.82rem;
+}
+
+.message__copy-button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(93, 225, 255, 0.08);
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.message__copy-button--success {
+  border-color: rgba(93, 225, 255, 0.32);
+  background: rgba(93, 225, 255, 0.16);
 }
 
 .message__body {
