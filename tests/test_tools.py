@@ -134,9 +134,11 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("bili_transcribe_full", names)
         self.assertIn("youtube_transcribe", names)
         self.assertIn("youtube_transcribe_full", names)
+        self.assertIn("xhs_read_cmt", names)
         self.assertIn("xhs_transcribe_full", names)
         self.assertEqual(names.count("youtube_transcribe"), 1)
         self.assertEqual(names.count("youtube_transcribe_full"), 1)
+        self.assertEqual(names.count("xhs_read_cmt"), 1)
         self.assertEqual(names.count("xhs_transcribe_full"), 1)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
@@ -1170,6 +1172,67 @@ class ToolsetTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "invalid_note")
         self.assertEqual(run_mock.call_args.args[0], ["/usr/bin/xhs", "read", "6a169bc80000000007025c7e", "--xsec-token", "TOKEN", "--json"])
+
+    def test_xhs_read_cmt_normalizes_comment_list(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"ok":true,"schema_version":"1","data":{"xsec_token":"TOKEN","cursor":"cursor-1","has_more":true,'
+                '"time":1779876676000,"comments":[{"id":"comment-1","note_id":"note-1","content":"Top comment",'
+                '"like_count":"5","create_time":1779876676000,"ip_location":"北京","sub_comment_count":"1",'
+                '"sub_comment_has_more":false,"sub_comment_cursor":"sub-cursor","show_tags":["is_author"],'
+                '"user_info":{"nickname":"Reader","user_id":"user-1","xsec_token":"USER_TOKEN"},'
+                '"sub_comments":[{"id":"sub-1","note_id":"note-1","content":"Reply","like_count":"2",'
+                '"create_time":1779877608000,"ip_location":"上海","user_info":{"nickname":"Author","user_id":"user-2"}}]}]}}'
+            ),
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                result = toolset.xhs_read_cmt("note-1")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "xhs_read_cmt")
+        data = result["data"]
+        self.assertEqual(data["note_id"], "note-1")
+        self.assertEqual(data["cursor"], "cursor-1")
+        self.assertTrue(data["has_more"])
+        self.assertTrue(data["xsec_token_present"])
+        self.assertEqual(data["top_comment_count"], 1)
+        self.assertEqual(data["inline_sub_comment_count"], 1)
+        comment = data["comments"][0]
+        self.assertEqual(comment["content"], "Top comment")
+        self.assertEqual(comment["author"], "Reader")
+        self.assertEqual(comment["like_count"], 5)
+        self.assertEqual(comment["tags"], ["is_author"])
+        self.assertEqual(comment["sub_comments"][0]["content"], "Reply")
+        self.assertNotIn("xsec_token", comment)
+
+    def test_xhs_read_cmt_passes_cursor_token_and_all_flag(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(
+            returncode=0,
+            stdout='{"ok":true,"schema_version":"1","data":{"comments":[],"cursor":"","has_more":false}}',
+            stderr="",
+        )
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload) as run_mock:
+                result = toolset.xhs_read_cmt("note-1", xsec_token="TOKEN", cursor="CURSOR", fetch_all=True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            run_mock.call_args.args[0],
+            ["/usr/bin/xhs", "comments", "note-1", "--cursor", "CURSOR", "--xsec-token", "TOKEN", "--all", "--json"],
+        )
+
+    def test_xhs_read_cmt_empty_payload_without_token_requires_xsec_token(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(returncode=0, stdout='{"ok":true,"schema_version":"1","data":{}}', stderr="")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                result = toolset.xhs_read_cmt("https://www.xiaohongshu.com/explore/note-1")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["tool"], "xhs_read_cmt")
+        self.assertEqual(result["error_code"], "xsec_token_required")
 
     def test_xhs_transcribe_full_video_success_payload(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

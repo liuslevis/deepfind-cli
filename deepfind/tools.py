@@ -148,6 +148,18 @@ def _xhs_read_args(ref: str, xsec_token: str) -> list[str]:
     return args
 
 
+def _xhs_comments_args(ref: str, xsec_token: str, cursor: str, fetch_all: bool) -> list[str]:
+    args = ["comments", ref]
+    if cursor:
+        args.extend(["--cursor", cursor])
+    if xsec_token:
+        args.extend(["--xsec-token", xsec_token])
+    if fetch_all:
+        args.append("--all")
+    args.append("--json")
+    return args
+
+
 def _xhs_payload(data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {}
@@ -411,6 +423,74 @@ def _xhs_note(data: Any) -> dict[str, Any]:
     note["updated_date"] = note["updated_at"].split(" ", 1)[0] if note["updated_at"] else ""
     note["content_text"] = _xhs_content_text(note)
     return note
+
+
+def _xhs_comment(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return {}
+    user = data.get("user_info") if isinstance(data.get("user_info"), dict) else {}
+    create_time_ms = _xhs_int(data.get("create_time"))
+    comment = {
+        "id": str(data.get("id") or "").strip(),
+        "note_id": str(data.get("note_id") or "").strip(),
+        "content": _xhs_text(data.get("content")),
+        "author": _xhs_text(user.get("nickname")),
+        "author_id": str(user.get("user_id") or "").strip(),
+        "ip_location": _xhs_text(data.get("ip_location")),
+        "like_count": _xhs_int(data.get("like_count")),
+        "created_at_ms": create_time_ms,
+        "created_at": _xhs_format_timestamp_ms(create_time_ms),
+        "sub_comment_count": _xhs_int(data.get("sub_comment_count")),
+        "sub_comment_has_more": bool(data.get("sub_comment_has_more")),
+        "sub_comment_cursor": str(data.get("sub_comment_cursor") or "").strip(),
+        "tags": [str(tag).strip() for tag in data.get("show_tags", []) if str(tag).strip()]
+        if isinstance(data.get("show_tags"), list)
+        else [],
+        "sub_comments": [],
+    }
+    sub_comments = data.get("sub_comments")
+    if isinstance(sub_comments, list):
+        comment["sub_comments"] = [
+            sub_comment
+            for sub_comment in (_xhs_comment(item) for item in sub_comments)
+            if sub_comment
+        ]
+    return comment
+
+
+def _xhs_comments(data: Any, ref: str) -> dict[str, Any]:
+    payload = _xhs_payload(data)
+    if "comments" not in payload:
+        return {}
+    raw_comments = payload.get("comments")
+    comments = []
+    if isinstance(raw_comments, list):
+        comments = [comment for comment in (_xhs_comment(item) for item in raw_comments) if comment]
+    note_id = ""
+    for comment in comments:
+        note_id = str(comment.get("note_id") or "").strip()
+        if note_id:
+            break
+    if not note_id:
+        note_id = _xhs_ref(ref)[0]
+        if "xiaohongshu.com" in note_id:
+            note_id = urlparse(note_id).path.rstrip("/").split("/")[-1]
+    inline_sub_comments = sum(
+        len(comment.get("sub_comments", []))
+        for comment in comments
+        if isinstance(comment.get("sub_comments"), list)
+    )
+    return {
+        "ref": ref,
+        "note_id": note_id,
+        "cursor": str(payload.get("cursor") or "").strip(),
+        "has_more": bool(payload.get("has_more")),
+        "fetched_at_ms": _xhs_int(payload.get("time")),
+        "top_comment_count": len(comments),
+        "inline_sub_comment_count": inline_sub_comments,
+        "xsec_token_present": bool(str(payload.get("xsec_token") or "").strip()),
+        "comments": comments,
+    }
 
 
 def _xhs_video_url(data: Any) -> str:
@@ -722,6 +802,7 @@ class Toolset:
             "boss_send": self.boss_send,
             "xhs_search": self.xhs_search,
             "xhs_read": self.xhs_read,
+            "xhs_read_cmt": self.xhs_read_cmt,
             "xhs_transcribe_full": self.xhs_transcribe_full,
             "xhs_search_user": self.xhs_search_user,
             "xhs_user": self.xhs_user,
@@ -952,6 +1033,22 @@ class Toolset:
                     "type": "object",
                     "properties": {
                         "ref": {"type": "string"},
+                        "xsec_token": {"type": "string"},
+                    },
+                    "required": ["ref"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "xhs_read_cmt",
+                "Read Xiaohongshu comments for one note by full URL or note ID. Pass xsec_token when the note URL requires it. Use fetch_all=true only when all top-level comments are needed.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "ref": {"type": "string"},
+                        "xsec_token": {"type": "string"},
+                        "cursor": {"type": "string"},
+                        "fetch_all": {"type": "boolean"},
                     },
                     "required": ["ref"],
                     "additionalProperties": False,
@@ -1771,6 +1868,36 @@ class Toolset:
                 "ref": resolved_ref,
                 "note": note,
             },
+        }
+
+    def xhs_read_cmt(
+        self,
+        ref: str,
+        xsec_token: str = "",
+        cursor: str = "",
+        fetch_all: bool = False,
+    ) -> dict[str, Any]:
+        resolved_ref, resolved_token, ref_error = _xhs_ref(ref, xsec_token)
+        if ref_error:
+            return _xhs_invalid_ref_response("xhs_read_cmt", ref, ref_error)
+
+        result = self._run(
+            self.settings.xhs_bin,
+            _xhs_comments_args(resolved_ref, resolved_token, cursor.strip(), fetch_all),
+            "xhs_read_cmt",
+        )
+        if not result.get("ok"):
+            return result
+
+        comments = _xhs_comments(result.get("data"), resolved_ref)
+        if not comments:
+            return _xhs_empty_note_response("xhs_read_cmt", resolved_ref, resolved_token)
+
+        return {
+            "ok": True,
+            "tool": "xhs_read_cmt",
+            "command": result.get("command", []),
+            "data": comments,
         }
 
     def xhs_transcribe_full(self, ref: str, xsec_token: str = "") -> dict[str, Any]:

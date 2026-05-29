@@ -291,7 +291,7 @@ curl http://127.0.0.1:8000/api/health
 
 - Lead planner can use tools before task split, usually with a `web_search -> web_fetch` flow on the most promising URLs.
 - If a page is blocked or requires JavaScript/cookies, use `browser_fetch` instead of `web_fetch`.
-- Sub-agents call local tools such as `web_search`, `web_fetch`, `browser_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `twitter_search`, `twitter_read`, `bili_transcribe`, `youtube_transcribe`, and `youtube_transcribe_full`.
+- Sub-agents call local tools such as `web_search`, `web_fetch`, `browser_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`, `xhs_read_cmt`, `twitter_search`, `twitter_read`, `bili_transcribe`, `youtube_transcribe`, and `youtube_transcribe_full`.
 - Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` (or `browser_fetch`) pass when evidence is weak or conflicting.
 - Lead final answer turns the synthesis into the user-facing response, and only uses asset tools for final image/slide requests.
 
