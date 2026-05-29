@@ -1140,6 +1140,37 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("Title: 美伊谈判破裂，一场没有赢家的博弈", note["content_text"])
         self.assertIn("Media type: video", note["content_text"])
 
+    def test_xhs_read_rejects_truncated_url_before_cli_call(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.subprocess.run") as run_mock:
+            result = toolset.xhs_read("https://www.xiaohongshu.com/explore/6a169bc8...")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["tool"], "xhs_read")
+        self.assertEqual(result["error_code"], "invalid_ref")
+        self.assertIn("truncated", result["error"])
+        run_mock.assert_not_called()
+
+    def test_xhs_read_empty_note_without_token_requires_xsec_token(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(returncode=0, stdout='{"ok":true,"schema_version":"1","data":{}}', stderr="")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload):
+                result = toolset.xhs_read("https://www.xiaohongshu.com/explore/6a169bc80000000007025c7e")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["tool"], "xhs_read")
+        self.assertEqual(result["error_code"], "xsec_token_required")
+        self.assertIn("xsec_token", result["error"])
+
+    def test_xhs_read_passes_explicit_xsec_token_to_cli(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(returncode=0, stdout='{"ok":true,"schema_version":"1","data":{}}', stderr="")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload) as run_mock:
+                result = toolset.xhs_read("6a169bc80000000007025c7e", xsec_token="TOKEN")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_note")
+        self.assertEqual(run_mock.call_args.args[0], ["/usr/bin/xhs", "read", "6a169bc80000000007025c7e", "--xsec-token", "TOKEN", "--json"])
+
     def test_xhs_transcribe_full_video_success_payload(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         payload = SimpleNamespace(
@@ -1178,6 +1209,27 @@ class ToolsetTests(unittest.TestCase):
             audio_dir=toolset.settings.audio_dir,
             timeout=toolset.settings.subprocess_timeout,
         )
+
+    def test_xhs_transcribe_full_rejects_truncated_url_before_cli_call(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.subprocess.run") as run_mock:
+            result = toolset.xhs_transcribe_full("https://www.xiaohongshu.com/explore/6a169bc8...")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["tool"], "xhs_transcribe_full")
+        self.assertEqual(result["error_code"], "invalid_ref")
+        self.assertIn("truncated", result["error"])
+        run_mock.assert_not_called()
+
+    def test_xhs_transcribe_full_uses_xsec_token_from_url(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        payload = SimpleNamespace(returncode=0, stdout='{"ok":true,"schema_version":"1","data":{}}', stderr="")
+        url = "https://www.xiaohongshu.com/explore/6a169bc80000000007025c7e?xsec_token=TOKEN"
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload) as run_mock:
+                result = toolset.xhs_transcribe_full(url)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_note")
+        self.assertEqual(run_mock.call_args.args[0], ["/usr/bin/xhs", "read", url, "--xsec-token", "TOKEN", "--json"])
 
     def test_xhs_transcribe_full_non_video_returns_note_content(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

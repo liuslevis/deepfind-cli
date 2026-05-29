@@ -60,27 +60,21 @@ Install Playwright for `browser_fetch` (renders pages in a real Chrome to handle
 
 ```bash
 uv sync --extra browser
-uv run playwright install
+playwright install
 ```
 
 When a site still shows a verification page in `browser_fetch`, retry with `headless=false`.
 Deepfind keeps a persistent browser profile under `tmp/browser_profile`, so if you manually pass login/captcha once, later fetches can often reuse that session.
 
-Pre-download the neccessary model and tool to avoid first-run delay:
+Pre-download the ASR model on Windows (PowerShell) to avoid first-run delay:
 
 ```bash
-# For ASR (Win GPU / Mac MLX)
 hf download Qwen/Qwen3-ASR-1.7B --repo-type model
-hf download mlx-community/whisper-large-v3-mlx --repo-type model
-# For local LLM (GPU)
-ollama pull qwen3.5:9B 
-ollama pull qwen3.6:27B
 ```
 
 ```bash
-# CLI tools
-uv tool install bilibili-cli
-uv tool install xiaohongshu-cli
+uv tool install --upgrade bilibili-cli
+uv tool install --upgrade xiaohongshu-cli
 uv tool install twitter-cli
 bili whoami
 xhs whoami
@@ -89,19 +83,63 @@ twitter whoami
 
 ## Env
 
-Copy `.env.example` to `.env` and add your API key:
+The CLI auto-loads `.env` from the repo root.
 
 ```bash
 cp .env.example .env
-# Edit .env and fill in QWEN_API_KEY (required)
-# Other services are optional - see # TODO comments in the file
 ```
 
-**Required**: Only `QWEN_API_KEY` ([get it here](https://dashscope.console.aliyun.com/))
+Minimal `.env`:
 
-**Optional**: MiMo, MiniMax, Google (for image gen), Ollama (for local GPU)
+```bash
+QWEN_API_KEY=...
+QWEN_MODEL_NAME=qwen3-max
+```
 
-All settings are documented in `.env.example` with helpful comments and defaults.
+Optional Xiaomi MiMo remote model:
+
+```bash
+MIMO_API_KEY=...
+MIMO_MODEL_NAME=mimo-v2.5-pro
+MIMO_BASE_URL=https://api.xiaomimimo.com/v1
+```
+
+Optional MiniMax remote model:
+
+```bash
+MINIMAX_API_KEY=...
+MINIMAX_MODEL_NAME=MiniMax-M2.7
+MINIMAX_BASE_URL=https://api.minimax.io/v1
+```
+
+Local Ollama GPU mode:
+
+```bash
+DEEPFIND_LOCAL_BASE_URL=http://127.0.0.1:11434/v1
+DEEPFIND_LOCAL_MODEL=qwen3.5:9b
+DEEPFIND_LOCAL_API_KEY=ollama
+```
+
+Optional:
+
+```bash
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+MIMO_BASE_URL=https://api.xiaomimimo.com/v1
+MINIMAX_BASE_URL=https://api.minimax.io/v1
+DEEPFIND_LOCAL_MODEL=Qwen/Qwen2.5-7B-Instruct
+DEEPFIND_LOCAL_QUANTIZATION=4bit
+OPENCLI_BIN=opencli
+TWITTER_CLI_BIN=twitter
+XHS_CLI_BIN=xhs
+BILI_BIN=bili
+ASR_MODEL=Qwen/Qwen3-ASR-1.7B
+DEEPFIND_AUDIO_DIR=audio
+DEEPFIND_TOOL_TIMEOUT=90
+GOOGLE_NANO_BANANA_API_KEY=...
+GOOGLE_NANO_BANANA_MODEL=gemini-3.1-flash-image-preview
+DEEPFIND_IMAGE_DIR=tmp
+DEEPFIND_IMAGE_SIZE=2K
+```
 
 ## Run
 
@@ -130,10 +168,8 @@ Flags:
 To run with Ollama locally:
 
 ```bash
-# Pull the default model (or change DEFAULT_LOCAL_MODEL in deepfind/config.py first)
-ollama pull qwen3.5:9B
-
-# Run with local model
+ollama serve
+ollama pull qwen3.5:9b
 uv run -m deepfind.cli "same query" --gpu
 ```
 

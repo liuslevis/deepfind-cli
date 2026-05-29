@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from .bili_transcribe import (
     BiliDownloadError,
@@ -56,6 +57,7 @@ _OPENCLI_REGISTRY_LOCK = Lock()
 _XHS_TOPIC_TAG_RE = re.compile(r"#[^#\n]+#")
 _XHS_TIMEZONE = timezone(timedelta(hours=8))
 _XHS_SEARCH_ENRICH_LIMIT = 20
+_XHS_TRUNCATION_MARKERS = ("...", "…")
 
 
 def _twitter_type(value: str) -> str | None:
@@ -91,6 +93,59 @@ def _xhs_type(value: str) -> str:
         "image": "image",
     }
     return mapping.get(value, "all")
+
+
+def _xhs_ref(value: str, xsec_token: str = "") -> tuple[str, str, str]:
+    ref = value.strip()
+    token = xsec_token.strip()
+    if not ref:
+        return "", token, "ref cannot be empty"
+    if any(marker in ref for marker in _XHS_TRUNCATION_MARKERS):
+        return "", token, "ref appears to be truncated; paste the full Xiaohongshu URL or note ID"
+    if ref.startswith("search_result/"):
+        ref = ref.removeprefix("search_result/").strip()
+    if not ref:
+        return "", token, "ref cannot be empty"
+    if "xiaohongshu.com" in ref and not token:
+        query = parse_qs(urlparse(ref).query)
+        token = str(query.get("xsec_token", [""])[0]).strip()
+    return ref, token, ""
+
+
+def _xhs_invalid_ref_response(tool: str, ref: str, error: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "tool": tool,
+        "error_code": "invalid_ref",
+        "error": error,
+        "ref": ref,
+    }
+
+
+def _xhs_empty_note_response(tool: str, ref: str, xsec_token: str) -> dict[str, Any]:
+    if not xsec_token:
+        return {
+            "ok": False,
+            "tool": tool,
+            "error_code": "xsec_token_required",
+            "error": "xhs read returned no note data; paste the Xiaohongshu share URL that includes xsec_token, or pass xsec_token explicitly",
+            "ref": ref,
+        }
+    return {
+        "ok": False,
+        "tool": tool,
+        "error_code": "invalid_note",
+        "error": "xhs read returned no note data; the note may be unavailable or the xsec_token may be expired",
+        "ref": ref,
+    }
+
+
+def _xhs_read_args(ref: str, xsec_token: str) -> list[str]:
+    args = ["read", ref]
+    if xsec_token:
+        args.extend(["--xsec-token", xsec_token])
+    args.append("--json")
+    return args
 
 
 def _xhs_payload(data: Any) -> dict[str, Any]:
@@ -879,11 +934,12 @@ class Toolset:
             ),
             self._function_spec(
                 "xhs_read",
-                "Read one Xiaohongshu note by URL or ID.",
+                "Read one Xiaohongshu note by full URL or note ID. Do not pass ellipsized or truncated URLs.",
                 {
                     "type": "object",
                     "properties": {
                         "ref": {"type": "string"},
+                        "xsec_token": {"type": "string"},
                     },
                     "required": ["ref"],
                     "additionalProperties": False,
@@ -891,7 +947,7 @@ class Toolset:
             ),
             self._function_spec(
                 "xhs_transcribe_full",
-                "Read one Xiaohongshu note and return all extractable content. For video notes, transcribe the spoken audio and return the full transcript.",
+                "Read one Xiaohongshu note from a full URL or note ID and return all extractable content. For video notes, transcribe the spoken audio and return the full transcript. Do not pass ellipsized or truncated URLs.",
                 {
                     "type": "object",
                     "properties": {
@@ -1690,10 +1746,14 @@ class Toolset:
             },
         }
 
-    def xhs_read(self, ref: str) -> dict[str, Any]:
+    def xhs_read(self, ref: str, xsec_token: str = "") -> dict[str, Any]:
+        resolved_ref, resolved_token, ref_error = _xhs_ref(ref, xsec_token)
+        if ref_error:
+            return _xhs_invalid_ref_response("xhs_read", ref, ref_error)
+
         result = self._run(
             self.settings.xhs_bin,
-            ["read", ref, "--json"],
+            _xhs_read_args(resolved_ref, resolved_token),
             "xhs_read",
         )
         if not result.get("ok"):
@@ -1701,22 +1761,26 @@ class Toolset:
 
         note = _xhs_note(result.get("data"))
         if not note:
-            return result
+            return _xhs_empty_note_response("xhs_read", resolved_ref, resolved_token)
 
         return {
             "ok": True,
             "tool": "xhs_read",
             "command": result.get("command", []),
             "data": {
-                "ref": ref,
+                "ref": resolved_ref,
                 "note": note,
             },
         }
 
-    def xhs_transcribe_full(self, ref: str) -> dict[str, Any]:
+    def xhs_transcribe_full(self, ref: str, xsec_token: str = "") -> dict[str, Any]:
+        resolved_ref, resolved_token, ref_error = _xhs_ref(ref, xsec_token)
+        if ref_error:
+            return _xhs_invalid_ref_response("xhs_transcribe_full", ref, ref_error)
+
         result = self._run(
             self.settings.xhs_bin,
-            ["read", ref, "--json"],
+            _xhs_read_args(resolved_ref, resolved_token),
             "xhs_transcribe_full",
         )
         if not result.get("ok"):
@@ -1724,12 +1788,7 @@ class Toolset:
 
         note = _xhs_note(result.get("data"))
         if not note:
-            return {
-                "ok": False,
-                "tool": "xhs_transcribe_full",
-                "error_code": "invalid_note",
-                "error": "xhs read returned no note data",
-            }
+            return _xhs_empty_note_response("xhs_transcribe_full", resolved_ref, resolved_token)
 
         if note.get("media_type") != "video":
             transcript = str(note.get("content_text", "")).strip()
@@ -1738,7 +1797,7 @@ class Toolset:
                 "tool": "xhs_transcribe_full",
                 "command": result.get("command", []),
                 "data": {
-                    "ref": ref,
+                    "ref": resolved_ref,
                     "note": note,
                     "transcript_kind": "note",
                     "transcript_path": "",
@@ -1771,7 +1830,7 @@ class Toolset:
             "tool": "xhs_transcribe_full",
             "command": result.get("command", []),
             "data": {
-                "ref": ref,
+                "ref": resolved_ref,
                 "note": note,
                 "transcript_kind": "audio",
                 "transcript_path": data["transcript_path"],

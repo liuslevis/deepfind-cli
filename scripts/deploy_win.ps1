@@ -25,6 +25,10 @@ function Invoke-SetupStep {
         return
     }
 
+    Write-Host 'Updating uv tools...' -ForegroundColor Cyan
+    & uv tool install --upgrade bilibili-cli
+    & uv tool install --upgrade xiaohongshu-cli
+
     Write-Host 'Syncing Python dependencies with uv...' -ForegroundColor Cyan
     Push-Location $repoRoot
     try {
@@ -74,11 +78,11 @@ if (-not (Test-CommandAvailable -Name 'npm')) {
     throw 'npm is not available in PATH. Install Node.js or add npm to PATH first.'
 }
 
+Invoke-SetupStep
+
 if (-not $SkipXhsLogin -and -not (Test-CommandAvailable -Name 'xhs')) {
     throw 'xhs is not available in PATH. Install xiaohongshu-cli or add xhs to PATH first.'
 }
-
-Invoke-SetupStep
 
 if (-not $SkipXhsLogin) {
     Write-Host 'Logging into Xiaohongshu via QR code...' -ForegroundColor Cyan
