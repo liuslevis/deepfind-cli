@@ -20,6 +20,66 @@ function Test-CommandAvailable {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Test-NeedsPythonSync {
+    $venvPath = Join-Path $repoRoot '.venv'
+    $syncMarker = Join-Path $venvPath '.uv-sync-marker'
+    $pyprojectPath = Join-Path $repoRoot 'pyproject.toml'
+    $uvLockPath = Join-Path $repoRoot 'uv.lock'
+
+    # If venv doesn't exist, we need to sync
+    if (-not (Test-Path -LiteralPath $venvPath)) {
+        return $true
+    }
+
+    # If marker doesn't exist, we need to sync
+    if (-not (Test-Path -LiteralPath $syncMarker)) {
+        return $true
+    }
+
+    $markerTime = (Get-Item -LiteralPath $syncMarker).LastWriteTime
+
+    # Check if pyproject.toml is newer than marker
+    if ((Test-Path -LiteralPath $pyprojectPath) -and ((Get-Item -LiteralPath $pyprojectPath).LastWriteTime -gt $markerTime)) {
+        return $true
+    }
+
+    # Check if uv.lock is newer than marker
+    if ((Test-Path -LiteralPath $uvLockPath) -and ((Get-Item -LiteralPath $uvLockPath).LastWriteTime -gt $markerTime)) {
+        return $true
+    }
+
+    return $false
+}
+
+function Test-NeedsWebSync {
+    $packageJsonPath = Join-Path $webRoot 'package.json'
+    $syncMarker = Join-Path $webNodeModules '.npm-sync-marker'
+
+    # If node_modules doesn't exist, we need to sync
+    if (-not (Test-Path -LiteralPath $webNodeModules)) {
+        return $true
+    }
+
+    # If marker doesn't exist, we need to sync
+    if (-not (Test-Path -LiteralPath $syncMarker)) {
+        return $true
+    }
+
+    $markerTime = (Get-Item -LiteralPath $syncMarker).LastWriteTime
+
+    # Check if package.json is newer than marker
+    if ((Test-Path -LiteralPath $packageJsonPath) -and ((Get-Item -LiteralPath $packageJsonPath).LastWriteTime -gt $markerTime)) {
+        return $true
+    }
+
+    # Check if package-lock.json is newer than marker
+    if ((Test-Path -LiteralPath $webPackageLock) -and ((Get-Item -LiteralPath $webPackageLock).LastWriteTime -gt $markerTime)) {
+        return $true
+    }
+
+    return $false
+}
+
 function Invoke-SetupStep {
     if ($SkipSetup) {
         return
@@ -29,12 +89,29 @@ function Invoke-SetupStep {
     & uv tool install --upgrade bilibili-cli
     & uv tool install --upgrade xiaohongshu-cli
 
-    Write-Host 'Syncing Python dependencies with uv...' -ForegroundColor Cyan
+    $needsPythonSync = Test-NeedsPythonSync
+    if ($needsPythonSync) {
+        Write-Host 'Syncing Python dependencies with uv...' -ForegroundColor Cyan
+        Push-Location $repoRoot
+        try {
+            & uv sync --extra media --extra local-llm --extra browser
+
+            # Create sync marker
+            $venvPath = Join-Path $repoRoot '.venv'
+            $syncMarker = Join-Path $venvPath '.uv-sync-marker'
+            New-Item -Path $syncMarker -ItemType File -Force | Out-Null
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    else {
+        Write-Host 'Python dependencies are up to date, skipping sync.' -ForegroundColor Green
+    }
+
+    # Install Playwright browsers if playwright is available
     Push-Location $repoRoot
     try {
-        & uv sync --extra media --extra local-llm --extra browser
-
-        # Install Playwright browsers if playwright is available
         $playwrightCheck = & uv run python -c "import playwright" 2>$null
         if ($LASTEXITCODE -eq 0) {
             $playwrightCache = Join-Path $env:USERPROFILE 'AppData\Local\ms-playwright'
@@ -51,18 +128,28 @@ function Invoke-SetupStep {
         Pop-Location
     }
 
-    Write-Host 'Installing web dependencies...' -ForegroundColor Cyan
-    Push-Location $webRoot
-    try {
-        if ((Test-Path -LiteralPath $webPackageLock) -and -not (Test-Path -LiteralPath $webNodeModules)) {
-            & npm ci
+    $needsWebSync = Test-NeedsWebSync
+    if ($needsWebSync) {
+        Write-Host 'Installing web dependencies...' -ForegroundColor Cyan
+        Push-Location $webRoot
+        try {
+            if ((Test-Path -LiteralPath $webPackageLock) -and -not (Test-Path -LiteralPath $webNodeModules)) {
+                & npm ci
+            }
+            else {
+                & npm install
+            }
+
+            # Create sync marker
+            $syncMarker = Join-Path $webNodeModules '.npm-sync-marker'
+            New-Item -Path $syncMarker -ItemType File -Force | Out-Null
         }
-        else {
-            & npm install
+        finally {
+            Pop-Location
         }
     }
-    finally {
-        Pop-Location
+    else {
+        Write-Host 'Web dependencies are up to date, skipping install.' -ForegroundColor Green
     }
 }
 
