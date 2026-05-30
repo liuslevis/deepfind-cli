@@ -11,6 +11,30 @@ from .progress import ConsoleProgress
 from .tools import Toolset
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_REASONING_TAG_RE = re.compile(r"<reasoning>.*?</reasoning>", re.DOTALL | re.IGNORECASE)
+_THOUGHT_TAG_RE = re.compile(r"<thought>.*?</thought>", re.DOTALL | re.IGNORECASE)
+
+
+def _clean_model_output(text: str) -> str:
+    """Remove special tags like <think>, <reasoning>, <thought> from model output.
+
+    Some models (e.g., MiniMax-M2.7) include reasoning process in special tags
+    even when instructed to output only JSON or Markdown. This function removes
+    those tags to ensure clean output.
+    """
+    if not text:
+        return text
+
+    # Remove <think>...</think> tags
+    text = _THINK_TAG_RE.sub("", text)
+    # Remove <reasoning>...</reasoning> tags
+    text = _REASONING_TAG_RE.sub("", text)
+    # Remove <thought>...</thought> tags
+    text = _THOUGHT_TAG_RE.sub("", text)
+
+    # Clean up any extra whitespace left after tag removal
+    return text.strip()
 
 
 def _parse_tool_arguments(raw: str) -> dict[str, Any]:
@@ -177,6 +201,8 @@ class ResponseAgent:
                 continue
 
             text = (message.content or "").strip()
+            # Clean special tags from model output (e.g., <think>, <reasoning>)
+            text = _clean_model_output(text)
             if not text:
                 text = dump_json({"summary": "", "facts": [], "gaps": ["empty_output"]})
             if self.progress:
