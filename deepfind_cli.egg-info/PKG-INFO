@@ -230,7 +230,7 @@ Generate 3 HTML slides from that summary and save them under tmp/
 
 The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
 live run activity, an iPhone-friendly mobile drawer, and a mode switch for
-`Fast (1 agent)` and `Expert (4 agents)`. The composer also includes a single
+`1 Agent` and `4 Agents`. The composer also includes a single
 model button that rotates between `Qwen`, `Mimo`, and the local `GPU` model
 when a compatible NVIDIA GPU is available.
 

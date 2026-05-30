@@ -1107,7 +1107,8 @@ img {
   transition: border-color 160ms ease, background 160ms ease;
 }
 
-.model-toggle__button {
+.model-toggle__button,
+.mode-toggle__button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1120,16 +1121,20 @@ img {
   background: rgba(16, 20, 27, 0.85);
   color: var(--text);
   font-size: 0.95rem;
+  cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .model-toggle__button:hover,
-.model-toggle__button:focus-visible {
+.model-toggle__button:focus-visible,
+.mode-toggle__button:hover,
+.mode-toggle__button:focus-visible {
   border-color: rgba(93, 225, 255, 0.24);
   background: rgba(93, 225, 255, 0.12);
 }
 
-.model-toggle__button:focus-visible {
+.model-toggle__button:focus-visible,
+.mode-toggle__button:focus-visible {
   outline: 2px solid rgba(93, 225, 255, 0.4);
   outline-offset: 2px;
 }
@@ -1147,6 +1152,11 @@ img {
 .model-toggle__button--gpu {
   border-color: rgba(132, 244, 139, 0.24);
   background: rgba(132, 244, 139, 0.1);
+}
+
+.mode-toggle__button--expert {
+  border-color: rgba(255, 123, 255, 0.24);
+  background: rgba(255, 123, 255, 0.1);
 }
 
 .deep-toggle__button {
@@ -1497,10 +1507,10 @@ img {
 
   .composer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:
-      "input deep model send"
-      "mode mode mode mode";
+      "input input send"
+      "mode deep model";
     align-items: center;
     gap: 10px 12px;
     padding: 12px;
@@ -1519,9 +1529,10 @@ img {
     grid-area: input;
   }
 
-  .mode-select {
-    width: 100%;
+  .mode-toggle__button {
     grid-area: mode;
+    min-width: 78px;
+    height: 42px;
   }
 
   .model-toggle__button {
@@ -1534,10 +1545,6 @@ img {
     grid-area: deep;
     min-width: 68px;
     height: 42px;
-  }
-
-  .mode-select__button {
-    width: 100%;
   }
 
   .send-button {

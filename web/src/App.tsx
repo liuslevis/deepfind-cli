@@ -148,9 +148,9 @@ function isStandalonePwa(): boolean {
 
 function modeLabel(mode: ChatMode | null): string {
   if (mode === "expert") {
-    return "Expert (4 agents)";
+    return "4 Agents";
   }
-  return "Fast (1 agent)";
+  return "1 Agent";
 }
 
 function modelTargetButtonLabel(target: ModelTarget): string {
@@ -1238,14 +1238,12 @@ export default function App() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(() => storageGetItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [requiresToken, setRequiresToken] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const transcriptRef = useRef<HTMLElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
-  const modeSelectRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<TranscriptScrollTarget | null>(null);
   const selectedChatIdRef = useRef<string | null>(selectedChatId);
   const [slashCommandIndex, setSlashCommandIndex] = useState(0);
@@ -1488,33 +1486,6 @@ export default function App() {
     }
     setSlashCommandIndex((current) => Math.min(current, slashMatches.length - 1));
   }, [showSlashAutocomplete, slashMatches.length]);
-
-  useEffect(() => {
-    if (!modeMenuOpen) {
-      return;
-    }
-
-    function handleOutsideClick(event: MouseEvent) {
-      const target = event.target as Node | null;
-      if (target && modeSelectRef.current?.contains(target)) {
-        return;
-      }
-      setModeMenuOpen(false);
-    }
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setModeMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleOutsideClick);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleOutsideClick);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [modeMenuOpen]);
 
   useEffect(() => {
     if (!sidebarOpen) {
@@ -2040,41 +2011,16 @@ export default function App() {
               onChange={(changeEvent) => setComposerValue(changeEvent.target.value)}
               onKeyDown={handleComposerKeyDown}
             />
-            <div className="mode-select" ref={modeSelectRef}>
-              <span className="sr-only" id="mode-select-label">
-                Mode
-              </span>
-              <button
-                type="button"
-                className="mode-select__button"
-                aria-label="Mode"
-                aria-haspopup="listbox"
-                aria-expanded={modeMenuOpen}
-                aria-controls="mode-select-menu"
-                onClick={() => setModeMenuOpen((current) => !current)}
-              >
-                <span className="mode-select__value">{modeLabel(mode)}</span>
-              </button>
-              {modeMenuOpen ? (
-                <div id="mode-select-menu" className="mode-select__menu" role="listbox" aria-labelledby="mode-select-label">
-                  {(["fast", "expert"] as const).map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      role="option"
-                      className={`mode-select__option${mode === option ? " mode-select__option--active" : ""}`}
-                      aria-selected={mode === option}
-                      onClick={() => {
-                        setMode(option);
-                        setModeMenuOpen(false);
-                      }}
-                    >
-                      {modeLabel(option)}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <button
+              type="button"
+              className={`mode-toggle__button mode-toggle__button--${mode}`}
+              aria-label="Mode"
+              aria-pressed={mode === "expert"}
+              title={mode === "expert" ? "Expert mode: 4 agents" : "Fast mode: 1 agent"}
+              onClick={() => setMode((current) => current === "fast" ? "expert" : "fast")}
+            >
+              {modeLabel(mode)}
+            </button>
             <button
               type="button"
               className={`deep-toggle__button${deepMode ? " deep-toggle__button--active" : ""}`}
