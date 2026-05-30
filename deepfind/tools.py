@@ -792,6 +792,8 @@ class Toolset:
             "web_fetch": self.web_fetch,
             "browser_fetch": self.browser_fetch,
             "arxiv_search": self.arxiv_search,
+            "paper_search": self.paper_search,
+            "read_paper": self.read_paper,
             "twitter_search": self.twitter_search,
             "x_search": self.x_search,
             "twitter_read": self.twitter_read,
@@ -873,6 +875,46 @@ class Toolset:
                         "limit": {"type": "integer", "minimum": 1, "maximum": 25},
                     },
                     "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "paper_search",
+                "Search arXiv papers and return detailed information including abstract, PDF/HTML URLs, and metadata. More comprehensive than arxiv_search.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query for arXiv papers",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of papers to return",
+                            "minimum": 1,
+                            "maximum": 25,
+                        },
+                    },
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "read_paper",
+                "Fetch and analyze an arXiv paper from its HTML URL to answer specific questions about the content.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "paper_html_url": {
+                            "type": "string",
+                            "description": "HTML URL of the paper (e.g., https://ar5iv.labs.arxiv.org/html/2105.02723 or https://arxiv.org/html/...)",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Question or prompt about the paper content",
+                        },
+                    },
+                    "required": ["paper_html_url", "query"],
                     "additionalProperties": False,
                 },
             ),
@@ -1414,6 +1456,188 @@ class Toolset:
             limit=max(1, min(25, limit)),
             tool="arxiv_search",
         )
+
+    def paper_search(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Search arXiv papers and return detailed information including abstract, PDF/HTML URLs."""
+        safe_limit = max(1, min(25, limit))
+
+        # Get opencli command prefix
+        command_prefix, resolve_error = self._opencli_command_prefix()
+        if not command_prefix:
+            return {
+                "ok": False,
+                "tool": "paper_search",
+                "query": query,
+                "error_code": "missing_dependency",
+                "error": resolve_error or f"{self.settings.opencli_bin} not found",
+            }
+
+        # Execute search: opencli arxiv search <query> --limit <limit> -f json
+        search_command = [*command_prefix, "arxiv", "search", query, "--limit", str(safe_limit), "-f", "json"]
+
+        try:
+            search_proc = subprocess.run(
+                search_command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.settings.subprocess_timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "tool": "paper_search",
+                "query": query,
+                "error_code": "timeout",
+                "error": f"Search timed out after {self.settings.subprocess_timeout}s",
+            }
+
+        if search_proc.returncode != 0:
+            return _subprocess_failure(
+                "paper_search",
+                search_command,
+                returncode=search_proc.returncode,
+                stderr=search_proc.stderr or "",
+                stdout=search_proc.stdout or "",
+                context={"query": query},
+            )
+
+        # Parse search results
+        search_results = try_load_json(search_proc.stdout or "")
+        if search_results is None:
+            return {
+                "ok": False,
+                "tool": "paper_search",
+                "query": query,
+                "error_code": "invalid_json",
+                "error": "opencli arxiv search returned non-JSON output",
+            }
+
+        if not isinstance(search_results, list):
+            search_results = []
+
+        # For each paper, fetch detailed information
+        papers = []
+        errors = []
+
+        for item in search_results:
+            if not isinstance(item, dict):
+                continue
+
+            paper_id = item.get("id")
+            if not paper_id:
+                continue
+
+            # Execute: opencli arxiv paper <paper_id> -f json
+            paper_command = [*command_prefix, "arxiv", "paper", str(paper_id), "-f", "json"]
+
+            try:
+                paper_proc = subprocess.run(
+                    paper_command,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=self.settings.subprocess_timeout,
+                )
+            except subprocess.TimeoutExpired:
+                errors.append({
+                    "paper_id": paper_id,
+                    "error": "timeout fetching paper details",
+                })
+                continue
+
+            if paper_proc.returncode != 0:
+                errors.append({
+                    "paper_id": paper_id,
+                    "error": "failed to fetch paper details",
+                    "stderr": (paper_proc.stderr or "")[:500],
+                })
+                continue
+
+            paper_data = try_load_json(paper_proc.stdout or "")
+            if not paper_data or not isinstance(paper_data, list) or len(paper_data) == 0:
+                errors.append({
+                    "paper_id": paper_id,
+                    "error": "invalid paper details response",
+                })
+                continue
+
+            detail = paper_data[0]
+            if not isinstance(detail, dict):
+                continue
+
+            papers.append({
+                "paper_id": detail.get("id", ""),
+                "paper_title": detail.get("title", ""),
+                "paper_authors": detail.get("authors", ""),
+                "publish_date": detail.get("published", ""),
+                "paper_source": "arxiv",
+                "paper_pdf_url": detail.get("pdf", ""),
+                "paper_html_url": f"https://ar5iv.labs.arxiv.org/html/{detail.get('id', '')}",
+                "paper_abs_url": detail.get("url", ""),
+                "paper_abstract": detail.get("abstract", ""),
+                "categories": detail.get("categories", ""),
+                "primary_category": detail.get("primary_category", ""),
+            })
+
+        return {
+            "ok": True,
+            "tool": "paper_search",
+            "data": {
+                "query": query,
+                "limit": safe_limit,
+                "papers": papers,
+                "errors": errors if errors else None,
+            },
+        }
+
+    def read_paper(
+        self,
+        paper_html_url: str,
+        query: str,
+    ) -> dict[str, Any]:
+        """Fetch and analyze an arXiv paper from its HTML URL to answer specific questions."""
+        clean_url = paper_html_url.strip()
+        clean_query = query.strip()
+
+        try:
+            # Reuse existing web_fetch infrastructure
+            document = fetch_web_document(clean_url, timeout=self.settings.subprocess_timeout)
+            answer = summarize_web_document(
+                self.settings.new_client(),
+                prompt=clean_query,
+                document=document,
+                model=self.settings.model,
+            )
+        except WebFetchError as exc:
+            return {
+                "ok": False,
+                "tool": "read_paper",
+                "url": clean_url,
+                "query": clean_query,
+                "error_code": exc.error_code,
+                "error": str(exc),
+            }
+
+        return {
+            "ok": True,
+            "tool": "read_paper",
+            "url": clean_url,
+            "query": clean_query,
+            "data": {
+                "url": document.url,
+                "final_url": document.final_url,
+                "title": document.title,
+                "query": clean_query,
+                "answer": answer,
+            },
+        }
 
     def twitter_search(
         self,
