@@ -995,6 +995,16 @@ function SlidesArtifact({ artifact }: { artifact: ArtifactLink }) {
   );
 }
 
+function reduceMarkdownHeaderLevels(text: string): string {
+  return text.replace(/^(#{1,6})\s+/gm, (match, hashes) => {
+    // Keep # as is, reduce ### to ##, and ## to #
+    if (hashes.length === 1) {
+      return match; // Keep single # unchanged
+    }
+    return `${"#".repeat(hashes.length - 1)} `;
+  });
+}
+
 async function writeTextToClipboard(text: string): Promise<void> {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -1024,13 +1034,18 @@ async function writeTextToClipboard(text: string): Promise<void> {
 }
 
 function CopyMarkdownButton({ text }: { text: string }) {
-  const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
-  const resetTimerRef = useRef<number | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [downloadStatus, setDownloadStatus] = useState<"idle" | "downloaded" | "error">("idle");
+  const copyResetTimerRef = useRef<number | null>(null);
+  const downloadResetTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
-      if (resetTimerRef.current !== null) {
-        window.clearTimeout(resetTimerRef.current);
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+      if (downloadResetTimerRef.current !== null) {
+        window.clearTimeout(downloadResetTimerRef.current);
       }
     };
   }, []);
@@ -1040,35 +1055,80 @@ function CopyMarkdownButton({ text }: { text: string }) {
       return;
     }
 
-    if (resetTimerRef.current !== null) {
-      window.clearTimeout(resetTimerRef.current);
+    if (copyResetTimerRef.current !== null) {
+      window.clearTimeout(copyResetTimerRef.current);
     }
 
     try {
-      await writeTextToClipboard(text);
-      setStatus("copied");
+      const reducedText = reduceMarkdownHeaderLevels(text);
+      await writeTextToClipboard(reducedText);
+      setCopyStatus("copied");
     } catch {
-      setStatus("error");
+      setCopyStatus("error");
     }
 
-    resetTimerRef.current = window.setTimeout(() => {
-      setStatus("idle");
-      resetTimerRef.current = null;
+    copyResetTimerRef.current = window.setTimeout(() => {
+      setCopyStatus("idle");
+      copyResetTimerRef.current = null;
     }, 2000);
   }
 
-  const label = status === "copied" ? "Copied" : status === "error" ? "Copy failed" : "Copy";
+  function handleDownload() {
+    if (!text.trim()) {
+      return;
+    }
+
+    if (downloadResetTimerRef.current !== null) {
+      window.clearTimeout(downloadResetTimerRef.current);
+    }
+
+    try {
+      const reducedText = reduceMarkdownHeaderLevels(text);
+      const blob = new Blob([reducedText], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `deepfind-${Date.now()}.md`;
+      link.style.display = "none";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setDownloadStatus("downloaded");
+    } catch {
+      setDownloadStatus("error");
+    }
+
+    downloadResetTimerRef.current = window.setTimeout(() => {
+      setDownloadStatus("idle");
+      downloadResetTimerRef.current = null;
+    }, 2000);
+  }
+
+  const copyLabel = copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed" : "Copy";
+  const downloadLabel = downloadStatus === "downloaded" ? "Downloaded" : downloadStatus === "error" ? "Download failed" : "⬇️";
 
   return (
-    <button
-      type="button"
-      className={`message__copy-button${status === "copied" ? " message__copy-button--success" : ""}`}
-      onClick={() => void handleCopy()}
-      aria-label="Copy markdown"
-      title="Copy markdown"
-    >
-      {label}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`message__copy-button${copyStatus === "copied" ? " message__copy-button--success" : ""}`}
+        onClick={() => void handleCopy()}
+        aria-label="Copy markdown"
+        title="Copy markdown"
+      >
+        {copyLabel}
+      </button>
+      <button
+        type="button"
+        className={`message__copy-button${downloadStatus === "downloaded" ? " message__copy-button--success" : ""}`}
+        onClick={handleDownload}
+        aria-label="Download markdown"
+        title="Download markdown"
+      >
+        {downloadLabel}
+      </button>
+    </>
   );
 }
 

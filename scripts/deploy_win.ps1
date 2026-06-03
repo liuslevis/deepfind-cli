@@ -178,6 +178,25 @@ if (-not $SkipXhsLogin) {
     Write-Host 'Skipping Xiaohongshu login.' -ForegroundColor Yellow
 }
 
+# Kill any existing processes on the ports
+Write-Host 'Checking for existing processes...' -ForegroundColor Cyan
+
+# Kill processes on port 8000 (backend)
+$backendProcess = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+if ($backendProcess) {
+    Write-Host "Killing existing backend process on port 8000 (PID: $backendProcess)..." -ForegroundColor Yellow
+    Stop-Process -Id $backendProcess -Force -ErrorAction SilentlyContinue
+    Write-Host 'Previous backend process killed.' -ForegroundColor Green
+}
+
+# Kill processes on port 5173 (frontend - Vite default)
+$frontendProcess = Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+if ($frontendProcess) {
+    Write-Host "Killing existing frontend process on port 5173 (PID: $frontendProcess)..." -ForegroundColor Yellow
+    Stop-Process -Id $frontendProcess -Force -ErrorAction SilentlyContinue
+    Write-Host 'Previous frontend process killed.' -ForegroundColor Green
+}
+
 $backendCommand = "Set-Location -LiteralPath '$repoRoot'; uv run deepfind-web --reload"
 $frontendCommand = "Set-Location -LiteralPath '$webRoot'; npm run dev -- --host"
 

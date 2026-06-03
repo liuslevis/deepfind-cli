@@ -169,13 +169,11 @@ FRONTEND_CMD="cd '$WEB_ROOT' && npm run dev -- --host"
 if [[ "$USE_TMUX" == "true" ]] && command_exists tmux; then
   SESSION_NAME="deepfind-dev"
 
-  # Check if session already exists
+  # Check if session already exists and kill it
   if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    warn "tmux session '$SESSION_NAME' already exists."
-    echo "Options:"
-    echo "  1. Attach to existing session: tmux attach -t $SESSION_NAME"
-    echo "  2. Kill and recreate: tmux kill-session -t $SESSION_NAME && $0"
-    exit 1
+    warn "tmux session '$SESSION_NAME' already exists. Killing it..."
+    tmux kill-session -t "$SESSION_NAME"
+    success "Previous session killed."
   fi
 
   info "Starting backend and frontend in tmux session: $SESSION_NAME"
@@ -206,6 +204,25 @@ if [[ "$USE_TMUX" == "true" ]] && command_exists tmux; then
   tmux attach -t "$SESSION_NAME"
 
 elif command_exists osascript; then
+  # Kill any existing processes on the ports
+  info "Checking for existing processes..."
+
+  # Kill processes on port 8000 (backend)
+  BACKEND_PID=$(lsof -ti:8000 2>/dev/null)
+  if [[ -n "$BACKEND_PID" ]]; then
+    warn "Killing existing backend process on port 8000 (PID: $BACKEND_PID)..."
+    kill -9 $BACKEND_PID 2>/dev/null || true
+    success "Previous backend process killed."
+  fi
+
+  # Kill processes on port 5173 (frontend - Vite default)
+  FRONTEND_PID=$(lsof -ti:5173 2>/dev/null)
+  if [[ -n "$FRONTEND_PID" ]]; then
+    warn "Killing existing frontend process on port 5173 (PID: $FRONTEND_PID)..."
+    kill -9 $FRONTEND_PID 2>/dev/null || true
+    success "Previous frontend process killed."
+  fi
+
   # Use AppleScript to open separate Terminal windows (macOS fallback)
   info "Opening backend in new Terminal window..."
   osascript <<EOF
