@@ -140,24 +140,111 @@ def _xhs_empty_note_response(tool: str, ref: str, xsec_token: str) -> dict[str, 
     }
 
 
-def _xhs_read_args(ref: str, xsec_token: str) -> list[str]:
-    args = ["read", ref]
+def _xhs_full_url(ref: str, xsec_token: str) -> str:
+    """Construct full Xiaohongshu URL with xsec_token for opencli commands.
+
+    opencli xiaohongshu note/comments requires a full signed URL.
+    """
+    # If ref is already a full URL, ensure xsec_token is in it
+    if "xiaohongshu.com" in ref:
+        # Already a URL
+        if xsec_token and "xsec_token=" not in ref:
+            # Add xsec_token if provided and not already in URL
+            separator = "&" if "?" in ref else "?"
+            return f"{ref}{separator}xsec_token={xsec_token}"
+        return ref
+
+    # ref is a note ID, construct /explore/ URL
+    base_url = f"https://www.xiaohongshu.com/explore/{ref}"
     if xsec_token:
-        args.extend(["--xsec-token", xsec_token])
-    args.append("--json")
-    return args
+        return f"{base_url}?xsec_token={xsec_token}"
+    return base_url
 
 
-def _xhs_comments_args(ref: str, xsec_token: str, cursor: str, fetch_all: bool) -> list[str]:
-    args = ["comments", ref]
-    if cursor:
-        args.extend(["--cursor", cursor])
-    if xsec_token:
-        args.extend(["--xsec-token", xsec_token])
-    if fetch_all:
-        args.append("--all")
-    args.append("--json")
-    return args
+def _transform_opencli_comments(data: Any) -> list[dict[str, Any]]:
+    """Transform opencli xiaohongshu comments output to internal format.
+
+    opencli returns: [{"rank": 1, "author": "...", "text": "...", ...}, ...]
+    We need a similar list format
+    """
+    if not isinstance(data, list):
+        return []
+
+    comments = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        comments.append({
+            "author": item.get("author", ""),
+            "text": item.get("text", ""),
+            "likes": item.get("likes", 0),
+            "time": item.get("time", ""),
+            "is_reply": item.get("is_reply", False),
+            "reply_to": item.get("reply_to", ""),
+        })
+    return comments
+
+
+def _transform_opencli_note(data: Any, ref: str) -> dict[str, Any]:
+    """Transform opencli xiaohongshu note output to internal format.
+
+    opencli returns: [{"field": "title", "value": "..."}, ...]
+    We need: {"title": "...", "author": "...", etc.}
+    """
+    if not isinstance(data, list):
+        return {}
+
+    # Convert field/value pairs to dict
+    note_dict = {}
+    for item in data:
+        if isinstance(item, dict) and "field" in item and "value" in item:
+            note_dict[item["field"]] = item["value"]
+
+    if not note_dict:
+        return {}
+
+    # Extract note ID from ref
+    note_id = ref
+    if "xiaohongshu.com" in ref:
+        # Extract from URL like /user/profile/{user_id}/{note_id} or /explore/{note_id}
+        parts = ref.split('/')
+        for part in reversed(parts):
+            if part and '?' not in part and len(part) > 20:
+                note_id = part
+                break
+            elif '?' in part:
+                note_id = part.split('?')[0]
+                break
+
+    # Map opencli fields to internal format
+    return {
+        "id": note_id,
+        "url": _xhs_note_url(note_id),
+        "title": note_dict.get("title", ""),
+        "author": note_dict.get("author", ""),
+        "author_id": "",  # Not provided by opencli
+        "desc": note_dict.get("content", ""),
+        "tags": [],  # Not provided in simple format
+        "media_type": note_dict.get("type", "unknown"),
+        "text_mode": "full",
+        "content_hint": "",
+        "ip_location": "",  # Not provided by opencli
+        "published_at_ms": 0,
+        "updated_at_ms": 0,
+        "image_count": 0,
+        "video_duration_sec": 0,
+        "stats": {
+            "likes": int(note_dict.get("likes", 0)),
+            "collects": int(note_dict.get("collects", 0)),
+            "comments": int(note_dict.get("comments", 0)),
+            "shares": 0,
+        },
+        "published_at": "",
+        "published_date": "",
+        "updated_at": "",
+        "updated_date": "",
+        "content_text": f"{note_dict.get('title', '')} {note_dict.get('content', '')}".strip(),
+    }
 
 
 def _xhs_payload(data: Any) -> dict[str, Any]:
@@ -806,8 +893,6 @@ class Toolset:
             "xhs_read": self.xhs_read,
             "xhs_read_cmt": self.xhs_read_cmt,
             "xhs_transcribe_full": self.xhs_transcribe_full,
-            "xhs_search_user": self.xhs_search_user,
-            "xhs_user": self.xhs_user,
             "xhs_user_posts": self.xhs_user_posts,
             "bili_search": self.bili_search,
             "bili_get_user_videos": self.bili_get_user_videos,
@@ -1097,32 +1182,8 @@ class Toolset:
                 },
             ),
             self._function_spec(
-                "xhs_search_user",
-                "Search Xiaohongshu users by keyword.",
-                {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string"},
-                    },
-                    "required": ["query"],
-                    "additionalProperties": False,
-                },
-            ),
-            self._function_spec(
-                "xhs_user",
-                "Read one Xiaohongshu user profile by user ID.",
-                {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {"type": "string"},
-                    },
-                    "required": ["user_id"],
-                    "additionalProperties": False,
-                },
-            ),
-            self._function_spec(
                 "xhs_user_posts",
-                "List a Xiaohongshu user's posts by user ID.",
+                "List a Xiaohongshu user's posts by user ID. Returns posts with 'url' field containing full signed URLs that can be passed to xhs_read and xhs_read_cmt.",
                 {
                     "type": "object",
                     "properties": {
@@ -2072,15 +2133,19 @@ class Toolset:
         if ref_error:
             return _xhs_invalid_ref_response("xhs_read", ref, ref_error)
 
+        # Construct full URL for opencli xiaohongshu note
+        full_url = _xhs_full_url(resolved_ref, resolved_token)
+
         result = self._run(
-            self.settings.xhs_bin,
-            _xhs_read_args(resolved_ref, resolved_token),
+            "opencli",
+            ["xiaohongshu", "note", full_url, "-f", "json"],
             "xhs_read",
         )
         if not result.get("ok"):
             return result
 
-        note = _xhs_note(result.get("data"))
+        # opencli returns different format than old xhs CLI
+        note = _transform_opencli_note(result.get("data"), resolved_ref)
         if not note:
             return _xhs_empty_note_response("xhs_read", resolved_ref, resolved_token)
 
@@ -2105,15 +2170,27 @@ class Toolset:
         if ref_error:
             return _xhs_invalid_ref_response("xhs_read_cmt", ref, ref_error)
 
+        # Construct full URL for opencli xiaohongshu comments
+        full_url = _xhs_full_url(resolved_ref, resolved_token)
+
+        # Build opencli command args
+        args = ["xiaohongshu", "comments", full_url]
+        # Note: cursor is not supported by opencli, ignored
+        # fetch_all maps to --limit 50 (max allowed by opencli)
+        if fetch_all:
+            args.extend(["--limit", "50"])
+        args.extend(["-f", "json"])
+
         result = self._run(
-            self.settings.xhs_bin,
-            _xhs_comments_args(resolved_ref, resolved_token, cursor.strip(), fetch_all),
+            "opencli",
+            args,
             "xhs_read_cmt",
         )
         if not result.get("ok"):
             return result
 
-        comments = _xhs_comments(result.get("data"), resolved_ref)
+        # opencli returns different format than old xhs CLI
+        comments = _transform_opencli_comments(result.get("data"))
         if not comments:
             return _xhs_empty_note_response("xhs_read_cmt", resolved_ref, resolved_token)
 
@@ -2190,27 +2267,13 @@ class Toolset:
             },
         }
 
-    def xhs_search_user(self, query: str) -> dict[str, Any]:
-        return self._run(
-            self.settings.xhs_bin,
-            ["search-user", query, "--json"],
-            "xhs_search_user",
-        )
-
-    def xhs_user(self, user_id: str) -> dict[str, Any]:
-        return self._run(
-            self.settings.xhs_bin,
-            ["user", user_id, "--json"],
-            "xhs_user",
-        )
-
     def xhs_user_posts(self, user_id: str, cursor: str = "") -> dict[str, Any]:
-        args = ["user-posts", user_id]
-        if cursor:
-            args.extend(["--cursor", cursor])
-        args.append("--json")
+        args = ["xiaohongshu", "user", user_id]
+        # Note: opencli doesn't support cursor, using limit instead
+        # cursor parameter kept for backward compatibility but ignored
+        args.extend(["--limit", "20"])
         return self._run(
-            self.settings.xhs_bin,
+            "opencli",
             args,
             "xhs_user_posts",
         )

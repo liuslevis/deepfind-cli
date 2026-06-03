@@ -89,7 +89,7 @@ Temporarily skip XHS features:
 uv run -m deepfind.cli "your query" --num-agent 2
 ```
 
-XHS-specific tools (`xhs_search_user`, `xhs_user`, `xhs_user_posts`, `xhs_read`) won't work, but all other features will function normally.
+XHS-specific tools (`xhs_user_posts`, `xhs_read`) won't work, but all other features will function normally.
 
 ## Status Check Commands
 

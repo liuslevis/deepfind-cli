@@ -125,28 +125,24 @@ fi
 if [[ "$SKIP_XHS_LOGIN" == "false" ]]; then
   info "Checking Xiaohongshu authentication..."
 
-  # Check if already logged in
-  if xhs whoami &>/dev/null; then
-    success "Already logged into Xiaohongshu."
+  # Check if opencli is installed
+  if ! command -v opencli &> /dev/null; then
+    warn "opencli not found. XHS features will be disabled."
+    echo "Install with: npm install -g @opencli/cli"
   else
-    info "Not logged in to Xiaohongshu. Attempting login..."
-    echo ""
-    echo "Login options:"
-    echo "  1. Browser cookie extraction (recommended, requires XHS login in Chrome/Safari/Firefox)"
-    echo "  2. QR code login (currently broken due to Camoufox issue)"
-    echo ""
-
-    # Try browser cookie extraction first
-    info "Trying browser cookie extraction..."
-    if xhs login 2>&1 | tee /tmp/xhs_login.log; then
-      success "Logged in successfully via browser cookies!"
-    else
-      warn "Browser cookie login failed."
+    # Check if logged in by trying to get creator profile
+    if opencli xiaohongshu creator-profile -f json &>/dev/null; then
+      success "✅ XHS logged in"
       echo ""
-      echo "To fix this, please:"
-      echo "  1. Open https://www.xiaohongshu.com in your browser (Chrome, Safari, or Firefox)"
-      echo "  2. Log in to Xiaohongshu"
-      echo "  3. Run: xhs login"
+      info "Your XHS Profile:"
+      opencli xiaohongshu creator-profile -f yaml | head -20
+      echo ""
+    else
+      warn "⚠️  XHS not logged in"
+      echo ""
+      echo "To log in to Xiaohongshu:"
+      echo "  Run: opencli xiaohongshu creator-profile"
+      echo "  This will open a browser window for you to log in."
       echo ""
       echo "Alternatively, skip XHS features for now with:"
       echo "  ./scripts/start-mac-dev.sh --skip-xhs-login"
