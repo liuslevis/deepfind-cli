@@ -2436,6 +2436,10 @@ class Toolset:
             asr_model=self.settings.asr_model,
             audio_dir=self.settings.audio_dir,
             timeout=self.settings.subprocess_timeout,
+            cookies_from_browser=self.settings.ytdlp_cookies_from_browser,
+            cookies=self.settings.ytdlp_cookies,
+            js_runtimes=self.settings.ytdlp_js_runtimes,
+            extractor_args=self.settings.ytdlp_extractor_args,
         )
 
     def _transcribe_xhs_video_data(self, note_id: str, video_url: str) -> dict[str, str]:

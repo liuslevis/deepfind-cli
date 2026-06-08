@@ -134,6 +134,10 @@ def ensure_youtube_audio_segments(
     ytdlp_bin: str | None,
     ffmpeg_bin: str | None,
     timeout: int,
+    cookies_from_browser: str | None = None,
+    cookies: str | None = None,
+    js_runtimes: str | None = None,
+    extractor_args: str | None = None,
 ) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     segments = _find_segments(output_dir)
@@ -152,8 +156,16 @@ def ensure_youtube_audio_segments(
         "bestaudio/best",
         "-o",
         str(download_template),
-        url,
     ]
+    if js_runtimes:
+        download_command += ["--js-runtimes", js_runtimes.strip()]
+    if extractor_args:
+        download_command += ["--extractor-args", extractor_args.strip()]
+    if cookies_from_browser:
+        download_command += ["--cookies-from-browser", cookies_from_browser.strip()]
+    elif cookies:
+        download_command += ["--cookies", cookies.strip()]
+    download_command.append(url)
     try:
         proc = subprocess.run(
             download_command,
@@ -235,6 +247,10 @@ def transcribe_youtube_audio(
     asr_model: str = DEFAULT_ASR_MODEL,
     audio_dir: str | None = None,
     timeout: int = 90,
+    cookies_from_browser: str | None = None,
+    cookies: str | None = None,
+    js_runtimes: str | None = None,
+    extractor_args: str | None = None,
 ) -> dict[str, str]:
     youtube_id = parse_youtube_id(url)
     audio_root = resolve_audio_root(audio_dir)
@@ -254,6 +270,10 @@ def transcribe_youtube_audio(
         ytdlp_bin=ytdlp_bin,
         ffmpeg_bin=ffmpeg_bin,
         timeout=timeout,
+        cookies_from_browser=cookies_from_browser,
+        cookies=cookies,
+        js_runtimes=js_runtimes,
+        extractor_args=extractor_args,
     )
     transcript = transcribe_segments(segments, asr_model=asr_model)
 
