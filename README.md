@@ -307,12 +307,14 @@ then returns a query-focused summary for the given query.
 and returns the full transcript. The raw transcript is cached under
 `audio/transcripts/youtube_audio/<VIDEO_ID>.txt`.
 
-Setup (WSL):
+Setup:
 
 ```bash
 uv tool install bilibili-cli
 uv tool install yt-dlp
+# test
 bili status
+yt-dlp --no-playlist -f beataudio/best -o ~/Downloads/ab.mp4 --cookie-from-browser chrome https://www.youtube.com/watch?v=Bns7_hd02pE 
 ```
 
 Artifacts:

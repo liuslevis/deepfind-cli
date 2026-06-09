@@ -161,26 +161,52 @@ def ensure_youtube_audio_segments(
         download_command += ["--js-runtimes", js_runtimes.strip()]
     if extractor_args:
         download_command += ["--extractor-args", extractor_args.strip()]
+
+    base_command = list(download_command)  # snapshot before cookies flags
+
     if cookies_from_browser:
         download_command += ["--cookies-from-browser", cookies_from_browser.strip()]
     elif cookies:
         download_command += ["--cookies", cookies.strip()]
     download_command.append(url)
-    try:
-        proc = subprocess.run(
-            download_command,
-            capture_output=True,
-            text=True,
-            timeout=max(timeout, 1),
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise YouTubeDownloadError(f"yt-dlp download timed out: {exc}") from exc
-    except OSError as exc:
-        raise MissingDependencyError(str(exc)) from exc
+
+    def _run_ytdlp(cmd: list[str]) -> subprocess.CompletedProcess:
+        try:
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=max(timeout, 1),
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise YouTubeDownloadError(f"yt-dlp download timed out: {exc}") from exc
+        except OSError as exc:
+            raise MissingDependencyError(str(exc)) from exc
+
+    proc = _run_ytdlp(download_command)
+
+    # If cookie DB is locked (Chrome running), retry without --cookies-from-browser
+    _COOKIE_DB_LOCKED = "Could not copy Chrome cookie database"
+    if proc.returncode != 0 and _COOKIE_DB_LOCKED in (proc.stderr or ""):
+        fallback = list(base_command)
+        if cookies:
+            fallback += ["--cookies", cookies.strip()]
+        fallback.append(url)
+        proc = _run_ytdlp(fallback)
+        # If still locked, try with no cookies at all
+        if proc.returncode != 0 and _COOKIE_DB_LOCKED in (proc.stderr or ""):
+            no_cookie_cmd = list(base_command) + [url]
+            proc = _run_ytdlp(no_cookie_cmd)
 
     if proc.returncode != 0:
         message = (proc.stderr or proc.stdout).strip() or "yt-dlp download failed."
+        if "Sign in to confirm" in message or "LOGIN_REQUIRED" in message:
+            message += (
+                "\n\nThis video requires YouTube authentication. "
+                "Export cookies with: python scripts/export_yt_cookies.py "
+                "then set YTDLP_COOKIES=/path/to/yt_cookies.txt in .env"
+            )
         raise YouTubeDownloadError(message[:4000])
 
     source_audio = _resolve_source_audio(output_dir)
