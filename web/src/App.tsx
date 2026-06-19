@@ -1032,6 +1032,31 @@ async function writeTextToClipboard(text: string): Promise<void> {
   }
 }
 
+function DownloadMarkdownButton({ text, filename }: { text: string; filename: string }) {
+  function handleDownload() {
+    if (!text.trim()) return;
+    const blob = new Blob([text], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <button
+      type="button"
+      className="message__copy-button"
+      onClick={handleDownload}
+      aria-label="Download markdown"
+      title="Download markdown"
+    >
+      Download
+    </button>
+  );
+}
+
 function CopyMarkdownButton({ text }: { text: string }) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
   const resetTimerRef = useRef<number | null>(null);
@@ -1081,7 +1106,7 @@ function CopyMarkdownButton({ text }: { text: string }) {
   );
 }
 
-const MessageCard = memo(function MessageCard({ message }: { message: ClientMessage }) {
+const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { message: ClientMessage; firstUserQuery?: string }) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
   const markdownBody = normalizeMermaidMarkdown(body);
   const citations = message.citations ?? [];
@@ -1092,6 +1117,9 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
   const referenceCount = referenceGroups.reduce((total, group) => total + group.links.length, 0);
   const keyPoints = message.key_points ?? [];
   const copyableMarkdown = message.role === "assistant" ? message.content.trim() : "";
+  const downloadFilename = firstUserQuery
+    ? `${firstUserQuery.trim().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 80)}.md`
+    : "response.md";
 
   return (
     <article
@@ -1110,6 +1138,7 @@ const MessageCard = memo(function MessageCard({ message }: { message: ClientMess
         {message.role === "assistant" && copyableMarkdown ? (
           <>
             <span className="message__meta-spacer" />
+            <DownloadMarkdownButton text={copyableMarkdown} filename={downloadFilename} />
             <CopyMarkdownButton text={copyableMarkdown} />
           </>
         ) : null}
@@ -1969,7 +1998,7 @@ export default function App() {
           ) : null}
 
           {activeMessages.map((message) => (
-            <MessageCard key={message.id} message={message} />
+            <MessageCard key={message.id} message={message} firstUserQuery={activeMessages.find((m) => m.role === "user")?.content} />
           ))}
 
           <div ref={bottomRef} />
