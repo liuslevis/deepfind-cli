@@ -94,6 +94,10 @@ class Settings:
     xhs_bin: str = "xhs"
     bili_bin: str = "bili"
     ytdlp_bin: str = "yt-dlp"
+    ytdlp_cookies_from_browser: str | None = None
+    ytdlp_cookies: str | None = None
+    ytdlp_js_runtimes: str | None = "node"
+    ytdlp_extractor_args: str | None = "youtube:player_client=web;fetch_pot=always"
     ffmpeg_bin: str = "ffmpeg"
     asr_model: str = DEFAULT_ASR_MODEL
     audio_dir: str = "audio"
@@ -209,6 +213,10 @@ class Settings:
             xhs_bin=_env("XHS_CLI_BIN", "xhs") or "xhs",
             bili_bin=_env("BILI_BIN", "bili") or "bili",
             ytdlp_bin=_env("YTDLP_BIN", "yt-dlp") or "yt-dlp",
+            ytdlp_cookies_from_browser=_env("YTDLP_COOKIES_FROM_BROWSER"),
+            ytdlp_cookies=_env("YTDLP_COOKIES"),
+            ytdlp_js_runtimes=_env("YTDLP_JS_RUNTIMES", "node"),
+            ytdlp_extractor_args=_env("YTDLP_EXTRACTOR_ARGS", "youtube:player_client=web;fetch_pot=always"),
             ffmpeg_bin=_env("FFMPEG_BIN", "ffmpeg") or "ffmpeg",
             asr_model=cls._resolve_asr_model(),
             audio_dir=_env("DEEPFIND_AUDIO_DIR", "audio") or "audio",
