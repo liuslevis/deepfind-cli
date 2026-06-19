@@ -126,6 +126,7 @@ def fetch_web_document(url: str, timeout: int) -> PreparedWebDocument:
         with httpx.Client(
             follow_redirects=True,
             timeout=timeout,
+            verify=False,
             headers={
                 "User-Agent": _DEFAULT_USER_AGENT,
                 "Accept": "text/html,application/xhtml+xml,application/pdf,text/markdown,text/plain;q=0.9,*/*;q=0.1",
