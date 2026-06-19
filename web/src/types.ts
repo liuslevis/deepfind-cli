@@ -1,7 +1,7 @@
 export type ChatMode = "fast" | "expert";
 export type ArtifactKind = "image" | "slides" | "file";
 export type MessageRole = "user" | "assistant";
-export type ModelTarget = "qwen" | "mimo" | "minimax" | "gpu";
+export type ModelTarget = "qwen" | "mimo" | "minimax" | "glm" | "gpu";
 export type ServerModelTarget = ModelTarget | "cloud";
 
 export interface ArtifactLink {

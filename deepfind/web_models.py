@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 ChatMode = Literal["fast", "expert"]
 MessageRole = Literal["user", "assistant"]
 ArtifactKind = Literal["image", "slides", "file"]
-ModelTarget = Literal["qwen", "mimo", "minimax", "gpu"]
+ModelTarget = Literal["qwen", "mimo", "minimax", "glm", "gpu"]
 
 
 def normalize_model_target(value: Any) -> ModelTarget:
@@ -16,7 +16,7 @@ def normalize_model_target(value: Any) -> ModelTarget:
     normalized = str(value).strip().lower()
     if not normalized or normalized == "cloud":
         return "qwen"
-    if normalized in {"qwen", "mimo", "minimax", "gpu"}:
+    if normalized in {"qwen", "mimo", "minimax", "glm", "gpu"}:
         return normalized
     raise ValueError(f"unsupported model target: {value}")
 

@@ -63,6 +63,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run the research pipeline with the MiniMax model configured by MINIMAX_API_KEY and MINIMAX_MODEL_NAME",
     )
+    mode_group.add_argument(
+        "--glm",
+        action="store_true",
+        help="run the research pipeline with the GLM model configured by GLM_API_KEY and GLM_MODEL_NAME",
+    )
     return parser
 
 
@@ -139,7 +144,7 @@ def main(
         app_kwargs = {
             "progress": ConsoleProgress(enabled=not args.quiet, stream=stderr),
         }
-        if args.gpu or args.mimo or args.minimax:
+        if args.gpu or args.mimo or args.minimax or args.glm:
             base_settings = Settings.from_env(require_api_key=False)
         if args.gpu:
             local_status = detect_local_model(base_settings)
@@ -150,6 +155,8 @@ def main(
             app_kwargs["settings"] = base_settings.with_mimo_remote()
         elif args.minimax:
             app_kwargs["settings"] = base_settings.with_minimax_remote()
+        elif args.glm:
+            app_kwargs["settings"] = base_settings.with_glm_remote()
 
         app = DeepFind(**app_kwargs)
         session = app.session(

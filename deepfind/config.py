@@ -17,6 +17,8 @@ DEFAULT_MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
 DEFAULT_MIMO_MODEL = "mimo-v2.5-pro"
 DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 DEFAULT_MINIMAX_MODEL = "MiniMax-M2.7"
+DEFAULT_GLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+DEFAULT_GLM_MODEL = "glm-5.2"
 DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_LOCAL_MODEL = "qwen3.5:9B"  # Change this to upgrade (e.g., "qwen3.6:27B")
 DEFAULT_LOCAL_API_KEY = "ollama"
@@ -77,6 +79,9 @@ class Settings:
     minimax_api_key: str = ""
     minimax_model: str = DEFAULT_MINIMAX_MODEL
     minimax_base_url: str = DEFAULT_MINIMAX_BASE_URL
+    glm_api_key: str = ""
+    glm_model: str = DEFAULT_GLM_MODEL
+    glm_base_url: str = DEFAULT_GLM_BASE_URL
     local_model: str = DEFAULT_LOCAL_MODEL
     local_base_url: str = DEFAULT_LOCAL_BASE_URL
     local_api_key: str = DEFAULT_LOCAL_API_KEY
@@ -148,9 +153,14 @@ class Settings:
         minimax_api_key = _env("MINIMAX_API_KEY") or ""
         minimax_model = _env("MINIMAX_MODEL") or _env("MINIMAX_MODEL_NAME", DEFAULT_MINIMAX_MODEL) or DEFAULT_MINIMAX_MODEL
         minimax_base_url = _env("MINIMAX_BASE_URL", DEFAULT_MINIMAX_BASE_URL) or DEFAULT_MINIMAX_BASE_URL
+        glm_api_key = _env("GLM_API_KEY") or ""
+        glm_model = _env("GLM_MODEL") or _env("GLM_MODEL_NAME", DEFAULT_GLM_MODEL) or DEFAULT_GLM_MODEL
+        glm_base_url = _env("GLM_BASE_URL", DEFAULT_GLM_BASE_URL) or DEFAULT_GLM_BASE_URL
         remote_target = "qwen"
         if not qwen_api_key:
-            if minimax_api_key:
+            if glm_api_key:
+                remote_target = "glm"
+            elif minimax_api_key:
                 remote_target = "minimax"
             elif mimo_api_key:
                 remote_target = "mimo"
@@ -162,13 +172,17 @@ class Settings:
             api_key = minimax_api_key
             model = minimax_model
             base_url = minimax_base_url
+        elif remote_target == "glm":
+            api_key = glm_api_key
+            model = glm_model
+            base_url = glm_base_url
         else:
             api_key = mimo_api_key
             model = mimo_model
             base_url = mimo_base_url
         if require_api_key and not api_key:
             raise SettingsError(
-                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, or MINIMAX_API_KEY, or use local GPU mode."
+                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, or use local GPU mode."
             )
         timeout = _env("DEEPFIND_TOOL_TIMEOUT", "90")
         return cls(
@@ -184,6 +198,9 @@ class Settings:
             minimax_api_key=minimax_api_key,
             minimax_model=minimax_model,
             minimax_base_url=minimax_base_url,
+            glm_api_key=glm_api_key,
+            glm_model=glm_model,
+            glm_base_url=glm_base_url,
             local_model=_env("DEEPFIND_LOCAL_MODEL", DEFAULT_LOCAL_MODEL) or DEFAULT_LOCAL_MODEL,
             local_base_url=_env("DEEPFIND_LOCAL_BASE_URL", DEFAULT_LOCAL_BASE_URL) or DEFAULT_LOCAL_BASE_URL,
             local_api_key=_env("DEEPFIND_LOCAL_API_KEY", DEFAULT_LOCAL_API_KEY) or DEFAULT_LOCAL_API_KEY,
@@ -229,7 +246,7 @@ class Settings:
     def ensure_remote_ready(self) -> "Settings":
         if not self.api_key:
             raise SettingsError(
-                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, or MINIMAX_API_KEY, or switch to GPU mode."
+                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, or switch to GPU mode."
             )
         return self
 
@@ -261,6 +278,16 @@ class Settings:
             api_key=self.minimax_api_key,
             model=self.minimax_model,
             base_url=self.minimax_base_url,
+        )
+
+    def with_glm_remote(self) -> "Settings":
+        if not self.glm_api_key:
+            raise SettingsError("Set GLM_API_KEY, or switch to another model.")
+        return replace(
+            self,
+            api_key=self.glm_api_key,
+            model=self.glm_model,
+            base_url=self.glm_base_url,
         )
 
     def with_local_gpu(self) -> "Settings":

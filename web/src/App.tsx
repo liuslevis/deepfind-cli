@@ -65,10 +65,10 @@ const SLASH_COMMANDS: SlashCommandOption[] = [
   },
 ];
 const DEFAULT_MODEL_TARGET: ModelTarget = "qwen";
-const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax"] as const;
+const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax", "glm"] as const;
 
 function normalizeModelTarget(target: ModelTarget | "cloud" | null | undefined): ModelTarget {
-  if (target === "gpu" || target === "mimo" || target === "minimax" || target === "qwen") {
+  if (target === "gpu" || target === "mimo" || target === "minimax" || target === "glm" || target === "qwen") {
     return target;
   }
   return DEFAULT_MODEL_TARGET;
@@ -163,6 +163,9 @@ function modelTargetButtonLabel(target: ModelTarget): string {
   if (target === "minimax") {
     return "Minimax";
   }
+  if (target === "glm") {
+    return "GLM";
+  }
   return "Qwen";
 }
 
@@ -176,6 +179,9 @@ function modelTargetButtonTitle(target: ModelTarget, localModel: LocalModelInfo 
   if (target === "minimax") {
     return "MiniMax API";
   }
+  if (target === "glm") {
+    return "GLM (Zhipu AI) API";
+  }
   return "Qwen API";
 }
 
@@ -188,6 +194,9 @@ function messageModelLabel(modelTarget: ModelTarget | undefined, modelLabel: str
   }
   if (modelTarget === "minimax") {
     return modelLabel ? `Minimax: ${modelLabel}` : "Minimax";
+  }
+  if (modelTarget === "glm") {
+    return modelLabel ? `GLM: ${modelLabel}` : "GLM";
   }
   if (modelTarget === "qwen") {
     return modelLabel ? `Qwen: ${modelLabel}` : "Qwen";

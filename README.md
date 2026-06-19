@@ -112,6 +112,14 @@ MINIMAX_MODEL_NAME=MiniMax-M2.7
 MINIMAX_BASE_URL=https://api.minimax.io/v1
 ```
 
+Optional GLM remote model:
+
+```bash
+GLM_API_KEY=...
+GLM_MODEL_NAME=glm-5.2
+GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
+
 Local Ollama GPU mode:
 
 ```bash
@@ -126,6 +134,7 @@ Optional:
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 MIMO_BASE_URL=https://api.xiaomimimo.com/v1
 MINIMAX_BASE_URL=https://api.minimax.io/v1
+GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 DEEPFIND_LOCAL_MODEL=Qwen/Qwen2.5-7B-Instruct
 DEEPFIND_LOCAL_QUANTIZATION=4bit
 OPENCLI_BIN=opencli
@@ -164,6 +173,7 @@ Flags:
 - `--gpu`: use the local Ollama model configured by `DEEPFIND_LOCAL_BASE_URL` and `DEEPFIND_LOCAL_MODEL`
 - `--mimo`: use the Xiaomi MiMo model configured by `MIMO_API_KEY` and `MIMO_MODEL_NAME`
 - `--minimax`: use the MiniMax model configured by `MINIMAX_API_KEY` and `MINIMAX_MODEL_NAME`
+- `--glm`: use the GLM model configured by `GLM_API_KEY` and `GLM_MODEL_NAME`
 
 To run with Ollama locally:
 
@@ -208,7 +218,7 @@ Generate 3 HTML slides from that summary and save them under tmp/
 The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
 live run activity, an iPhone-friendly mobile drawer, and a mode switch for
 `1 Agent` and `4 Agents`. The composer also includes a single
-model button that rotates between `Qwen`, `Mimo`, and the local `GPU` model
+model button that rotates between `Qwen`, `Mimo`, `Minimax`, `GLM`, and the local `GPU` model
 when a compatible NVIDIA GPU is available.
 
 Backend:
