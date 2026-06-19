@@ -92,7 +92,7 @@ fi
 if [[ "$SKIP_SETUP" == "false" ]]; then
   info "Syncing Python dependencies with uv..."
   cd "$REPO_ROOT"
-  uv sync --extra media --extra local-llm --extra browser
+  UV_NATIVE_TLS=1 uv sync --extra media --extra local-llm --extra browser
   info "Installing Playwright browsers..."
   # Install Playwright browsers if playwright is available
   if uv run python -c "import playwright" 2>/dev/null; then
