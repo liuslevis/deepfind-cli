@@ -129,6 +129,8 @@ class ResponseAgent:
                 "messages": messages,
                 "max_tokens": max_tokens,
             }
+            if self.settings.think:
+                request["extra_body"] = {"think": True}
             if use_tools:
                 tool_specs = self.tools.specs()
                 if tool_names is not None:

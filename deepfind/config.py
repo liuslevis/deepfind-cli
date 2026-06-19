@@ -85,6 +85,7 @@ class Settings:
     local_model: str = DEFAULT_LOCAL_MODEL
     local_base_url: str = DEFAULT_LOCAL_BASE_URL
     local_api_key: str = DEFAULT_LOCAL_API_KEY
+    think: bool = False
     nano_banana_api_key: str | None = None
     nano_banana_model: str = DEFAULT_IMAGE_MODEL
     image_dir: str = DEFAULT_IMAGE_DIR
@@ -296,4 +297,5 @@ class Settings:
             api_key=self.local_api_key,
             model=self.local_model,
             base_url=self.local_base_url,
+            think=True,
         )
