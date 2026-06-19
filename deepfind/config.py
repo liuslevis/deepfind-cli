@@ -84,6 +84,11 @@ class Settings:
     nano_banana_model: str = DEFAULT_IMAGE_MODEL
     image_dir: str = DEFAULT_IMAGE_DIR
     image_size: str = DEFAULT_IMAGE_SIZE
+    x_app_bearer_token: str = ""
+    x_consumer_key: str = ""
+    x_consumer_key_secret: str = ""
+    x_access_key: str = ""
+    x_access_token: str = ""
     opencli_bin: str = "opencli"
     twitter_bin: str = "twitter"
     xhs_bin: str = "xhs"
@@ -194,6 +199,11 @@ class Settings:
                 or _env("DEEPFIND_IMAGE_SIZE", DEFAULT_IMAGE_SIZE)
                 or DEFAULT_IMAGE_SIZE
             ),
+            x_app_bearer_token=_env("X_APP_BEARER_TOKEN", "") or "",
+            x_consumer_key=_env("X_CONSUMER_KEY", "") or "",
+            x_consumer_key_secret=_env("X_CONSUMER_KEY_SECRET", "") or "",
+            x_access_key=_env("X_ACCESS_KEY", "") or "",
+            x_access_token=_env("X_ACCESS_TOKEN", "") or "",
             opencli_bin=_env("OPENCLI_BIN", "opencli") or "opencli",
             twitter_bin=_env("TWITTER_CLI_BIN", "twitter") or "twitter",
             xhs_bin=_env("XHS_CLI_BIN", "xhs") or "xhs",

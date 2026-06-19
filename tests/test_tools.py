@@ -1766,6 +1766,168 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["tool"], "youtube_transcribe_full")
         self.assertEqual(result["data"]["transcript"], "line one")
 
+    def test_search_x_user_posts_missing_token_returns_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x", x_app_bearer_token=""))
+        result = toolset.search_x_user_posts("aleabitoreddit")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "missing_token")
+        self.assertIn("X_APP_BEARER_TOKEN", result["error"])
+
+    def test_search_x_user_posts_success_returns_posts(self) -> None:
+        toolset = Toolset(Settings(api_key="x", x_app_bearer_token="test_bearer_token"))
+        
+        user_response = SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "data": {
+                    "id": "123456",
+                    "name": "Test User",
+                    "username": "aleabitoreddit",
+                    "created_at": "2020-01-01T00:00:00.000Z",
+                }
+            },
+            raise_for_status=lambda: None,
+        )
+        
+        posts_response = SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "data": [
+                    {
+                        "id": "1",
+                        "text": "First post",
+                        "created_at": "2024-01-01T12:00:00.000Z",
+                        "public_metrics": {
+                            "retweet_count": 10,
+                            "like_count": 50,
+                        },
+                    },
+                    {
+                        "id": "2",
+                        "text": "Second post",
+                        "created_at": "2024-01-02T12:00:00.000Z",
+                        "public_metrics": {
+                            "retweet_count": 5,
+                            "like_count": 20,
+                        },
+                    },
+                ],
+                "meta": {
+                    "result_count": 2,
+                    "newest_id": "2",
+                    "oldest_id": "1",
+                },
+            },
+            raise_for_status=lambda: None,
+        )
+        
+        class FakeXClient:
+            def __enter__(self):
+                return self
+            
+            def __exit__(self, *args):
+                pass
+            
+            def get(self, url, *args, **kwargs):
+                return user_response if "users/by/username" in url else posts_response
+        
+        with patch("deepfind.tools.httpx.Client", return_value=FakeXClient()):
+            result = toolset.search_x_user_posts("aleabitoreddit", max_results=50)
+        
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "search_x_user_posts")
+        self.assertEqual(result["username"], "aleabitoreddit")
+        self.assertEqual(result["user_id"], "123456")
+        self.assertEqual(len(result["data"]["posts"]), 2)
+        self.assertEqual(result["data"]["posts"][0]["text"], "First post")
+        self.assertEqual(result["data"]["meta"]["result_count"], 2)
+
+    def test_search_x_user_posts_user_not_found(self) -> None:
+        toolset = Toolset(Settings(api_key="x", x_app_bearer_token="test_bearer_token"))
+        
+        user_response = SimpleNamespace(status_code=404, raise_for_status=lambda: None)
+        
+        class FakeXClient:
+            def __enter__(self):
+                return self
+            
+            def __exit__(self, *args):
+                pass
+            
+            def get(self, *args, **kwargs):
+                return user_response
+        
+        with patch("deepfind.tools.httpx.Client", return_value=FakeXClient()):
+            result = toolset.search_x_user_posts("nonexistentuser")
+        
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "user_not_found")
+        self.assertIn("not found", result["error"])
+
+    def test_search_x_user_posts_unauthorized(self) -> None:
+        toolset = Toolset(Settings(api_key="x", x_app_bearer_token="invalid_token"))
+        
+        user_response = SimpleNamespace(status_code=401, raise_for_status=lambda: None)
+        
+        class FakeXClient:
+            def __enter__(self):
+                return self
+            
+            def __exit__(self, *args):
+                pass
+            
+            def get(self, *args, **kwargs):
+                return user_response
+        
+        with patch("deepfind.tools.httpx.Client", return_value=FakeXClient()):
+            result = toolset.search_x_user_posts("aleabitoreddit")
+        
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "unauthorized")
+        self.assertIn("Invalid or expired", result["error"])
+
+    def test_search_x_user_posts_empty_username(self) -> None:
+        toolset = Toolset(Settings(api_key="x", x_app_bearer_token="test_bearer_token"))
+        result = toolset.search_x_user_posts("")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "invalid_username")
+
+    def test_search_x_user_posts_strips_at_symbol(self) -> None:
+        toolset = Toolset(Settings(api_key="x", x_app_bearer_token="test_bearer_token"))
+        
+        user_response = SimpleNamespace(
+            status_code=200,
+            json=lambda: {"data": {"id": "123", "username": "testuser"}},
+            raise_for_status=lambda: None,
+        )
+        
+        posts_response = SimpleNamespace(
+            status_code=200,
+            json=lambda: {"data": [], "meta": {"result_count": 0}},
+            raise_for_status=lambda: None,
+        )
+        
+        calls = []
+        
+        class FakeXClient:
+            def __enter__(self):
+                return self
+            
+            def __exit__(self, *args):
+                pass
+            
+            def get(self, url, *args, **kwargs):
+                calls.append(url)
+                return user_response if "users/by/username" in url else posts_response
+        
+        with patch("deepfind.tools.httpx.Client", return_value=FakeXClient()):
+            result = toolset.search_x_user_posts("@testuser")
+        
+        self.assertTrue(result["ok"])
+        self.assertIn("/testuser", calls[0])
+        self.assertNotIn("/@testuser", calls[0])
+
+
     def test_youtube_transcribe_invalid_youtube_id_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         result = toolset.youtube_transcribe("not a video", "summarize this video")

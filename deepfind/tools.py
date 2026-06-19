@@ -11,6 +11,8 @@ from threading import Lock
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import httpx
+
 from .bili_transcribe import (
     BiliDownloadError,
     BiliTranscribeError,
@@ -884,6 +886,7 @@ class Toolset:
             "twitter_search": self.twitter_search,
             "x_search": self.x_search,
             "twitter_read": self.twitter_read,
+            "search_x_user_posts": self.search_x_user_posts,
             "zhihu_search": self.zhihu_search,
             "boss_search": self.boss_search,
             "boss_detail": self.boss_detail,
@@ -1046,6 +1049,32 @@ class Toolset:
                         "ref": {"type": "string"},
                     },
                     "required": ["ref"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "search_x_user_posts",
+                "Get posts from an X (Twitter) user using the native X API. Returns up to 100 most recent posts.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "username": {
+                            "type": "string",
+                            "description": "X username without @ symbol (e.g., 'aleabitoreddit')",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 100,
+                            "description": "Number of posts to retrieve (default: 100)",
+                        },
+                        "exclude": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": ["retweets", "replies"]},
+                            "description": "Post types to exclude",
+                        },
+                    },
+                    "required": ["username"],
                     "additionalProperties": False,
                 },
             ),
@@ -2034,6 +2063,192 @@ class Toolset:
             ["tweet", ref, "--json"],
             "twitter_read",
         )
+
+    def search_x_user_posts(
+        self,
+        username: str,
+        max_results: int = 100,
+        exclude: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Get posts from an X (Twitter) user using the native X API v2.
+        
+        Uses the User Posts Timeline endpoint to retrieve up to 100 most recent posts.
+        Requires X_APP_BEARER_TOKEN to be set in environment.
+        
+        Args:
+            username: X username without @ symbol (e.g., 'aleabitoreddit')
+            max_results: Number of posts to retrieve (5-100, default: 100)
+            exclude: List of post types to exclude (e.g., ['retweets', 'replies'])
+        
+        Returns:
+            Dict with ok status, data containing posts, user info, and metadata
+        """
+        # Validate bearer token
+        bearer_token = self.settings.x_app_bearer_token
+        if not bearer_token:
+            return {
+                "ok": False,
+                "tool": "search_x_user_posts",
+                "username": username,
+                "error_code": "missing_token",
+                "error": "X_APP_BEARER_TOKEN not configured in .env file",
+            }
+        
+        # Clean username
+        username = username.strip().lstrip("@")
+        if not username:
+            return {
+                "ok": False,
+                "tool": "search_x_user_posts",
+                "error_code": "invalid_username",
+                "error": "Username cannot be empty",
+            }
+        
+        # Validate max_results
+        max_results = max(5, min(100, max_results))
+        
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                # Step 1: Get user ID from username
+                user_lookup_url = f"https://api.x.com/2/users/by/username/{username}"
+                user_lookup_params = {
+                    "user.fields": "id,name,username,created_at,description,public_metrics,verified"
+                }
+                user_response = client.get(
+                    user_lookup_url,
+                    headers={"Authorization": f"Bearer {bearer_token}"},
+                    params=user_lookup_params,
+                )
+                
+                if user_response.status_code == 404:
+                    return {
+                        "ok": False,
+                        "tool": "search_x_user_posts",
+                        "username": username,
+                        "error_code": "user_not_found",
+                        "error": f"User @{username} not found",
+                    }
+                
+                if user_response.status_code == 401:
+                    return {
+                        "ok": False,
+                        "tool": "search_x_user_posts",
+                        "username": username,
+                        "error_code": "unauthorized",
+                        "error": "Invalid or expired X API Bearer Token",
+                    }
+                
+                if user_response.status_code == 429:
+                    return {
+                        "ok": False,
+                        "tool": "search_x_user_posts",
+                        "username": username,
+                        "error_code": "rate_limit",
+                        "error": "X API rate limit exceeded. Please try again later.",
+                    }
+                
+                user_response.raise_for_status()
+                user_data = user_response.json()
+                
+                if "data" not in user_data:
+                    return {
+                        "ok": False,
+                        "tool": "search_x_user_posts",
+                        "username": username,
+                        "error_code": "invalid_response",
+                        "error": "User data not found in API response",
+                    }
+                
+                user_id = user_data["data"]["id"]
+                user_info = user_data["data"]
+                
+                # Step 2: Get user's posts
+                posts_url = f"https://api.x.com/2/users/{user_id}/tweets"
+                posts_params = {
+                    "max_results": max_results,
+                    "tweet.fields": "id,text,created_at,public_metrics,entities,referenced_tweets,conversation_id,author_id",
+                    "expansions": "author_id,referenced_tweets.id",
+                }
+                
+                # Add exclude parameter if provided
+                if exclude:
+                    valid_excludes = [e for e in exclude if e in ["retweets", "replies"]]
+                    if valid_excludes:
+                        posts_params["exclude"] = ",".join(valid_excludes)
+                
+                posts_response = client.get(
+                    posts_url,
+                    headers={"Authorization": f"Bearer {bearer_token}"},
+                    params=posts_params,
+                )
+                
+                if posts_response.status_code == 429:
+                    return {
+                        "ok": False,
+                        "tool": "search_x_user_posts",
+                        "username": username,
+                        "user_id": user_id,
+                        "error_code": "rate_limit",
+                        "error": "X API rate limit exceeded. Please try again later.",
+                    }
+                
+                posts_response.raise_for_status()
+                posts_data = posts_response.json()
+                
+                # Handle empty results
+                if "data" not in posts_data or not posts_data["data"]:
+                    return {
+                        "ok": True,
+                        "tool": "search_x_user_posts",
+                        "username": username,
+                        "user_id": user_id,
+                        "data": {
+                            "user": user_info,
+                            "posts": [],
+                            "meta": {
+                                "result_count": 0,
+                                "newest_id": None,
+                                "oldest_id": None,
+                            },
+                        },
+                    }
+                
+                return {
+                    "ok": True,
+                    "tool": "search_x_user_posts",
+                    "username": username,
+                    "user_id": user_id,
+                    "data": {
+                        "user": user_info,
+                        "posts": posts_data["data"],
+                        "meta": posts_data.get("meta", {}),
+                    },
+                }
+        
+        except httpx.HTTPStatusError as exc:
+            return {
+                "ok": False,
+                "tool": "search_x_user_posts",
+                "username": username,
+                "error_code": f"http_{exc.response.status_code}",
+                "error": f"X API error: {exc.response.status_code} - {exc.response.text}",
+            }
+        except httpx.RequestError as exc:
+            return {
+                "ok": False,
+                "tool": "search_x_user_posts",
+                "username": username,
+                "error_code": "network_error",
+                "error": f"Network error: {str(exc)}",
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "tool": "search_x_user_posts",
+                "username": username,
+                "error_code": "unknown_error",
+                "error": f"Unexpected error: {str(exc)}",
+            }
 
     def xhs_search(
         self,
