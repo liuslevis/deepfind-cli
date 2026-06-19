@@ -52,6 +52,8 @@ Install `opencli` for web search and video download:
 ```bash
 git clone https://github.com/liuslevis/opencli
 cd opencli
+git checkout codex/search-engines
+# echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc # for mac
 npm install -g .
 # drag ./extension to chrome extension
 ```
