@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
+import ssl
 from dataclasses import dataclass
 from io import BytesIO
 from urllib.parse import urlparse
@@ -120,13 +121,22 @@ class PreparedWebDocument:
     markdown_chars: int
 
 
+def _make_ssl_context() -> ssl.SSLContext:
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
+        ctx.options |= ssl.OP_IGNORE_UNEXPECTED_EOF
+    return ctx
+
+
 def fetch_web_document(url: str, timeout: int) -> PreparedWebDocument:
     validate_fetch_url(url)
     try:
         with httpx.Client(
             follow_redirects=True,
             timeout=timeout,
-            verify=False,
+            verify=_make_ssl_context(),
             headers={
                 "User-Agent": _DEFAULT_USER_AGENT,
                 "Accept": "text/html,application/xhtml+xml,application/pdf,text/markdown,text/plain;q=0.9,*/*;q=0.1",
