@@ -119,7 +119,8 @@ def detect_local_model(settings: Settings) -> LocalModelStatus:
             reason=f"Ollama is not reachable at {settings.local_base_url}. Make sure Ollama is running.",
         )
 
-    if settings.local_model not in model_names:
+    matched_name = next((m for m in model_names if m.lower() == settings.local_model.lower()), None)
+    if matched_name is None:
         return LocalModelStatus(
             available=False,
             model=settings.local_model,
@@ -130,7 +131,7 @@ def detect_local_model(settings: Settings) -> LocalModelStatus:
 
     return LocalModelStatus(
         available=True,
-        model=settings.local_model,
+        model=matched_name,
         base_url=settings.local_base_url,
         gpu=gpu,
     )
