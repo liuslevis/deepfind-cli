@@ -31,6 +31,16 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(tasks[0], "one task")
         self.assertTrue(agent_cls.return_value.run.call_args.kwargs["use_tools"])
 
+    def test_run_worker_uses_sub_model(self) -> None:
+        settings = Settings(api_key="x", model="lead-model", sub_model="sub-model")
+        app = DeepFind(settings=settings)
+        with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
+            agent_cls.return_value.run.return_value.text = "worker text"
+            agent_cls.return_value.run.return_value.citations = []
+            app._run_worker(1, "topic", transcript=[], task="do thing", max_iter=2)
+        used_settings = agent_cls.call_args.args[0]
+        self.assertEqual(used_settings.model, "sub-model")
+
     def test_worker_prompt_mentions_claims_schema(self) -> None:
         self.assertIn("boss_search", WORKER_PROMPT)
         self.assertIn("bili_search", WORKER_PROMPT)

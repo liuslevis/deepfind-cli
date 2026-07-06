@@ -84,6 +84,7 @@ class CliTests(unittest.TestCase):
             base_settings,
             api_key=base_settings.local_api_key,
             model=base_settings.local_model,
+            sub_model=base_settings.local_model,
             base_url=base_settings.local_base_url,
         )
         app_cls.assert_called_once()
@@ -123,6 +124,7 @@ class CliTests(unittest.TestCase):
             base_settings,
             api_key=base_settings.mimo_api_key,
             model=base_settings.mimo_model,
+            sub_model=base_settings.mimo_model,
             base_url=base_settings.mimo_base_url,
         )
         app_cls.assert_called_once()
@@ -162,6 +164,7 @@ class CliTests(unittest.TestCase):
             base_settings,
             api_key=base_settings.minimax_api_key,
             model=base_settings.minimax_model,
+            sub_model=base_settings.minimax_model,
             base_url=base_settings.minimax_base_url,
         )
         app_cls.assert_called_once()
@@ -201,6 +204,7 @@ class CliTests(unittest.TestCase):
             base_settings,
             api_key=base_settings.glm_api_key,
             model=base_settings.glm_model,
+            sub_model=base_settings.glm_model,
             base_url=base_settings.glm_base_url,
         )
         app_cls.assert_called_once()

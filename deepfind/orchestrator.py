@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 import re
 from typing import Any, Sequence
@@ -923,7 +923,8 @@ class DeepFind:
         if self.progress:
             self.progress.worker_started(name, task)
         history = _history_messages(transcript)
-        agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
+        worker_settings = replace(self.settings, model=self.settings.sub_model)
+        agent = ResponseAgent(worker_settings, self.tools, max_iter=max_iter, progress=self.progress)
         result = agent.run(
             name=name,
             instructions=WORKER_PROMPT,

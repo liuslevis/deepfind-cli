@@ -70,6 +70,32 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.audio_dir, "audio")
         self.assertEqual(settings.subprocess_timeout, 45)
 
+    def test_from_env_qwen_sub_model_defaults_to_lead_model(self) -> None:
+        env = {
+            "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+            "QWEN_API_KEY": "sk-test",
+            "QWEN_MODEL_NAME": "qwen3-max",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.qwen_model, "qwen3-max")
+        self.assertEqual(settings.qwen_sub_model, "qwen3-max")
+        self.assertEqual(settings.model, "qwen3-max")
+        self.assertEqual(settings.sub_model, "qwen3-max")
+
+    def test_from_env_qwen_sub_model_uses_dedicated_env_var(self) -> None:
+        env = {
+            "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+            "QWEN_API_KEY": "sk-test",
+            "QWEN_MODEL_NAME": "qwen3-max",
+            "QWEN_SUB_MODEL_NAME": "qwen3-flash # comment",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.model, "qwen3-max")
+        self.assertEqual(settings.qwen_sub_model, "qwen3-flash")
+        self.assertEqual(settings.sub_model, "qwen3-flash")
+
     def test_from_env_loads_dotenv_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
