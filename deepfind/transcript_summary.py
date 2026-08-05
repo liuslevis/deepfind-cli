@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .llm_transport import CHAT_COMPLETIONS_API, complete_text
+
 BILI_TRANSCRIPT_SUMMARY_MODEL = "qwen-plus"
 BILI_TRANSCRIPT_SUMMARY_CHUNK_CHARS = 12_000
 
@@ -15,6 +17,7 @@ def summarize_transcript_for_query(
     query: str,
     transcript_path: str = "",
     model: str = BILI_TRANSCRIPT_SUMMARY_MODEL,
+    api_mode: str = CHAT_COMPLETIONS_API,
 ) -> tuple[str, int]:
     normalized_query = query.strip()
     normalized_transcript = transcript.strip()
@@ -35,6 +38,7 @@ def summarize_transcript_for_query(
                 index=index,
                 total=len(chunks),
                 transcript_path=transcript_path,
+                api_mode=api_mode,
             )
         )
 
@@ -46,6 +50,7 @@ def summarize_transcript_for_query(
             model=model,
             query=normalized_query,
             chunk_summaries=chunk_summaries,
+            api_mode=api_mode,
         ),
         len(chunks),
     )
@@ -60,6 +65,7 @@ def _summarize_chunk(
     index: int,
     total: int,
     transcript_path: str,
+    api_mode: str,
 ) -> str:
     system_prompt = (
         "You compress long Bilibili transcript chunks for a research agent. "
@@ -88,6 +94,7 @@ def _summarize_chunk(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         max_tokens=900,
+        api_mode=api_mode,
     )
     if summary:
         return summary
@@ -100,6 +107,7 @@ def _merge_chunk_summaries(
     model: str,
     query: str,
     chunk_summaries: list[str],
+    api_mode: str,
 ) -> str:
     system_prompt = (
         "You merge partial transcript summaries for a research agent. "
@@ -126,6 +134,7 @@ def _merge_chunk_summaries(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         max_tokens=1_200,
+        api_mode=api_mode,
     )
     if summary:
         return summary
@@ -139,20 +148,20 @@ def _chat_complete(
     system_prompt: str,
     user_prompt: str,
     max_tokens: int,
+    api_mode: str,
 ) -> str:
     try:
-        response = client.chat.completions.create(
+        return complete_text(
+            client,
+            api_mode=api_mode,
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=max_tokens,
+            instructions=system_prompt,
+            user_input=user_prompt,
+            max_output_tokens=max_tokens,
         )
     except Exception as exc:  # pragma: no cover - API failures are mocked in tests
         raise TranscriptSummaryError(str(exc) or "transcript summarization failed") from exc
 
-    return (response.choices[0].message.content or "").strip()
 
 
 def _chunk_text(text: str, limit: int) -> list[str]:

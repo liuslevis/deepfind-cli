@@ -65,10 +65,17 @@ const SLASH_COMMANDS: SlashCommandOption[] = [
   },
 ];
 const DEFAULT_MODEL_TARGET: ModelTarget = "qwen";
-const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax", "glm"] as const;
+const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax", "glm", "deepseek"] as const;
 
 function normalizeModelTarget(target: ModelTarget | "cloud" | null | undefined): ModelTarget {
-  if (target === "gpu" || target === "mimo" || target === "minimax" || target === "glm" || target === "qwen") {
+  if (
+    target === "gpu" ||
+    target === "mimo" ||
+    target === "minimax" ||
+    target === "glm" ||
+    target === "deepseek" ||
+    target === "qwen"
+  ) {
     return target;
   }
   return DEFAULT_MODEL_TARGET;
@@ -166,6 +173,9 @@ function modelTargetButtonLabel(target: ModelTarget): string {
   if (target === "glm") {
     return "GLM";
   }
+  if (target === "deepseek") {
+    return "DeepSeek";
+  }
   return "Qwen";
 }
 
@@ -182,6 +192,9 @@ function modelTargetButtonTitle(target: ModelTarget, localModel: LocalModelInfo 
   if (target === "glm") {
     return "GLM (Zhipu AI) API";
   }
+  if (target === "deepseek") {
+    return "DeepSeek Responses API";
+  }
   return "Qwen API";
 }
 
@@ -197,6 +210,9 @@ function messageModelLabel(modelTarget: ModelTarget | undefined, modelLabel: str
   }
   if (modelTarget === "glm") {
     return modelLabel ? `GLM: ${modelLabel}` : "GLM";
+  }
+  if (modelTarget === "deepseek") {
+    return modelLabel ? `DeepSeek: ${modelLabel}` : "DeepSeek";
   }
   if (modelTarget === "qwen") {
     return modelLabel ? `Qwen: ${modelLabel}` : "Qwen";

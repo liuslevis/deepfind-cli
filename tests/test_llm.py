@@ -35,11 +35,39 @@ class FakeClient:
         self.chat = SimpleNamespace(completions=FakeChatCompletionsAPI(items))
 
 
+class FakeResponsesAPI:
+    def __init__(self, items):
+        self.items = list(items)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.items.pop(0)
+
+
+class FakeResponsesClient:
+    def __init__(self, items):
+        self.responses = FakeResponsesAPI(items)
+
+
 class FakeSettings:
     model = "qwen3-max"
+    api_mode = "chat_completions"
+    think = False
 
     def __init__(self, items):
         self._client = FakeClient(items)
+
+    def new_client(self):
+        return self._client
+
+
+class FakeResponsesSettings:
+    model = "deepseek-v4-flash"
+    api_mode = "responses"
+
+    def __init__(self, items):
+        self._client = FakeResponsesClient(items)
 
     def new_client(self):
         return self._client
@@ -178,3 +206,51 @@ class ResponseAgentTests(unittest.TestCase):
 
         calls = settings.new_client().chat.completions.calls
         self.assertEqual(calls[0]["max_tokens"], 3200)
+
+    def test_runs_responses_api_function_tool_loop(self) -> None:
+        reasoning_item = SimpleNamespace(
+            type="reasoning",
+            model_dump=lambda **_: {
+                "type": "reasoning",
+                "id": "reasoning-1",
+                "summary": [],
+                "content": [
+                    {
+                        "type": "reasoning_text",
+                        "text": "I should search for current information.",
+                    }
+                ],
+            },
+        )
+        function_call = SimpleNamespace(
+            type="function_call",
+            call_id="call-1",
+            name="twitter_search",
+            arguments='{"query":"deepseek"}',
+        )
+        settings = FakeResponsesSettings(
+            [
+                SimpleNamespace(output=[reasoning_item, function_call], output_text=""),
+                SimpleNamespace(output=[], output_text='{"summary":"ok","facts":[],"gaps":[]}'),
+            ]
+        )
+        tools = FakeTools()
+        agent = ResponseAgent(settings=settings, tools=tools, max_iter=3)
+
+        result = agent.run("worker", "short prompt", "q=test", use_tools=True)
+
+        self.assertEqual(result.iterations, 2)
+        self.assertEqual(tools.invocations, [("twitter_search", {"query": "deepseek"})])
+        calls = settings.new_client().responses.calls
+        self.assertEqual(calls[0]["instructions"], "short prompt")
+        self.assertEqual(calls[0]["max_output_tokens"], 1400)
+        self.assertEqual(calls[0]["tools"][0]["name"], "twitter_search")
+        self.assertFalse(calls[0]["tools"][0]["strict"])
+        self.assertEqual(calls[1]["input"][-3]["type"], "reasoning")
+        self.assertEqual(
+            calls[1]["input"][-3]["content"][0]["type"],
+            "reasoning_text",
+        )
+        self.assertEqual(calls[1]["input"][-2]["type"], "function_call")
+        self.assertEqual(calls[1]["input"][-1]["type"], "function_call_output")
+        self.assertEqual(calls[1]["input"][-1]["call_id"], "call-1")

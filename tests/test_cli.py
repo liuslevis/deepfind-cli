@@ -80,13 +80,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(stdout.getvalue().strip(), "local answer")
-        expected_settings = replace(
-            base_settings,
-            api_key=base_settings.local_api_key,
-            model=base_settings.local_model,
-            sub_model=base_settings.local_model,
-            base_url=base_settings.local_base_url,
-        )
+        expected_settings = base_settings.with_local_gpu()
         app_cls.assert_called_once()
         self.assertEqual(app_cls.call_args.kwargs["settings"], expected_settings)
 
@@ -209,6 +203,39 @@ class CliTests(unittest.TestCase):
         )
         app_cls.assert_called_once()
         self.assertEqual(app_cls.call_args.kwargs["settings"], expected_settings)
+
+    def test_main_deepseek_uses_deepseek_settings(self) -> None:
+        base_settings = Settings(
+            api_key="qwen-key",
+            deepseek_api_key="deepseek-key",
+            deepseek_model="deepseek-v4-flash",
+            deepseek_sub_model="deepseek-v4-flash",
+            deepseek_base_url="https://api.deepseek.com",
+        )
+
+        with (
+            patch("deepfind.cli.Settings.from_env", return_value=base_settings),
+            patch("deepfind.cli.DeepFind") as app_cls,
+        ):
+            session = app_cls.return_value.session.return_value
+            session.ask.return_value = "deepseek answer"
+            stdout = io.StringIO()
+
+            code = main(
+                ["test query", "--deepseek", "--once"],
+                stdin=NonTtyStringIO(),
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "deepseek answer")
+        selected = app_cls.call_args.kwargs["settings"]
+        self.assertEqual(selected.api_key, "deepseek-key")
+        self.assertEqual(selected.model, "deepseek-v4-flash")
+        self.assertEqual(selected.sub_model, "deepseek-v4-flash")
+        self.assertEqual(selected.base_url, "https://api.deepseek.com")
+        self.assertEqual(selected.api_mode, "responses")
 
     def test_main_passes_long_report_mode_to_session(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:

@@ -8,6 +8,7 @@ from typing import Any
 from openai import OpenAI
 
 from .config import DEFAULT_BASE_URL, DEFAULT_MODEL
+from .llm_transport import CHAT_COMPLETIONS_API, complete_text
 
 
 DEFAULT_SLIDE_DIR = "slide"
@@ -186,6 +187,7 @@ def generate_slides(
     template_name: str | None = None,
     timeout: int = 90,
     html_path: str | None = None,
+    api_mode: str = CHAT_COMPLETIONS_API,
 ) -> dict[str, Any]:
     prompt = _normalize_prompt(prompt)
     slide_count = _normalize_slide_count(slide_count)
@@ -223,19 +225,18 @@ def generate_slides(
 
     client = OpenAI(api_key=resolved_key, base_url=base_url)
     try:
-        response = client.chat.completions.create(
+        content = complete_text(
+            client,
+            api_mode=api_mode,
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=max(4000, slide_count * 800),
+            instructions=system_prompt,
+            user_input=user_prompt,
+            max_output_tokens=max(4000, slide_count * 800),
             timeout=max(timeout, 1),
         )
     except Exception as exc:
         raise SlideGenerationError(f"Slide generation request failed: {exc}") from exc
 
-    content = response.choices[0].message.content or ""
     slides_html = _clean_llm_output(content)
 
     if not slides_html or "<section" not in slides_html:

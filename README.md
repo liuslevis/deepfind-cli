@@ -122,6 +122,15 @@ GLM_MODEL_NAME=glm-5.2
 GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 ```
 
+Optional DeepSeek remote model (Responses API):
+
+```bash
+DEEPSEEK_API_KEY=...
+DEEPSEEK_MODEL_NAME=deepseek-v4-flash
+DEEPSEEK_SUB_MODEL_NAME=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+```
+
 Local Ollama GPU mode:
 
 ```bash
@@ -137,6 +146,7 @@ QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 MIMO_BASE_URL=https://api.xiaomimimo.com/v1
 MINIMAX_BASE_URL=https://api.minimax.io/v1
 GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPFIND_LOCAL_MODEL=Qwen/Qwen2.5-7B-Instruct
 DEEPFIND_LOCAL_QUANTIZATION=4bit
 OPENCLI_BIN=opencli
@@ -176,6 +186,7 @@ Flags:
 - `--mimo`: use the Xiaomi MiMo model configured by `MIMO_API_KEY` and `MIMO_MODEL_NAME`
 - `--minimax`: use the MiniMax model configured by `MINIMAX_API_KEY` and `MINIMAX_MODEL_NAME`
 - `--glm`: use the GLM model configured by `GLM_API_KEY` and `GLM_MODEL_NAME`
+- `--deepseek`: use the DeepSeek Responses API model configured by `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL_NAME`
 
 To run with Ollama locally:
 

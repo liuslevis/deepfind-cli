@@ -480,6 +480,8 @@ class DeepFindWebService:
             return base_settings.with_minimax_remote()
         if model_target == "glm":
             return base_settings.with_glm_remote()
+        if model_target == "deepseek":
+            return base_settings.with_deepseek_remote()
         return base_settings.with_qwen_remote()
 
     def _app_for_settings(self, progress: WebProgress, settings: Settings):

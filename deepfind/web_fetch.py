@@ -12,6 +12,8 @@ import httpx
 from bs4 import BeautifulSoup
 from markdownify import markdownify
 
+from .llm_transport import CHAT_COMPLETIONS_API, complete_text
+
 try:
     from pypdf import PdfReader
 except ImportError:  # pragma: no cover - covered indirectly when dependency is missing
@@ -361,6 +363,7 @@ def summarize_web_document(
     prompt: str,
     document: PreparedWebDocument,
     model: str = WEB_FETCH_MODEL,
+    api_mode: str = CHAT_COMPLETIONS_API,
 ) -> str:
     system_prompt = (
         "You summarize fetched web pages for a research agent. "
@@ -378,18 +381,17 @@ def summarize_web_document(
         f"{document.markdown}"
     )
     try:
-        response = client.chat.completions.create(
+        summary = complete_text(
+            client,
+            api_mode=api_mode,
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=500,
+            instructions=system_prompt,
+            user_input=user_prompt,
+            max_output_tokens=500,
         )
     except Exception as exc:  # pragma: no cover - API failures are mocked in tests
         raise WebSummaryError(str(exc) or "summary generation failed") from exc
 
-    summary = (response.choices[0].message.content or "").strip()
     if summary:
         return summary
 

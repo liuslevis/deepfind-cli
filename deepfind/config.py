@@ -9,6 +9,7 @@ from openai import OpenAI
 
 from .asr import DEFAULT_ASR_MODEL
 from .gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
+from .llm_transport import CHAT_COMPLETIONS_API, RESPONSES_API
 
 
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -19,6 +20,8 @@ DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1"
 DEFAULT_MINIMAX_MODEL = "MiniMax-M2.7"
 DEFAULT_GLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 DEFAULT_GLM_MODEL = "glm-5.2"
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
 DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_LOCAL_MODEL = "qwen3.5:9B"  # Change this to upgrade (e.g., "qwen3.6:27B")
 DEFAULT_LOCAL_API_KEY = "ollama"
@@ -71,6 +74,7 @@ class Settings:
     model: str = DEFAULT_MODEL
     sub_model: str = DEFAULT_MODEL
     base_url: str = DEFAULT_BASE_URL
+    api_mode: str = CHAT_COMPLETIONS_API
     qwen_api_key: str = ""
     qwen_model: str = DEFAULT_MODEL
     qwen_sub_model: str = DEFAULT_MODEL
@@ -85,6 +89,10 @@ class Settings:
     glm_api_key: str = ""
     glm_model: str = DEFAULT_GLM_MODEL
     glm_base_url: str = DEFAULT_GLM_BASE_URL
+    deepseek_api_key: str = ""
+    deepseek_model: str = DEFAULT_DEEPSEEK_MODEL
+    deepseek_sub_model: str = DEFAULT_DEEPSEEK_MODEL
+    deepseek_base_url: str = DEFAULT_DEEPSEEK_BASE_URL
     local_model: str = DEFAULT_LOCAL_MODEL
     local_base_url: str = DEFAULT_LOCAL_BASE_URL
     local_api_key: str = DEFAULT_LOCAL_API_KEY
@@ -191,6 +199,22 @@ class Settings:
         glm_base_url = (
             _env("GLM_BASE_URL", DEFAULT_GLM_BASE_URL) or DEFAULT_GLM_BASE_URL
         )
+        deepseek_api_key = _env("DEEPSEEK_API_KEY") or ""
+        deepseek_model = (
+            _env("DEEPSEEK_MODEL")
+            or _env("DEEPSEEK_MODEL_NAME", DEFAULT_DEEPSEEK_MODEL)
+            or DEFAULT_DEEPSEEK_MODEL
+        )
+        deepseek_sub_model = (
+            _env("DEEPSEEK_SUB_MODEL")
+            or _env("DEEPSEEK_SUB_MODEL_NAME", deepseek_model)
+            or deepseek_model
+        )
+        deepseek_base_url = (
+            _env("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL)
+            or DEFAULT_DEEPSEEK_BASE_URL
+        )
+        api_mode = CHAT_COMPLETIONS_API
         remote_target = "qwen"
         if not qwen_api_key:
             if glm_api_key:
@@ -199,6 +223,8 @@ class Settings:
                 remote_target = "minimax"
             elif mimo_api_key:
                 remote_target = "mimo"
+            elif deepseek_api_key:
+                remote_target = "deepseek"
         if remote_target == "qwen":
             api_key = qwen_api_key
             model = qwen_model
@@ -214,14 +240,20 @@ class Settings:
             model = glm_model
             sub_model = glm_model
             base_url = glm_base_url
-        else:
+        elif remote_target == "mimo":
             api_key = mimo_api_key
             model = mimo_model
             sub_model = mimo_model
             base_url = mimo_base_url
+        else:
+            api_key = deepseek_api_key
+            model = deepseek_model
+            sub_model = deepseek_sub_model
+            base_url = deepseek_base_url
+            api_mode = RESPONSES_API
         if require_api_key and not api_key:
             raise SettingsError(
-                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, or use local GPU mode."
+                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, DEEPSEEK_API_KEY, or use local GPU mode."
             )
         timeout = _env("DEEPFIND_TOOL_TIMEOUT", "90")
         return cls(
@@ -229,6 +261,7 @@ class Settings:
             model=model,
             sub_model=sub_model,
             base_url=base_url,
+            api_mode=api_mode,
             qwen_api_key=qwen_api_key,
             qwen_model=qwen_model,
             qwen_sub_model=qwen_sub_model,
@@ -243,6 +276,10 @@ class Settings:
             glm_api_key=glm_api_key,
             glm_model=glm_model,
             glm_base_url=glm_base_url,
+            deepseek_api_key=deepseek_api_key,
+            deepseek_model=deepseek_model,
+            deepseek_sub_model=deepseek_sub_model,
+            deepseek_base_url=deepseek_base_url,
             local_model=_env("DEEPFIND_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
             or DEFAULT_LOCAL_MODEL,
             local_base_url=_env("DEEPFIND_LOCAL_BASE_URL", DEFAULT_LOCAL_BASE_URL)
@@ -294,7 +331,7 @@ class Settings:
     def ensure_remote_ready(self) -> "Settings":
         if not self.api_key:
             raise SettingsError(
-                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, or switch to GPU mode."
+                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, DEEPSEEK_API_KEY, or switch to GPU mode."
             )
         return self
 
@@ -309,6 +346,7 @@ class Settings:
             model=self.qwen_model,
             sub_model=self.qwen_sub_model,
             base_url=self.qwen_base_url,
+            api_mode=CHAT_COMPLETIONS_API,
         )
 
     def with_mimo_remote(self) -> "Settings":
@@ -322,6 +360,7 @@ class Settings:
             model=self.mimo_model,
             sub_model=self.mimo_model,
             base_url=self.mimo_base_url,
+            api_mode=CHAT_COMPLETIONS_API,
         )
 
     def with_minimax_remote(self) -> "Settings":
@@ -333,6 +372,7 @@ class Settings:
             model=self.minimax_model,
             sub_model=self.minimax_model,
             base_url=self.minimax_base_url,
+            api_mode=CHAT_COMPLETIONS_API,
         )
 
     def with_glm_remote(self) -> "Settings":
@@ -344,6 +384,19 @@ class Settings:
             model=self.glm_model,
             sub_model=self.glm_model,
             base_url=self.glm_base_url,
+            api_mode=CHAT_COMPLETIONS_API,
+        )
+
+    def with_deepseek_remote(self) -> "Settings":
+        if not self.deepseek_api_key:
+            raise SettingsError("Set DEEPSEEK_API_KEY, or switch to another model.")
+        return replace(
+            self,
+            api_key=self.deepseek_api_key,
+            model=self.deepseek_model,
+            sub_model=self.deepseek_sub_model,
+            base_url=self.deepseek_base_url,
+            api_mode=RESPONSES_API,
         )
 
     def with_local_gpu(self) -> "Settings":
@@ -353,5 +406,6 @@ class Settings:
             model=self.local_model,
             sub_model=self.local_model,
             base_url=self.local_base_url,
+            api_mode=CHAT_COMPLETIONS_API,
             think=True,
         )

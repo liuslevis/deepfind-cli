@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 from deepfind.config import (
     DEFAULT_BASE_URL,
+    DEFAULT_DEEPSEEK_BASE_URL,
+    DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_MINIMAX_BASE_URL,
     DEFAULT_MINIMAX_MODEL,
     DEFAULT_MIMO_BASE_URL,
@@ -176,3 +178,19 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.minimax_api_key, "sk-minimax")
         self.assertEqual(settings.minimax_model, DEFAULT_MINIMAX_MODEL)
         self.assertEqual(settings.minimax_base_url, DEFAULT_MINIMAX_BASE_URL)
+
+    def test_from_env_falls_back_to_deepseek_and_uses_responses_api(self) -> None:
+        env = {
+            "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+            "DEEPSEEK_API_KEY": "sk-deepseek",
+            "DEEPSEEK_MODEL_NAME": "deepseek-v4-flash",
+            "DEEPSEEK_SUB_MODEL_NAME": "deepseek-v4-flash",
+            "DEEPSEEK_BASE_URL": DEFAULT_DEEPSEEK_BASE_URL,
+        }
+        with patch.dict(os.environ, env, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.api_key, "sk-deepseek")
+        self.assertEqual(settings.model, DEFAULT_DEEPSEEK_MODEL)
+        self.assertEqual(settings.sub_model, DEFAULT_DEEPSEEK_MODEL)
+        self.assertEqual(settings.base_url, DEFAULT_DEEPSEEK_BASE_URL)
+        self.assertEqual(settings.api_mode, "responses")

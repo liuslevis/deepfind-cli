@@ -68,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run the research pipeline with the GLM model configured by GLM_API_KEY and GLM_MODEL_NAME",
     )
+    mode_group.add_argument(
+        "--deepseek",
+        action="store_true",
+        help="run the research pipeline with DeepSeek configured by DEEPSEEK_API_KEY and DEEPSEEK_MODEL_NAME",
+    )
     return parser
 
 
@@ -144,7 +149,7 @@ def main(
         app_kwargs = {
             "progress": ConsoleProgress(enabled=not args.quiet, stream=stderr),
         }
-        if args.gpu or args.mimo or args.minimax or args.glm:
+        if args.gpu or args.mimo or args.minimax or args.glm or args.deepseek:
             base_settings = Settings.from_env(require_api_key=False)
         if args.gpu:
             local_status = detect_local_model(base_settings)
@@ -157,6 +162,8 @@ def main(
             app_kwargs["settings"] = base_settings.with_minimax_remote()
         elif args.glm:
             app_kwargs["settings"] = base_settings.with_glm_remote()
+        elif args.deepseek:
+            app_kwargs["settings"] = base_settings.with_deepseek_remote()
 
         app = DeepFind(**app_kwargs)
         session = app.session(

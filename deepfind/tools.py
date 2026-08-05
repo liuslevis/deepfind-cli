@@ -1466,6 +1466,7 @@ class Toolset:
                 prompt=clean_prompt,
                 document=document,
                 model=self.settings.model,
+                api_mode=self.settings.api_mode,
             )
         except WebFetchError as exc:
             return {
@@ -1507,6 +1508,7 @@ class Toolset:
                 prompt=clean_prompt,
                 document=document,
                 model=self.settings.model,
+                api_mode=self.settings.api_mode,
             )
         except WebFetchError as exc:
             return {
@@ -1704,6 +1706,7 @@ class Toolset:
                 prompt=clean_query,
                 document=document,
                 model=self.settings.model,
+                api_mode=self.settings.api_mode,
             )
         except WebFetchError as exc:
             return {
@@ -2875,6 +2878,7 @@ class Toolset:
                 query=normalized_query,
                 transcript_path=data["transcript_path"],
                 model=self.settings.model,
+                api_mode=self.settings.api_mode,
             )
         except (
             InvalidBiliIdError,
@@ -2955,6 +2959,7 @@ class Toolset:
                 query=normalized_query,
                 transcript_path=data["transcript_path"],
                 model=self.settings.model,
+                api_mode=self.settings.api_mode,
             )
         except (
             InvalidYouTubeIdError,
@@ -3059,6 +3064,7 @@ class Toolset:
                 template_name=template_name,
                 timeout=self.settings.subprocess_timeout,
                 html_path=html_path,
+                api_mode=self.settings.api_mode,
             )
         except SlideGenerationError as exc:
             return {

@@ -234,7 +234,6 @@ describe("App", () => {
     render(<App />);
 
     await userEvent.click(screen.getByRole("button", { name: "Mode" }));
-    await userEvent.click(screen.getByRole("option", { name: "4 Agents" }));
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Explain the latest AI launches");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -242,7 +241,7 @@ describe("App", () => {
     expect(JSON.parse(capturedBody)).toMatchObject({ mode: "expert" });
   });
 
-  it("cycles the model button through Qwen, Mimo, Minimax, and GPU and sends the selected target", async () => {
+  it("cycles the model button through remote providers and GPU and sends the selected target", async () => {
     let capturedBody = "";
     let chatsRequestCount = 0;
     const localModel = {
@@ -296,12 +295,12 @@ describe("App", () => {
           {
             type: "answer_final",
             data: {
-              answer_markdown: "Minimax answer",
+              answer_markdown: "DeepSeek answer",
               sources: [],
               artifacts: [],
               mode: "fast",
-              model_target: "minimax",
-              model_label: "MiniMax-M2.7",
+              model_target: "deepseek",
+              model_label: "deepseek-v4-flash",
             },
           },
           { type: "done", data: { chat_id: "chat_models" } },
@@ -318,16 +317,7 @@ describe("App", () => {
     render(<App />);
 
     const modelButton = await screen.findByRole("button", { name: "Model" });
-    expect(modelButton).toHaveTextContent("Qwen");
-
-    await userEvent.click(modelButton);
-    expect(modelButton).toHaveTextContent("Mimo");
-
-    await userEvent.click(modelButton);
-    expect(modelButton).toHaveTextContent("Minimax");
-
-    await userEvent.click(modelButton);
-    expect(modelButton).toHaveTextContent("GPU");
+    await waitFor(() => expect(modelButton).toHaveTextContent("GPU"));
 
     await userEvent.click(modelButton);
     expect(modelButton).toHaveTextContent("Qwen");
@@ -338,25 +328,31 @@ describe("App", () => {
     await userEvent.click(modelButton);
     expect(modelButton).toHaveTextContent("Minimax");
 
-    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Use MiniMax M2.7");
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("GLM");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("DeepSeek");
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Use DeepSeek V4 Flash");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    await screen.findAllByText("Minimax answer");
-    expect(JSON.parse(capturedBody)).toMatchObject({ model_target: "minimax" });
+    await screen.findAllByText("DeepSeek answer");
+    expect(JSON.parse(capturedBody)).toMatchObject({ model_target: "deepseek" });
   });
 
   it("shows a clear error when the selected model is not configured", async () => {
     let chatsRequestCount = 0;
     const localModel = {
-      available: true,
+      available: false,
       backend: "ollama",
       model: "qwen3.5:9B",
       base_url: "http://127.0.0.1:11434/v1",
       reason: "",
       gpu: {
-        available: true,
-        name: "RTX",
-        memory_total_mb: 16384,
+        available: false,
+        name: "",
+        memory_total_mb: null,
       },
     };
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
