@@ -80,6 +80,7 @@ class Settings:
     mimo_base_url: str = DEFAULT_MIMO_BASE_URL
     minimax_api_key: str = ""
     minimax_model: str = DEFAULT_MINIMAX_MODEL
+    minimax_sub_model: str = DEFAULT_MINIMAX_MODEL
     minimax_base_url: str = DEFAULT_MINIMAX_BASE_URL
     glm_api_key: str = ""
     glm_model: str = DEFAULT_GLM_MODEL
@@ -142,9 +143,15 @@ class Settings:
     def from_env(cls, *, require_api_key: bool = True) -> "Settings":
         _load_dotenv()
         qwen_api_key = _env("QWEN_API_KEY") or _env("DASHSCOPE_API_KEY") or ""
-        qwen_model = _env("QWEN_MODEL") or _env("QWEN_MODEL_NAME", DEFAULT_MODEL) or DEFAULT_MODEL
+        qwen_model = (
+            _env("QWEN_MODEL")
+            or _env("QWEN_MODEL_NAME", DEFAULT_MODEL)
+            or DEFAULT_MODEL
+        )
         qwen_sub_model = (
-            _env("QWEN_SUB_MODEL") or _env("QWEN_SUB_MODEL_NAME", qwen_model) or qwen_model
+            _env("QWEN_SUB_MODEL")
+            or _env("QWEN_SUB_MODEL_NAME", qwen_model)
+            or qwen_model
         )
         qwen_base_url = _env("QWEN_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL
         mimo_api_key = _env("MIMO_API_KEY") or _env("XIAOMI_API_KEY") or ""
@@ -155,13 +162,35 @@ class Settings:
             or _env("XIAOMI_MODEL_NAME", DEFAULT_MIMO_MODEL)
             or DEFAULT_MIMO_MODEL
         )
-        mimo_base_url = _env("MIMO_BASE_URL") or _env("XIAOMI_BASE_URL", DEFAULT_MIMO_BASE_URL) or DEFAULT_MIMO_BASE_URL
+        mimo_base_url = (
+            _env("MIMO_BASE_URL")
+            or _env("XIAOMI_BASE_URL", DEFAULT_MIMO_BASE_URL)
+            or DEFAULT_MIMO_BASE_URL
+        )
         minimax_api_key = _env("MINIMAX_API_KEY") or ""
-        minimax_model = _env("MINIMAX_MODEL") or _env("MINIMAX_MODEL_NAME", DEFAULT_MINIMAX_MODEL) or DEFAULT_MINIMAX_MODEL
-        minimax_base_url = _env("MINIMAX_BASE_URL", DEFAULT_MINIMAX_BASE_URL) or DEFAULT_MINIMAX_BASE_URL
+        minimax_model = (
+            _env("MINIMAX_MODEL")
+            or _env("MINIMAX_MODEL_NAME", DEFAULT_MINIMAX_MODEL)
+            or DEFAULT_MINIMAX_MODEL
+        )
+        minimax_sub_model = (
+            _env("MINIMAX_SUB_MODEL")
+            or _env("MINIMAX_SUB_MODEL_NAME", minimax_model)
+            or minimax_model
+        )
+        minimax_base_url = (
+            _env("MINIMAX_BASE_URL", DEFAULT_MINIMAX_BASE_URL)
+            or DEFAULT_MINIMAX_BASE_URL
+        )
         glm_api_key = _env("GLM_API_KEY") or ""
-        glm_model = _env("GLM_MODEL") or _env("GLM_MODEL_NAME", DEFAULT_GLM_MODEL) or DEFAULT_GLM_MODEL
-        glm_base_url = _env("GLM_BASE_URL", DEFAULT_GLM_BASE_URL) or DEFAULT_GLM_BASE_URL
+        glm_model = (
+            _env("GLM_MODEL")
+            or _env("GLM_MODEL_NAME", DEFAULT_GLM_MODEL)
+            or DEFAULT_GLM_MODEL
+        )
+        glm_base_url = (
+            _env("GLM_BASE_URL", DEFAULT_GLM_BASE_URL) or DEFAULT_GLM_BASE_URL
+        )
         remote_target = "qwen"
         if not qwen_api_key:
             if glm_api_key:
@@ -178,7 +207,7 @@ class Settings:
         elif remote_target == "minimax":
             api_key = minimax_api_key
             model = minimax_model
-            sub_model = minimax_model
+            sub_model = minimax_sub_model
             base_url = minimax_base_url
         elif remote_target == "glm":
             api_key = glm_api_key
@@ -209,13 +238,17 @@ class Settings:
             mimo_base_url=mimo_base_url,
             minimax_api_key=minimax_api_key,
             minimax_model=minimax_model,
+            minimax_sub_model=minimax_sub_model,
             minimax_base_url=minimax_base_url,
             glm_api_key=glm_api_key,
             glm_model=glm_model,
             glm_base_url=glm_base_url,
-            local_model=_env("DEEPFIND_LOCAL_MODEL", DEFAULT_LOCAL_MODEL) or DEFAULT_LOCAL_MODEL,
-            local_base_url=_env("DEEPFIND_LOCAL_BASE_URL", DEFAULT_LOCAL_BASE_URL) or DEFAULT_LOCAL_BASE_URL,
-            local_api_key=_env("DEEPFIND_LOCAL_API_KEY", DEFAULT_LOCAL_API_KEY) or DEFAULT_LOCAL_API_KEY,
+            local_model=_env("DEEPFIND_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
+            or DEFAULT_LOCAL_MODEL,
+            local_base_url=_env("DEEPFIND_LOCAL_BASE_URL", DEFAULT_LOCAL_BASE_URL)
+            or DEFAULT_LOCAL_BASE_URL,
+            local_api_key=_env("DEEPFIND_LOCAL_API_KEY", DEFAULT_LOCAL_API_KEY)
+            or DEFAULT_LOCAL_API_KEY,
             nano_banana_api_key=(
                 _env("GOOGLE_NANO_BANANA_API_KEY")
                 or _env("GEMINI_API_KEY")
@@ -226,7 +259,8 @@ class Settings:
                 or _env("GEMINI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL)
                 or DEFAULT_IMAGE_MODEL
             ),
-            image_dir=_env("DEEPFIND_IMAGE_DIR", DEFAULT_IMAGE_DIR) or DEFAULT_IMAGE_DIR,
+            image_dir=_env("DEEPFIND_IMAGE_DIR", DEFAULT_IMAGE_DIR)
+            or DEFAULT_IMAGE_DIR,
             image_size=(
                 _env("GOOGLE_NANO_BANANA_IMAGE_SIZE")
                 or _env("DEEPFIND_IMAGE_SIZE", DEFAULT_IMAGE_SIZE)
@@ -245,7 +279,9 @@ class Settings:
             ytdlp_cookies_from_browser=_env("YTDLP_COOKIES_FROM_BROWSER"),
             ytdlp_cookies=_env("YTDLP_COOKIES"),
             ytdlp_js_runtimes=_env("YTDLP_JS_RUNTIMES", "node"),
-            ytdlp_extractor_args=_env("YTDLP_EXTRACTOR_ARGS", "youtube:player_client=web;fetch_pot=always"),
+            ytdlp_extractor_args=_env(
+                "YTDLP_EXTRACTOR_ARGS", "youtube:player_client=web;fetch_pot=always"
+            ),
             ffmpeg_bin=_env("FFMPEG_BIN", "ffmpeg") or "ffmpeg",
             asr_model=cls._resolve_asr_model(),
             audio_dir=_env("DEEPFIND_AUDIO_DIR", "audio") or "audio",
@@ -264,7 +300,9 @@ class Settings:
 
     def with_qwen_remote(self) -> "Settings":
         if not self.qwen_api_key:
-            raise SettingsError("Set QWEN_API_KEY or DASHSCOPE_API_KEY, or switch to another model.")
+            raise SettingsError(
+                "Set QWEN_API_KEY or DASHSCOPE_API_KEY, or switch to another model."
+            )
         return replace(
             self,
             api_key=self.qwen_api_key,
@@ -275,7 +313,9 @@ class Settings:
 
     def with_mimo_remote(self) -> "Settings":
         if not self.mimo_api_key:
-            raise SettingsError("Set MIMO_API_KEY or XIAOMI_API_KEY, or switch to another model.")
+            raise SettingsError(
+                "Set MIMO_API_KEY or XIAOMI_API_KEY, or switch to another model."
+            )
         return replace(
             self,
             api_key=self.mimo_api_key,
