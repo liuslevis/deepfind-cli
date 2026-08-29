@@ -3,9 +3,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import date
+from pathlib import PurePosixPath
 import re
 from typing import Any, Sequence
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from .chat_store import utc_now
 from .config import Settings
@@ -43,11 +44,13 @@ WORKER_PROMPT = (
     "goal; use bili_transcribe_full only when you truly need the raw transcript. If the task mentions YouTube "
     "video/audio, call youtube_transcribe with the URL plus a short query that captures the user's research goal; "
     "use youtube_transcribe_full only when you truly need the raw transcript. For rag_search evidence, include the "
-    "source path and PDF page range or media time range in the claim text. If the latest user request "
+    "source path and PDF page range or media time range in the claim text, and copy the exact rag:// URI returned in "
+    "rag_search.citations into claim.citations. If the latest user request "
     "asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image "
     "asset. If the latest user request asks for slides, do not call gen_slides unless the assigned task explicitly "
-    "asks you to produce the final slide asset. When a claim is backed by a tool result, include the exact source URL "
-    'in claim.citations and keep the most relevant 1-3 URLs. JSON only: {"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}.'
+    "asks you to produce the final slide asset. When a claim is backed by a tool result, include the exact source "
+    "reference in claim.citations and keep the most relevant 1-3 web URLs or rag:// URIs. JSON only: "
+    '{"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}.'
 )
 SYNTHESIS_PROMPT = (
     "You are the lead synthesis coordinator in an ongoing research chat. Use the conversation history when needed, "
@@ -55,7 +58,8 @@ SYNTHESIS_PROMPT = (
     "incomplete or conflicting. When rag_search is available, use it to fill gaps from the user's local knowledge base. "
     "For broad web research, prefer the two-step flow: web_search first, then web_fetch "
     "for deep reading (use browser_fetch when web_fetch is blocked or the page requires JavaScript/cookies, and retry with headless=false when manual verification is needed). Keep platform-specific work on the matching tools. Preserve exact source URLs from worker "
-    "claims and report citations in each key point whenever evidence is available. JSON only: "
+    "claims and report citations in each key point whenever evidence is available. Citations may be either web URLs or "
+    "the exact rag:// URIs returned by rag_search. JSON only: "
     '{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}.'
 )
 LEAD_PROMPT = (
@@ -513,9 +517,14 @@ def _finalize_turn_envelope(envelope: dict[str, Any], *, long_report_mode: bool)
     if not reference_entries:
         lead["overview_md"] = overview
         return envelope
-    reference_block = "## Reference\n\n" + "\n".join(
-        f"- [{item['number']}] {item['url']}" for item in reference_entries
-    )
+    reference_lines: list[str] = []
+    for item in reference_entries:
+        if str(item["url"]).startswith("rag://"):
+            label = item["title"] or item["url"]
+            reference_lines.append(f"- [{item['number']}] {item['publisher']} — {label}")
+        else:
+            reference_lines.append(f"- [{item['number']}] {item['url']}")
+    reference_block = "## Reference\n\n" + "\n".join(reference_lines)
     lead["overview_md"] = f"{overview}\n\n{reference_block}".strip() if overview else reference_block
     return envelope
 
@@ -565,6 +574,30 @@ def _canonicalize_url(url: str) -> str:
     return urlunsplit((scheme, netloc, path, filtered_query, ""))
 
 
+def _citation_metadata(citation_uri: str) -> tuple[str, str]:
+    try:
+        parsed = urlsplit(citation_uri)
+    except ValueError:
+        return "", ""
+    if parsed.scheme.lower() != "rag":
+        return "", ""
+
+    query = parse_qs(parsed.query)
+    source_path = unquote(parsed.path.lstrip("/"))
+    title = (query.get("title") or [""])[0].strip() or PurePosixPath(source_path).name or source_path
+    page_start = (query.get("page_start") or [""])[0]
+    page_end = (query.get("page_end") or [""])[0]
+    time_start = (query.get("time_start") or [""])[0]
+    time_end = (query.get("time_end") or [""])[0]
+    if page_start:
+        page_label = page_start if not page_end or page_end == page_start else f"{page_start}-{page_end}"
+        title = f"{title} (p. {page_label})"
+    elif time_start:
+        time_label = time_start if not time_end or time_end == time_start else f"{time_start}-{time_end}"
+        title = f"{title} ({time_label}s)"
+    return title, "RAG knowledge base"
+
+
 @dataclass
 class _CitationCollector:
     dedup_by_canonical: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -588,12 +621,13 @@ class _CitationCollector:
             return ""
         citation = self.dedup_by_canonical.get(canonical)
         if citation is None:
+            title, publisher = _citation_metadata(cleaned)
             citation = {
                 "id": f"c{self.next_dedup_id}",
                 "canonical_url": canonical,
                 "url": cleaned,
-                "title": "",
-                "publisher": "",
+                "title": title,
+                "publisher": publisher,
             }
             self.dedup_by_canonical[canonical] = citation
             self.next_dedup_id += 1

@@ -163,6 +163,31 @@ class ResponseAgentTests(unittest.TestCase):
 
         self.assertEqual(result.citations, ["https://example.com/article"])
 
+    def test_collects_rag_citations_from_tool_outputs(self) -> None:
+        tool_call = SimpleNamespace(
+            id="call-1",
+            function=SimpleNamespace(name="rag_search", arguments='{"query":"tencent"}'),
+        )
+        settings = FakeSettings(
+            [
+                message_response("", tool_calls=[tool_call]),
+                message_response('{"summary":"ok","facts":[],"gaps":[]}'),
+            ]
+        )
+        tools = FakeTools()
+        tools.output = (
+            '{"ok":true,"tool":"rag_search","citations":'
+            '["rag://knowledge-base/doc/pdf/tencent.pdf?page_start=2&page_end=3"]}'
+        )
+        agent = ResponseAgent(settings=settings, tools=tools, max_iter=3)
+
+        result = agent.run("worker", "short prompt", "q=test", use_tools=True)
+
+        self.assertEqual(
+            result.citations,
+            ["rag://knowledge-base/doc/pdf/tencent.pdf?page_start=2&page_end=3"],
+        )
+
     def test_filters_tools_when_tool_names_are_provided(self) -> None:
         settings = FakeSettings([message_response('{"summary":"ok","facts":[],"gaps":[]}')])
         agent = ResponseAgent(settings=settings, tools=FakeTools(), max_iter=1)

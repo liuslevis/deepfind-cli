@@ -47,6 +47,7 @@ interface SourceGroup {
     key: string;
     href: string;
     ordinal: string;
+    linkable: boolean;
   }>;
 }
 
@@ -818,6 +819,7 @@ function groupSources(sources: string[]): SourceGroup[] {
         key: source,
         href: source,
         ordinal: String(index + 1),
+        linkable: true,
       });
       continue;
     }
@@ -826,6 +828,7 @@ function groupSources(sources: string[]): SourceGroup[] {
         key: source,
         href: source,
         ordinal: String(index + 1),
+        linkable: true,
       },
     ]);
   }
@@ -835,13 +838,15 @@ function groupSources(sources: string[]): SourceGroup[] {
 function groupCitations(citations: CitationLink[]): SourceGroup[] {
   const grouped = new Map<string, SourceGroup["links"]>();
   for (const [index, citation] of citations.entries()) {
-    const label = sourceLabel(citation.canonical_url || citation.url);
+    const isRag = citation.url.startsWith("rag://");
+    const label = isRag ? citation.publisher || "RAG knowledge base" : sourceLabel(citation.canonical_url || citation.url);
     const ordinal = citationOrdinal(citation.id, index + 1);
     const existing = grouped.get(label);
     const link = {
       key: citation.id,
       href: citation.url,
       ordinal,
+      linkable: !isRag,
     };
     if (existing) {
       existing.push(link);
@@ -870,6 +875,11 @@ function citationOrdinal(citationId: string, fallbackIndex: number): string {
 }
 
 function citationDisplayText(citation: CitationLink): string {
+  if (citation.url.startsWith("rag://")) {
+    return citation.title
+      ? `${citation.publisher || "RAG knowledge base"}: ${citation.title}`
+      : citation.publisher || "RAG knowledge base";
+  }
   const hostname = sourceLabel(citation.canonical_url || citation.url);
   if (citation.title) {
     return `${hostname}: ${citation.title}`;
@@ -1217,7 +1227,11 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
                       return null;
                     }
                     const ordinal = citationOrdinals.get(citationId) ?? citationOrdinal(citationId, citationIndex + 1);
-                    return (
+                    return citation.url.startsWith("rag://") ? (
+                      <span key={citationId} className="citation-chip" title={citation.title || citation.url}>
+                        [{ordinal}] {citationDisplayText(citation)}
+                      </span>
+                    ) : (
                       <a
                         key={citationId}
                         className="citation-chip"
@@ -1246,19 +1260,30 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
               <div key={group.label} className="source-group">
                 <span className="source-group__label">{group.label}</span>
                 <div className="source-group__links">
-                  {group.links.map((link) => (
-                    <a
-                      key={link.key}
-                      className="source-group__link"
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`${group.label} source ${link.ordinal}`}
-                      title={link.href}
-                    >
-                      {link.ordinal}
-                    </a>
-                  ))}
+                  {group.links.map((link) =>
+                    link.linkable ? (
+                      <a
+                        key={link.key}
+                        className="source-group__link"
+                        href={link.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`${group.label} source ${link.ordinal}`}
+                        title={link.href}
+                      >
+                        {link.ordinal}
+                      </a>
+                    ) : (
+                      <span
+                        key={link.key}
+                        className="source-group__link"
+                        aria-label={`${group.label} source ${link.ordinal}`}
+                        title={link.href}
+                      >
+                        {link.ordinal}
+                      </span>
+                    ),
+                  )}
                 </div>
               </div>
             ))}

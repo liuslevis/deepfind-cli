@@ -802,6 +802,79 @@ describe("App", () => {
     }
   });
 
+  it("renders RAG citations as knowledge-base references instead of web links", async () => {
+    const ragUrl = "rag://knowledge-base/doc/pdf/tencent.pdf?page_start=2&page_end=3";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [
+            {
+              id: "chat_rag_citation",
+              title: "RAG citation",
+              created_at: "2026-03-22T00:00:00Z",
+              updated_at: "2026-03-22T00:02:00Z",
+              preview: "RAG answer",
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats/chat_rag_citation" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_rag_citation",
+            title: "RAG citation",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:02:00Z",
+            messages: [
+              {
+                id: "msg_rag",
+                role: "assistant",
+                content: "Tencent result [1].",
+                created_at: "2026-03-22T00:02:00Z",
+                mode: "fast",
+                sources: [],
+                artifacts: [],
+                key_points: [
+                  {
+                    text: "Tencent result",
+                    citation_ids: ["c1"],
+                    confidence: "high",
+                  },
+                ],
+                citations: [
+                  {
+                    id: "c1",
+                    canonical_url: ragUrl,
+                    url: ragUrl,
+                    title: "tencent.pdf (p. 2-3)",
+                    publisher: "RAG knowledge base",
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    await screen.findByText("Tencent result [1].");
+    await userEvent.click(screen.getByRole("heading", { name: "Key Points" }).closest("summary")!);
+    await userEvent.click(screen.getByRole("heading", { name: "References" }).closest("summary")!);
+
+    expect(screen.getByText("[1] RAG knowledge base: tencent.pdf (p. 2-3)")).toBeInTheDocument();
+    expect(screen.getByLabelText("RAG knowledge base source 1")).not.toHaveAttribute("href");
+  });
+
   it("copies assistant markdown from the response card", async () => {
     const clipboard = {
       writeText: vi.fn(async () => undefined),

@@ -11,7 +11,7 @@ from .models import AgentResult
 from .progress import ConsoleProgress
 from .tools import Toolset
 
-_URL_RE = re.compile(r"https?://[^\s<>\"]+")
+_CITATION_URI_RE = re.compile(r"(?:https?|rag)://[^\s<>\"]+")
 _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _REASONING_TAG_RE = re.compile(r"<reasoning>.*?</reasoning>", re.DOTALL | re.IGNORECASE)
 _THOUGHT_TAG_RE = re.compile(r"<thought>.*?</thought>", re.DOTALL | re.IGNORECASE)
@@ -71,7 +71,7 @@ def _dedupe_keep_order(items: Sequence[str]) -> list[str]:
 
 
 def _extract_urls_from_text(text: str) -> list[str]:
-    return _URL_RE.findall(text or "")
+    return _CITATION_URI_RE.findall(text or "")
 
 
 def _extract_urls_from_value(value: Any) -> list[str]:

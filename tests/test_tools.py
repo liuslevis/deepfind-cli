@@ -163,6 +163,35 @@ class ToolsetTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["tool"], "rag_search")
         self.assertEqual(result["data"], response)
+        self.assertEqual(
+            result["citations"],
+            ["rag://knowledge-base/doc/pdf/report.pdf?page_start=3"],
+        )
+
+    def test_rag_search_citation_includes_title_and_media_time_range(self) -> None:
+        toolset = Toolset(Settings(api_key="x"), rag_enabled=True)
+        response = {
+            "query": "earnings call",
+            "mode": "hybrid",
+            "results": [
+                {
+                    "source": "doc/audio/tencent.mp3",
+                    "title": "Tencent earnings call",
+                    "start_seconds": 125,
+                    "end_seconds": 180,
+                }
+            ],
+        }
+        with patch("deepfind.tools.search_rag_mcp", return_value=response):
+            result = toolset.rag_search("earnings call")
+
+        self.assertEqual(
+            result["citations"],
+            [
+                "rag://knowledge-base/doc/audio/tencent.mp3"
+                "?title=Tencent+earnings+call&time_start=125&time_end=180"
+            ],
+        )
 
     def test_bili_transcribe_spec_requires_query(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

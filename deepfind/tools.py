@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 import httpx
 
@@ -875,6 +875,55 @@ def _subprocess_failure(
     return payload
 
 
+def _rag_citation_uri(result: object) -> str:
+    if not isinstance(result, dict):
+        return ""
+    source = next(
+        (
+            str(result[key]).strip()
+            for key in ("source", "source_path", "file_path", "path")
+            if isinstance(result.get(key), str) and str(result[key]).strip()
+        ),
+        "",
+    )
+    if not source:
+        return ""
+
+    params: list[tuple[str, str]] = []
+    title = result.get("title")
+    if isinstance(title, str) and title.strip():
+        params.append(("title", title.strip()))
+    for output_key, result_key in (
+        ("page_start", "page_start"),
+        ("page_end", "page_end"),
+        ("time_start", "start_seconds"),
+        ("time_end", "end_seconds"),
+    ):
+        value = result.get(result_key)
+        if value is not None and str(value).strip():
+            params.append((output_key, str(value).strip()))
+
+    normalized_source = source.replace("\\", "/").lstrip("/")
+    uri = f"rag://knowledge-base/{quote(normalized_source, safe='/')}"
+    return f"{uri}?{urlencode(params)}" if params else uri
+
+
+def _rag_citations(data: object) -> list[str]:
+    if not isinstance(data, dict):
+        return []
+    results = data.get("results")
+    if not isinstance(results, list):
+        return []
+    citations: list[str] = []
+    seen: set[str] = set()
+    for result in results:
+        citation = _rag_citation_uri(result)
+        if citation and citation not in seen:
+            seen.add(citation)
+            citations.append(citation)
+    return citations
+
+
 class Toolset:
     def __init__(self, settings: Settings, *, rag_enabled: bool = False) -> None:
         self.settings = settings
@@ -1404,6 +1453,7 @@ class Toolset:
             "tool": "rag_search",
             "query": query,
             "data": data,
+            "citations": _rag_citations(data),
         }
 
     def web_search(

@@ -311,6 +311,63 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(agent_cls.return_value.run.call_args.kwargs["tool_names"], ["gen_slides"])
         self.assertEqual(agent_cls.return_value.run.call_args.kwargs["max_tokens"], 1400)
 
+    def test_run_turn_structured_preserves_rag_reference_metadata(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        rag_citation = (
+            "rag://knowledge-base/doc/pdf/%E4%BB%8E%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5"
+            "%E7%9C%8B%E4%BA%A7%E4%B8%9A%E8%B6%8B%E5%8A%BF.pdf?page_start=2&page_end=3"
+        )
+        fake_reports = [
+            WorkerReport(
+                task="task",
+                text="worker",
+                citations=[rag_citation],
+                parsed={
+                    "summary": "summary",
+                    "claims": [
+                        {
+                            "text": "Tencent result",
+                            "citations": [rag_citation],
+                            "confidence": "high",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-1",
+            )
+        ]
+        fake_synthesis = {
+            "overview_md": "draft",
+            "key_points": [
+                {
+                    "text": "Tencent result",
+                    "citations": [rag_citation],
+                    "confidence": "high",
+                }
+            ],
+            "disagreements": [],
+            "gaps": [],
+            "next_steps": [],
+        }
+        with patch.object(app, "_plan", return_value=["task"]):
+            with patch.object(app, "_run_workers", return_value=fake_reports):
+                with patch.object(app, "_synthesize", return_value=fake_synthesis):
+                    with patch.object(app, "_lead", return_value="Tencent result [1]"):
+                        envelope, _ = app._run_turn_structured(
+                            "Tencent earnings",
+                            transcript=[],
+                            num_agent=1,
+                            max_iter_per_agent=2,
+                        )
+
+        self.assertEqual(envelope["lead"]["key_points"][0]["citation_ids"], ["c1"])
+        self.assertEqual(envelope["citations_dedup"][0]["publisher"], "RAG knowledge base")
+        self.assertEqual(
+            envelope["citations_dedup"][0]["title"],
+            "从腾讯财报看产业趋势.pdf (p. 2-3)",
+        )
+
     def test_lead_skips_tools_for_normal_research_answer(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
