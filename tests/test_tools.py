@@ -142,6 +142,27 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(names.count("xhs_transcribe_full"), 1)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
+        self.assertNotIn("rag_search", names)
+
+    def test_rag_search_is_only_exposed_when_enabled(self) -> None:
+        toolset = Toolset(Settings(api_key="x"), rag_enabled=True)
+        names = [item["function"]["name"] for item in toolset.specs()]
+        self.assertIn("rag_search", names)
+
+    def test_rag_search_calls_mcp_search(self) -> None:
+        toolset = Toolset(Settings(api_key="x"), rag_enabled=True)
+        response = {
+            "query": "rates",
+            "mode": "hybrid",
+            "results": [{"source": "doc/pdf/report.pdf", "page_start": 3}],
+        }
+        with patch("deepfind.tools.search_rag_mcp", return_value=response) as search:
+            result = toolset.rag_search(" rates ")
+
+        search.assert_awaited_once_with(toolset.settings, "rates")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "rag_search")
+        self.assertEqual(result["data"], response)
 
     def test_bili_transcribe_spec_requires_query(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

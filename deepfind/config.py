@@ -119,6 +119,8 @@ class Settings:
     asr_model: str = DEFAULT_ASR_MODEL
     audio_dir: str = "audio"
     subprocess_timeout: int = 90
+    rag_mcp_command: str = "uv"
+    rag_mcp_project_dir: str = "../deepfind-rag"
 
     @classmethod
     def _resolve_asr_model(cls) -> str:
@@ -323,6 +325,11 @@ class Settings:
             asr_model=cls._resolve_asr_model(),
             audio_dir=_env("DEEPFIND_AUDIO_DIR", "audio") or "audio",
             subprocess_timeout=int(timeout or "90"),
+            rag_mcp_command=_env("DEEPFIND_RAG_MCP_COMMAND", "uv") or "uv",
+            rag_mcp_project_dir=(
+                _env("DEEPFIND_RAG_MCP_PROJECT_DIR", "../deepfind-rag")
+                or "../deepfind-rag"
+            ),
         )
 
     def new_client(self) -> OpenAI:

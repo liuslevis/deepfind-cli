@@ -58,10 +58,113 @@ class CapturingApp(FakeApp):
         seen["settings"] = settings
 
 
+class CapturingRagApp(FakeApp):
+    def __init__(
+        self,
+        progress,
+        *,
+        settings: Settings,
+        rag_enabled: bool,
+        seen: dict[str, Any],
+    ) -> None:
+        super().__init__(progress)
+        seen["settings"] = settings
+        seen["rag_enabled"] = rag_enabled
+
+
+class DirectChatApp:
+    def __init__(self, progress, seen: dict[str, Any]) -> None:
+        self.progress = progress
+        self.seen = seen
+
+    def _run_chat_turn(self, *, query, transcript, max_iter_per_agent):
+        self.seen["query"] = query
+        self.seen["transcript"] = transcript
+        self.seen["max_iter_per_agent"] = max_iter_per_agent
+        return "Direct chat answer"
+
+    def _run_turn_detailed(self, **kwargs):
+        raise AssertionError("research pipeline must not run in Chat mode")
+
+
 class WebServiceTests(unittest.TestCase):
     def test_mode_mapping(self) -> None:
         self.assertEqual(mode_to_agent_count("fast"), 1)
         self.assertEqual(mode_to_agent_count("expert"), 4)
+
+    def test_stream_message_passes_rag_enabled_to_app_factory(self) -> None:
+        seen: dict[str, Any] = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                app_factory=lambda progress, settings, rag_enabled: CapturingRagApp(
+                    progress,
+                    settings=settings,
+                    rag_enabled=rag_enabled,
+                    seen=seen,
+                ),
+            )
+            chat = service.create_chat()
+            events = list(
+                service.stream_message(
+                    chat.id,
+                    "hello",
+                    "fast",
+                    rag_enabled=True,
+                )
+            )
+
+        self.assertTrue(seen["rag_enabled"])
+        self.assertTrue(any(event.type == "answer_final" for event in events))
+
+    def test_chat_mode_disables_rag_tools(self) -> None:
+        seen: dict[str, Any] = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                app_factory=lambda progress, settings, rag_enabled: CapturingRagApp(
+                    progress,
+                    settings=settings,
+                    rag_enabled=rag_enabled,
+                    seen=seen,
+                ),
+            )
+            chat = service.create_chat()
+            list(
+                service.stream_message(
+                    chat.id,
+                    "hello",
+                    "fast",
+                    research_mode="chat",
+                    rag_enabled=True,
+                )
+            )
+
+        self.assertFalse(seen["rag_enabled"])
+
+    def test_chat_mode_skips_research_pipeline(self) -> None:
+        seen: dict[str, Any] = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                app_factory=lambda progress: DirectChatApp(progress, seen),
+            )
+            chat = service.create_chat()
+            events = list(
+                service.stream_message(
+                    chat.id,
+                    "hello",
+                    "expert",
+                    research_mode="chat",
+                    rag_enabled=True,
+                )
+            )
+
+        event_types = [event.type for event in events]
+        self.assertEqual(seen["query"], "hello")
+        self.assertNotIn("run_started", event_types)
+        self.assertNotIn("tool_call", event_types)
+        self.assertEqual(events[-2].data["answer_markdown"], "Direct chat answer")
 
     def test_build_turn_result_collects_sources_and_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

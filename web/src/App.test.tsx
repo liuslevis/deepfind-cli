@@ -241,6 +241,128 @@ describe("App", () => {
     expect(JSON.parse(capturedBody)).toMatchObject({ mode: "expert" });
   });
 
+  it("uses direct Chat mode and disables agent selection", async () => {
+    let capturedBody = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({ chats: [] });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_1",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_1/messages/stream") {
+        capturedBody = String(init?.body ?? "");
+        return streamResponse([
+          {
+            type: "answer_final",
+            data: {
+              answer_markdown: "Direct answer",
+              sources: [],
+              artifacts: [],
+              mode: "fast",
+            },
+          },
+          { type: "done", data: { chat_id: "chat_1" } },
+        ]);
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const agentButton = await screen.findByRole("button", { name: "Mode" });
+    const ragButton = screen.getByRole("button", { name: "RAG" });
+    const researchSelect = screen.getByRole("combobox", { name: "Research mode" });
+    expect(researchSelect).toHaveValue("research");
+    expect(within(researchSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Deep Research",
+      "Research",
+      "Chat",
+    ]);
+    await userEvent.selectOptions(researchSelect, "chat");
+    expect(researchSelect).toHaveValue("chat");
+    expect(agentButton).toBeDisabled();
+    expect(ragButton).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Say hello");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(capturedBody).not.toBe(""));
+    expect(JSON.parse(capturedBody)).toMatchObject({
+      mode: "fast",
+      research_mode: "chat",
+      rag_enabled: false,
+    });
+  });
+
+  it("toggles RAG and sends the per-turn RAG flag", async () => {
+    let capturedBody = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({ chats: [] });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_1",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_1/messages/stream") {
+        capturedBody = String(init?.body ?? "");
+        return streamResponse([
+          {
+            type: "answer_final",
+            data: {
+              answer_markdown: "RAG answer",
+              sources: [],
+              artifacts: [],
+              mode: "fast",
+            },
+          },
+          { type: "done", data: { chat_id: "chat_1" } },
+        ]);
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const ragButton = await screen.findByRole("button", { name: "RAG" });
+    expect(ragButton).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(ragButton);
+    expect(ragButton).toHaveAttribute("aria-pressed", "true");
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Search my research");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(capturedBody).not.toBe(""));
+    expect(JSON.parse(capturedBody)).toMatchObject({ rag_enabled: true });
+  });
+
   it("cycles the model button through remote providers and GPU and sends the selected target", async () => {
     let capturedBody = "";
     let chatsRequestCount = 0;

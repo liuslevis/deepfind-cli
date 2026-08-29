@@ -140,6 +140,8 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
                 payload.mode,
                 payload.model_target,
                 deep_mode=payload.deep_mode,
+                research_mode=payload.research_mode,
+                rag_enabled=payload.rag_enabled,
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"chat not found: {chat_id}") from exc

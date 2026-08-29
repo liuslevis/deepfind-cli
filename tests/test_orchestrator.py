@@ -6,6 +6,7 @@ from unittest.mock import patch
 from deepfind.config import Settings
 from deepfind.models import ChatMessage, WorkerReport
 from deepfind.orchestrator import (
+    CHAT_PROMPT,
     DeepFind,
     FORMAT_FOLLOWUP_PROMPT,
     LEAD_PROMPT,
@@ -21,6 +22,28 @@ from deepfind.orchestrator import (
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_chat_turn_is_direct_and_disables_tools(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        transcript = [
+            ChatMessage(role="user", content="Earlier question"),
+            ChatMessage(role="assistant", content="Earlier answer"),
+        ]
+        with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
+            agent_cls.return_value.run.return_value.text = "Direct answer"
+            answer = app._run_chat_turn(
+                "Follow up",
+                transcript=transcript,
+                max_iter_per_agent=2,
+            )
+
+        self.assertEqual(answer, "Direct answer")
+        run_kwargs = agent_cls.return_value.run.call_args.kwargs
+        self.assertEqual(run_kwargs["name"], "chat")
+        self.assertEqual(run_kwargs["instructions"], CHAT_PROMPT)
+        self.assertFalse(run_kwargs["use_tools"])
+        self.assertEqual(run_kwargs["history"][0]["content"], "Earlier question")
+
     def test_plan_pads_missing_tasks(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)

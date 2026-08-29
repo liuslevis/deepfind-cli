@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import re
@@ -28,6 +29,7 @@ from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
 from .json_utils import dump_json, try_load_json
+from .rag_mcp import search_rag_mcp
 from .transcript_summary import (
     BILI_TRANSCRIPT_SUMMARY_MODEL,
     TranscriptSummaryError,
@@ -874,8 +876,9 @@ def _subprocess_failure(
 
 
 class Toolset:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, rag_enabled: bool = False) -> None:
         self.settings = settings
+        self.rag_enabled = rag_enabled
         self._functions = {
             "web_search": self.web_search,
             "web_fetch": self.web_fetch,
@@ -906,9 +909,11 @@ class Toolset:
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
         }
+        if rag_enabled:
+            self._functions["rag_search"] = self.rag_search
 
     def specs(self) -> list[dict[str, Any]]:
-        return [
+        specs = [
             self._function_spec(
                 "web_search",
                 "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin.",
@@ -1348,6 +1353,23 @@ class Toolset:
                 },
             ),
         ]
+        if self.rag_enabled:
+            specs.insert(
+                0,
+                self._function_spec(
+                    "rag_search",
+                    "Search the local investment-research knowledge base. Use this for the user's private indexed documents before relying on web search. Results include source paths plus PDF page or media time ranges.",
+                    {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                        },
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                ),
+            )
+        return specs
 
     def _function_spec(self, name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1366,6 +1388,23 @@ class Toolset:
             return dump_json(self._functions[name](**arguments))
         except Exception as exc:  # pragma: no cover - defensive
             return dump_json({"ok": False, "tool": name, "error": str(exc)})
+
+    def rag_search(self, query: str) -> dict[str, Any]:
+        query = query.strip()
+        if not query:
+            return {
+                "ok": False,
+                "tool": "rag_search",
+                "error_code": "invalid_query",
+                "error": "query must not be empty",
+            }
+        data = asyncio.run(search_rag_mcp(self.settings, query))
+        return {
+            "ok": True,
+            "tool": "rag_search",
+            "query": query,
+            "data": data,
+        }
 
     def web_search(
         self,

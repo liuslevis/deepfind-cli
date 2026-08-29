@@ -1,4 +1,4 @@
-import type { ChatListResponse, ChatMode, ModelTarget, ProgressEvent, WebChatDetail } from "./types";
+import type { ChatListResponse, ChatMode, ModelTarget, ProgressEvent, ResearchMode, WebChatDetail } from "./types";
 
 const TOKEN_KEY = "deepfind_auth_token";
 
@@ -132,7 +132,14 @@ export async function deleteChat(chatId: string): Promise<void> {
 
 export async function streamChatMessage(
   chatId: string,
-  payload: { content: string; mode: ChatMode; model_target: ModelTarget; deep_mode?: boolean },
+  payload: {
+    content: string;
+    mode: ChatMode;
+    model_target: ModelTarget;
+    deep_mode?: boolean;
+    research_mode?: ResearchMode;
+    rag_enabled?: boolean;
+  },
   onEvent: (event: ProgressEvent) => void,
   options?: { signal?: AbortSignal },
 ): Promise<void> {

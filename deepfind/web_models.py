@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 ChatMode = Literal["fast", "expert"]
+ResearchMode = Literal["deep_research", "research", "chat"]
 MessageRole = Literal["user", "assistant"]
 ArtifactKind = Literal["image", "slides", "file"]
 ModelTarget = Literal["qwen", "mimo", "minimax", "glm", "deepseek", "gpu"]
@@ -63,6 +64,7 @@ class WebMessage(BaseModel):
     content: str
     created_at: str
     mode: ChatMode | None = None
+    research_mode: ResearchMode = "research"
     sources: list[str] = Field(default_factory=list)
     artifacts: list[ArtifactLink] = Field(default_factory=list)
     key_points: list[KeyPoint] = Field(default_factory=list)
@@ -99,6 +101,7 @@ class TurnResult(BaseModel):
     key_points: list[KeyPoint] = Field(default_factory=list)
     citations: list[CitationLink] = Field(default_factory=list)
     mode: ChatMode
+    research_mode: ResearchMode = "research"
     model_target: ModelTarget = "qwen"
     model_label: str = ""
 
@@ -136,6 +139,8 @@ class SendMessageRequest(BaseModel):
     mode: ChatMode
     model_target: ModelTarget = "qwen"
     deep_mode: bool = False
+    research_mode: ResearchMode | None = None
+    rag_enabled: bool = False
 
     @field_validator("model_target", mode="before")
     @classmethod

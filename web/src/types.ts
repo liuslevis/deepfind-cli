@@ -1,4 +1,5 @@
 export type ChatMode = "fast" | "expert";
+export type ResearchMode = "deep_research" | "research" | "chat";
 export type ArtifactKind = "image" | "slides" | "file";
 export type MessageRole = "user" | "assistant";
 export type ModelTarget = "qwen" | "mimo" | "minimax" | "glm" | "deepseek" | "gpu";
@@ -46,6 +47,7 @@ export interface WebMessage {
   content: string;
   created_at: string;
   mode: ChatMode | null;
+  research_mode?: ResearchMode;
   sources: string[];
   artifacts: ArtifactLink[];
   key_points?: KeyPoint[];
@@ -82,6 +84,7 @@ export interface TurnResult {
   key_points?: KeyPoint[];
   citations?: CitationLink[];
   mode: ChatMode;
+  research_mode?: ResearchMode;
   model_target?: ServerModelTarget;
   model_label?: string;
 }

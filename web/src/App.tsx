@@ -13,6 +13,7 @@ import type {
   LocalModelInfo,
   ModelTarget,
   ProgressEvent,
+  ResearchMode,
   TurnResult,
   WebChatDetail,
   WebChatSummary,
@@ -158,6 +159,16 @@ function modeLabel(mode: ChatMode | null): string {
     return "4 Agents";
   }
   return "1 Agent";
+}
+
+function researchModeLabel(mode: ResearchMode): string {
+  if (mode === "deep_research") {
+    return "Deep Research";
+  }
+  if (mode === "chat") {
+    return "Chat";
+  }
+  return "Research";
 }
 
 function modelTargetButtonLabel(target: ModelTarget): string {
@@ -567,6 +578,7 @@ function newClientMessage(
   role: "user" | "assistant",
   content: string,
   mode: ChatMode,
+  researchMode: ResearchMode,
   modelTarget: ModelTarget,
   modelLabel: string,
 ): ClientMessage {
@@ -576,6 +588,7 @@ function newClientMessage(
     content,
     created_at: new Date().toISOString(),
     mode,
+    research_mode: researchMode,
     model_target: modelTarget,
     model_label: modelLabel,
     sources: [],
@@ -1145,7 +1158,10 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
     >
       <div className="message__meta">
         <span className="message__author">{message.role === "assistant" ? "DeepFind" : "You"}</span>
-        {message.role === "assistant" && message.mode ? (
+        {message.role === "assistant" && message.research_mode ? (
+          <span className="message__mode">{researchModeLabel(message.research_mode)}</span>
+        ) : null}
+        {message.role === "assistant" && message.mode && message.research_mode !== "chat" ? (
           <span className="message__mode">{modeLabel(message.mode)}</span>
         ) : null}
         {message.role === "assistant" && messageModelLabel(message.model_target, message.model_label) ? (
@@ -1283,7 +1299,9 @@ MessageCard.displayName = "MessageCard";
 export default function App() {
   const [mode, setMode] = useState<ChatMode>("fast");
   const [modelTarget, setModelTarget] = useState<ModelTarget>(DEFAULT_MODEL_TARGET);
-  const [deepMode, setDeepMode] = useState(false);
+  const [researchMode, setResearchMode] = useState<ResearchMode>("research");
+  const [ragEnabledByChatId, setRagEnabledByChatId] = useState<Record<string, boolean>>({});
+  const [draftRagEnabled, setDraftRagEnabled] = useState(false);
   const [composerValue, setComposerValue] = useState("");
   const [localModel, setLocalModel] = useState<LocalModelInfo | null>(null);
   const [chats, setChats] = useState<WebChatSummary[]>([]);
@@ -1304,6 +1322,8 @@ export default function App() {
   const activeRuntime = selectedChatId ? chatRuntimeById[selectedChatId] : null;
   const activeMessages = activeRuntime?.messages ?? [];
   const sending = activeRuntime?.pending ?? false;
+  const selectedRagEnabled = selectedChatId ? Boolean(ragEnabledByChatId[selectedChatId]) : draftRagEnabled;
+  const ragEnabled = researchMode !== "chat" && selectedRagEnabled;
   const gpuToggleAvailable = Boolean(localModel?.available);
   const effectiveModelTarget =
     !gpuToggleAvailable && modelTarget === "gpu" ? DEFAULT_MODEL_TARGET : normalizeModelTarget(modelTarget);
@@ -1591,6 +1611,7 @@ export default function App() {
       setCurrentChat(chat);
       ensureChatRuntime(chat.id, []);
       setSelectedChatId(chat.id);
+      setDraftRagEnabled(false);
       setChats((current) => upsertSummary(current, summaryFromChat(chat)));
       storageSetItem(STORAGE_KEY, chat.id);
       setSidebarOpen(false);
@@ -1610,6 +1631,14 @@ export default function App() {
           return current;
         }
         runtime.abortController?.abort();
+        const next = { ...current };
+        delete next[chat.id];
+        return next;
+      });
+      setRagEnabledByChatId((current) => {
+        if (!(chat.id in current)) {
+          return current;
+        }
         const next = { ...current };
         delete next[chat.id];
         return next;
@@ -1638,10 +1667,25 @@ export default function App() {
     };
     setCurrentChat(titledChat);
     setSelectedChatId(chat.id);
+    if (draftRagEnabled) {
+      setRagEnabledByChatId((current) => ({ ...current, [chat.id]: true }));
+      setDraftRagEnabled(false);
+    }
     setChats((current) => upsertSummary(current, summaryFromChat(titledChat)));
     storageSetItem(STORAGE_KEY, chat.id);
     ensureChatRuntime(chat.id, []);
     return titledChat;
+  }
+
+  function toggleRag() {
+    if (!selectedChatId) {
+      setDraftRagEnabled((current) => !current);
+      return;
+    }
+    setRagEnabledByChatId((current) => ({
+      ...current,
+      [selectedChatId]: !current[selectedChatId],
+    }));
   }
 
   function appendActivity(chatId: string, messageId: string, event: ProgressEvent) {
@@ -1670,6 +1714,7 @@ export default function App() {
               ...message,
               content: turnResult.answer_markdown,
               mode: turnResult.mode,
+              research_mode: turnResult.research_mode ?? message.research_mode,
               sources: turnResult.sources,
               artifacts: turnResult.artifacts,
               key_points: turnResult.key_points ?? [],
@@ -1745,8 +1790,15 @@ export default function App() {
     try {
       const chat = await ensureActiveChat(content);
       activeChat = chat;
-      const userMessage = newClientMessage("user", content, mode, currentModelTarget, currentModelLabel);
-      const assistantMessage = newClientMessage("assistant", "", mode, currentModelTarget, currentModelLabel);
+      const userMessage = newClientMessage("user", content, mode, researchMode, currentModelTarget, currentModelLabel);
+      const assistantMessage = newClientMessage(
+        "assistant",
+        "",
+        mode,
+        researchMode,
+        currentModelTarget,
+        currentModelLabel,
+      );
       pendingAssistantMessageId = assistantMessage.id;
       const nextTitle = currentChat?.title && currentChat.title !== "New chat" ? currentChat.title : summarize(content, 48);
       const chatSnapshot = {
@@ -1771,7 +1823,13 @@ export default function App() {
 
       await streamChatMessage(
         chat.id,
-        { content, mode, model_target: currentModelTarget, deep_mode: deepMode },
+        {
+          content,
+          mode,
+          model_target: currentModelTarget,
+          research_mode: researchMode,
+          rag_enabled: ragEnabled,
+        },
         (progressEvent) => {
           appendActivity(chat.id, assistantMessage.id, progressEvent);
           if (progressEvent.type === "answer_delta") {
@@ -2006,11 +2064,11 @@ export default function App() {
           {loading ? <p className="state-text">Loading chats...</p> : null}
           {!loading && activeMessages.length === 0 ? (
             <div className="hero-empty">
-              <p className="eyebrow">Parallel web research</p>
-              <h3>Ask for live research, then decide how much horsepower you want.</h3>
+              <p className="eyebrow">Research or direct chat</p>
+              <h3>Choose the right depth for each question.</h3>
               <p>
-                Fast keeps it lean with one agent. Expert fans out to four agents and returns with a denser brief,
-                sources, and any generated assets.
+                Deep Research produces comprehensive reports, Research handles standard evidence gathering, and Chat
+                answers directly without tools or agent fan-out.
               </p>
             </div>
           ) : null}
@@ -2072,20 +2130,51 @@ export default function App() {
               className={`mode-toggle__button mode-toggle__button--${mode}`}
               aria-label="Mode"
               aria-pressed={mode === "expert"}
-              title={mode === "expert" ? "Expert mode: 4 agents" : "Fast mode: 1 agent"}
+              title={
+                researchMode === "chat"
+                  ? "Agent selection is unavailable in Chat mode"
+                  : mode === "expert"
+                    ? "Expert mode: 4 agents"
+                    : "Fast mode: 1 agent"
+              }
+              disabled={researchMode === "chat"}
               onClick={() => setMode((current) => current === "fast" ? "expert" : "fast")}
             >
               {modeLabel(mode)}
             </button>
+            <select
+              className={`deep-toggle__button deep-toggle__button--${researchMode}`}
+              aria-label="Research mode"
+              value={researchMode}
+              title={
+                researchMode === "deep_research"
+                  ? "Deep Research: longer, more comprehensive multi-agent research"
+                  : researchMode === "research"
+                    ? "Research: standard multi-agent research"
+                    : "Chat: direct response without tools or agent fan-out"
+              }
+              onChange={(event) => setResearchMode(event.target.value as ResearchMode)}
+            >
+              <option value="deep_research">Deep Research</option>
+              <option value="research">Research</option>
+              <option value="chat">Chat</option>
+            </select>
             <button
               type="button"
-              className={`deep-toggle__button${deepMode ? " deep-toggle__button--active" : ""}`}
-              aria-label="Deep mode"
-              aria-pressed={deepMode}
-              title={deepMode ? "Deep mode on: longer, more comprehensive reports" : "Deep mode off"}
-              onClick={() => setDeepMode((v) => !v)}
+              className={`rag-toggle__button${ragEnabled ? " rag-toggle__button--active" : ""}`}
+              aria-label="RAG"
+              aria-pressed={ragEnabled}
+              title={
+                researchMode === "chat"
+                  ? "RAG is unavailable in Chat mode"
+                  : ragEnabled
+                    ? "RAG on: search the local knowledge base"
+                    : "RAG off"
+              }
+              disabled={researchMode === "chat"}
+              onClick={toggleRag}
             >
-              Deep
+              RAG
             </button>
             <button
               type="button"

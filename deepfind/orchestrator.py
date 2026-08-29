@@ -18,7 +18,8 @@ from .tools import Toolset
 PLAN_PROMPT = (
     "You are the lead planner for an ongoing research chat. Use the prior conversation for context when needed, "
     "but focus on the latest user request. Use tools sparingly during planning when they help you discover the most "
-    "important evidence paths. Prefer a two-step flow: use web_search to find candidate URLs, then use web_fetch on "
+    "important evidence paths. When rag_search is available, use it for evidence from the user's local knowledge base. "
+    "Prefer a two-step flow: use web_search to find candidate URLs, then use web_fetch on "
     "the most promising pages before splitting work. If web_fetch is blocked or the page requires JavaScript/cookies, "
     "use browser_fetch as a fallback, and retry with headless=false when a site needs manual verification. If the user wants an image or slides, plan only supporting "
     "research/context tasks and leave the final asset creation for the lead response. Reserve Xiaohongshu, "
@@ -28,7 +29,8 @@ PLAN_PROMPT = (
 )
 WORKER_PROMPT = (
     "You are a research worker in an ongoing chat. Use the conversation history for context when the latest request "
-    "depends on earlier turns. Do the task. Use tools. For broad web research, prefer a two-step flow: use "
+    "depends on earlier turns. Do the task. Use tools. When rag_search is available, use it for evidence from the "
+    "user's local knowledge base. For broad web research, prefer a two-step flow: use "
     "web_search to find candidate URLs, then use web_fetch to inspect the highest-value pages with a targeted prompt "
     "(use browser_fetch when web_fetch is blocked or the page requires JavaScript/cookies, and retry with headless=false when manual verification is needed) "
     "instead of relying only on snippets. Keep using the Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS "
@@ -40,7 +42,8 @@ WORKER_PROMPT = (
     "video/audio, call bili_transcribe with the URL or BVID plus a short query that captures the user's research "
     "goal; use bili_transcribe_full only when you truly need the raw transcript. If the task mentions YouTube "
     "video/audio, call youtube_transcribe with the URL plus a short query that captures the user's research goal; "
-    "use youtube_transcribe_full only when you truly need the raw transcript. If the latest user request "
+    "use youtube_transcribe_full only when you truly need the raw transcript. For rag_search evidence, include the "
+    "source path and PDF page range or media time range in the claim text. If the latest user request "
     "asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image "
     "asset. If the latest user request asks for slides, do not call gen_slides unless the assigned task explicitly "
     "asks you to produce the final slide asset. When a claim is backed by a tool result, include the exact source URL "
@@ -49,7 +52,8 @@ WORKER_PROMPT = (
 SYNTHESIS_PROMPT = (
     "You are the lead synthesis coordinator in an ongoing research chat. Use the conversation history when needed, "
     "merge the worker reports, identify the strongest evidence, and fill gaps with tools when the reports are "
-    "incomplete or conflicting. For broad web research, prefer the two-step flow: web_search first, then web_fetch "
+    "incomplete or conflicting. When rag_search is available, use it to fill gaps from the user's local knowledge base. "
+    "For broad web research, prefer the two-step flow: web_search first, then web_fetch "
     "for deep reading (use browser_fetch when web_fetch is blocked or the page requires JavaScript/cookies, and retry with headless=false when manual verification is needed). Keep platform-specific work on the matching tools. Preserve exact source URLs from worker "
     "claims and report citations in each key point whenever evidence is available. JSON only: "
     '{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}.'
@@ -86,6 +90,13 @@ FORMAT_FOLLOWUP_PROMPT = (
     "answer. Preserve links, names, and numbers when possible. If the user asks for a table, output a Markdown "
     "table. If the user asks for translation, translate only the provided content. If the prior answer lacks enough "
     "detail for the requested transformation, say that briefly instead of inventing content."
+)
+CHAT_PROMPT = (
+    "You are a direct chat assistant. Answer the latest user message naturally and promptly in the user's language. "
+    "Use the conversation history when it is relevant. Do not research, browse, call tools, delegate work, mention "
+    "agents, or describe a lead/sub-agent workflow. Give a concise, useful answer based only on the conversation and "
+    "your existing knowledge. If current or external verification is required, say briefly that Chat mode cannot "
+    "verify it instead of pretending that you searched."
 )
 
 _TRACKING_QUERY_KEYS = frozenset(
@@ -702,9 +713,11 @@ class DeepFind:
         self,
         settings: Settings | None = None,
         progress: ConsoleProgress | None = None,
+        *,
+        rag_enabled: bool = False,
     ) -> None:
         self.settings = settings or Settings.from_env()
-        self.tools = Toolset(self.settings)
+        self.tools = Toolset(self.settings, rag_enabled=rag_enabled)
         self.progress = progress
 
     def session(
@@ -829,6 +842,29 @@ class DeepFind:
         )
         _finalize_turn_envelope(envelope, long_report_mode=long_report_mode)
         return envelope, reports
+
+    def _run_chat_turn(
+        self,
+        query: str,
+        transcript: Sequence[ChatMessage],
+        max_iter_per_agent: int,
+    ) -> str:
+        _, max_iter_per_agent = self._validated_run_args(1, max_iter_per_agent)
+        agent = ResponseAgent(
+            self.settings,
+            self.tools,
+            max_iter=max_iter_per_agent,
+            progress=self.progress,
+        )
+        result = agent.run(
+            name="chat",
+            instructions=CHAT_PROMPT,
+            user_input=query,
+            use_tools=False,
+            history=_history_messages(transcript),
+            max_tokens=4000,
+        )
+        return result.text.strip()
 
     def _format_follow_up(
         self,

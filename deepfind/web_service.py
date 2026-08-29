@@ -24,6 +24,7 @@ from .web_models import (
     KeyPoint,
     LocalModelInfo,
     ModelTarget,
+    ResearchMode,
     TurnResult,
     WebChatDetail,
     WebMessage,
@@ -188,10 +189,10 @@ def _local_model_info(settings: Settings) -> LocalModelInfo:
     )
 
 
-@lru_cache(maxsize=1)
-def _tool_catalog() -> tuple[tuple[str, str], ...]:
+@lru_cache(maxsize=2)
+def _tool_catalog(rag_enabled: bool = False) -> tuple[tuple[str, str], ...]:
     catalog: list[tuple[str, str]] = []
-    for item in Toolset(Settings(api_key="web")).specs():
+    for item in Toolset(Settings(api_key="web"), rag_enabled=rag_enabled).specs():
         if not isinstance(item, dict):
             continue
         function_spec = item.get("function")
@@ -204,8 +205,8 @@ def _tool_catalog() -> tuple[tuple[str, str], ...]:
     return tuple(catalog)
 
 
-def _tool_catalog_markdown() -> str:
-    tools = _tool_catalog()
+def _tool_catalog_markdown(rag_enabled: bool = False) -> str:
+    tools = _tool_catalog(rag_enabled)
     if not tools:
         return "No tools are currently available."
     lines = [f"- `{name}`: {description}" for name, description in tools]
@@ -249,13 +250,29 @@ class DeepFindWebService:
     def delete_chat(self, chat_id: str) -> None:
         self.store.delete_chat(chat_id)
 
-    def stream_message(self, chat_id: str, content: str, mode: ChatMode, model_target: ModelTarget = "qwen", *, deep_mode: bool = False):
+    def stream_message(
+        self,
+        chat_id: str,
+        content: str,
+        mode: ChatMode,
+        model_target: ModelTarget = "qwen",
+        *,
+        deep_mode: bool = False,
+        research_mode: ResearchMode | None = None,
+        rag_enabled: bool = False,
+    ):
         query = content.strip()
         if not query:
             raise ValueError("message content must not be empty")
 
         settings = self._settings_for_target(model_target)
         model_label = model_target_label(model_target, settings)
+        resolved_research_mode: ResearchMode = (
+            research_mode
+            if research_mode is not None
+            else ("deep_research" if deep_mode else "research")
+        )
+        effective_rag_enabled = rag_enabled and resolved_research_mode != "chat"
         chat = self.get_chat(chat_id)
         prior_transcript = self._messages_to_transcript(chat.messages)
         updated_chat = chat.model_copy(deep=True)
@@ -265,6 +282,7 @@ class DeepFindWebService:
             content=query,
             created_at=utc_now(),
             mode=mode,
+            research_mode=resolved_research_mode,
             model_target=model_target,
             model_label=model_label,
         )
@@ -273,7 +291,14 @@ class DeepFindWebService:
         updated_chat.updated_at = user_message.created_at
         self.store.save_chat(updated_chat)
 
-        command_result = self._build_slash_command_result(query, mode, model_target=model_target, model_label=model_label)
+        command_result = self._build_slash_command_result(
+            query,
+            mode,
+            model_target=model_target,
+            model_label=model_label,
+            research_mode=resolved_research_mode,
+            rag_enabled=effective_rag_enabled,
+        )
         if command_result is not None:
             assistant_message = self._save_assistant_message(chat_id, command_result)
             progress = WebProgress()
@@ -291,15 +316,28 @@ class DeepFindWebService:
 
         def run_turn() -> None:
             try:
-                app = self._app_for_settings(progress, settings)
+                app = self._app_for_settings(
+                    progress,
+                    settings,
+                    rag_enabled=effective_rag_enabled,
+                )
                 envelope: dict[str, object] | None = None
-                if hasattr(app, "_run_turn_structured"):
+                if resolved_research_mode == "chat":
+                    if not hasattr(app, "_run_chat_turn"):
+                        raise RuntimeError("configured app does not support Chat mode")
+                    answer = app._run_chat_turn(
+                        query=query,
+                        transcript=prior_transcript,
+                        max_iter_per_agent=self.max_iter_per_agent,
+                    )
+                    reports = []
+                elif hasattr(app, "_run_turn_structured"):
                     envelope, reports = app._run_turn_structured(
                         query=query,
                         transcript=prior_transcript,
                         num_agent=mode_to_agent_count(mode),
                         max_iter_per_agent=self.max_iter_per_agent,
-                        long_report_mode=deep_mode,
+                        long_report_mode=resolved_research_mode == "deep_research",
                     )
                     answer = _overview_from_envelope(envelope)
                 else:
@@ -308,13 +346,14 @@ class DeepFindWebService:
                         transcript=prior_transcript,
                         num_agent=mode_to_agent_count(mode),
                         max_iter_per_agent=self.max_iter_per_agent,
-                        long_report_mode=deep_mode,
+                        long_report_mode=resolved_research_mode == "deep_research",
                     )
                 turn_result = self._build_turn_result(
                     answer=answer,
                     reports=reports,
                     observations=list(progress.tool_outputs),
                     mode=mode,
+                    research_mode=resolved_research_mode,
                     envelope=envelope,
                     model_target=model_target,
                     model_label=model_label,
@@ -346,11 +385,13 @@ class DeepFindWebService:
         *,
         model_target: ModelTarget,
         model_label: str,
+        research_mode: ResearchMode,
+        rag_enabled: bool = False,
     ) -> TurnResult | None:
         if not query.startswith("/"):
             return None
         if query.lower() == _LIST_TOOL_COMMAND:
-            answer = _tool_catalog_markdown()
+            answer = _tool_catalog_markdown(rag_enabled)
         else:
             answer = _unknown_command_markdown(query)
         return TurnResult(
@@ -358,6 +399,7 @@ class DeepFindWebService:
             sources=[],
             artifacts=[],
             mode=mode,
+            research_mode=research_mode,
             model_target=model_target,
             model_label=model_label,
         )
@@ -369,6 +411,7 @@ class DeepFindWebService:
             content=turn_result.answer_markdown,
             created_at=utc_now(),
             mode=turn_result.mode,
+            research_mode=turn_result.research_mode,
             sources=turn_result.sources,
             artifacts=turn_result.artifacts,
             key_points=turn_result.key_points,
@@ -389,6 +432,7 @@ class DeepFindWebService:
         reports: list[WorkerReport],
         observations: list[ToolObservation],
         mode: ChatMode,
+        research_mode: ResearchMode = "research",
         envelope: dict[str, object] | None = None,
         model_target: ModelTarget = "qwen",
         model_label: str = "",
@@ -409,6 +453,7 @@ class DeepFindWebService:
             key_points=_key_points_from_envelope(envelope),
             citations=_citations_from_envelope(envelope),
             mode=mode,
+            research_mode=research_mode,
             model_target=model_target,
             model_label=model_label,
         )
@@ -484,12 +529,20 @@ class DeepFindWebService:
             return base_settings.with_deepseek_remote()
         return base_settings.with_qwen_remote()
 
-    def _app_for_settings(self, progress: WebProgress, settings: Settings):
+    def _app_for_settings(
+        self,
+        progress: WebProgress,
+        settings: Settings,
+        *,
+        rag_enabled: bool = False,
+    ):
         if self.app_factory is None:
-            return DeepFind(progress=progress, settings=settings)
+            return DeepFind(progress=progress, settings=settings, rag_enabled=rag_enabled)
 
         signature = inspect.signature(self.app_factory)
         parameters = signature.parameters
+        if "rag_enabled" in parameters:
+            return self.app_factory(progress, settings=settings, rag_enabled=rag_enabled)
         if "settings" in parameters:
             return self.app_factory(progress, settings=settings)
         if len(parameters) >= 2:
