@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import PurePosixPath
 import re
 from typing import Any, Sequence
-from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 from .chat_store import utc_now
 from .config import Settings
@@ -521,7 +521,10 @@ def _finalize_turn_envelope(envelope: dict[str, Any], *, long_report_mode: bool)
     for item in reference_entries:
         if str(item["url"]).startswith("rag://"):
             label = item["title"] or item["url"]
-            reference_lines.append(f"- [{item['number']}] {item['publisher']} — {label}")
+            download_url = f"/api/rag/files?citation={quote(str(item['url']), safe='')}"
+            reference_lines.append(
+                f"- [{item['number']}] [{item['publisher']} — {label}]({download_url})"
+            )
         else:
             reference_lines.append(f"- [{item['number']}] {item['url']}")
     reference_block = "## Reference\n\n" + "\n".join(reference_lines)
@@ -748,10 +751,15 @@ class DeepFind:
         settings: Settings | None = None,
         progress: ConsoleProgress | None = None,
         *,
-        rag_enabled: bool = False,
+        rag_enabled: bool = True,
+        enabled_tools: Sequence[str] | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
-        self.tools = Toolset(self.settings, rag_enabled=rag_enabled)
+        self.tools = Toolset(
+            self.settings,
+            rag_enabled=rag_enabled,
+            enabled_tools=enabled_tools,
+        )
         self.progress = progress
 
     def session(

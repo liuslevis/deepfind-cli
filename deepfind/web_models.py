@@ -58,6 +58,11 @@ class LocalModelInfo(BaseModel):
     gpu: GpuInfo = Field(default_factory=GpuInfo)
 
 
+class ToolOption(BaseModel):
+    name: str
+    description: str
+
+
 class WebMessage(BaseModel):
     id: str
     role: MessageRole
@@ -124,6 +129,7 @@ class CreateChatResponse(BaseModel):
 class ChatListResponse(BaseModel):
     chats: list[WebChatSummary]
     local_model: LocalModelInfo | None = None
+    tools: list[ToolOption] = Field(default_factory=list)
 
 
 class ChatDetailResponse(BaseModel):
@@ -140,7 +146,8 @@ class SendMessageRequest(BaseModel):
     model_target: ModelTarget = "qwen"
     deep_mode: bool = False
     research_mode: ResearchMode | None = None
-    rag_enabled: bool = False
+    rag_enabled: bool = True
+    selected_tools: list[str] | None = None
 
     @field_validator("model_target", mode="before")
     @classmethod

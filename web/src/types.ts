@@ -41,6 +41,11 @@ export interface LocalModelInfo {
   gpu: GpuInfo;
 }
 
+export interface ToolOption {
+  name: string;
+  description: string;
+}
+
 export interface WebMessage {
   id: string;
   role: MessageRole;
@@ -75,6 +80,7 @@ export interface WebChatDetail {
 export interface ChatListResponse {
   chats: WebChatSummary[];
   local_model?: LocalModelInfo | null;
+  tools?: ToolOption[];
 }
 
 export interface TurnResult {

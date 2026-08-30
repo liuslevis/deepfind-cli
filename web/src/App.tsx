@@ -14,6 +14,7 @@ import type {
   ModelTarget,
   ProgressEvent,
   ResearchMode,
+  ToolOption,
   TurnResult,
   WebChatDetail,
   WebChatSummary,
@@ -47,7 +48,7 @@ interface SourceGroup {
     key: string;
     href: string;
     ordinal: string;
-    linkable: boolean;
+    download: boolean;
   }>;
 }
 
@@ -68,6 +69,69 @@ const SLASH_COMMANDS: SlashCommandOption[] = [
 ];
 const DEFAULT_MODEL_TARGET: ModelTarget = "qwen";
 const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax", "glm", "deepseek"] as const;
+const FALLBACK_TOOL_NAMES = [
+  "rag_search",
+  "web_search",
+  "web_fetch",
+  "browser_fetch",
+  "arxiv_search",
+  "paper_search",
+  "read_paper",
+  "twitter_search",
+  "x_search",
+  "twitter_read",
+  "search_x_user_posts",
+  "zhihu_search",
+  "boss_search",
+  "boss_detail",
+  "boss_chatlist",
+  "boss_send",
+  "xhs_search",
+  "xhs_read",
+  "xhs_read_cmt",
+  "xhs_transcribe_full",
+  "xhs_user_posts",
+  "bili_search",
+  "bili_get_user_videos",
+  "bili_transcribe",
+  "bili_transcribe_full",
+  "youtube_transcribe",
+  "youtube_transcribe_full",
+  "gen_img",
+  "gen_slides",
+  "rag_search",
+] as const;
+const FALLBACK_TOOL_OPTIONS: ToolOption[] = FALLBACK_TOOL_NAMES.map((name) => ({
+  name,
+  description: "",
+}));
+const DEFAULT_SELECTED_TOOLS = FALLBACK_TOOL_NAMES.filter((name) => name !== "rag_search");
+
+function toolLabel(name: string): string {
+  const labels: Record<string, string> = {
+    web_search: "Web Search",
+    web_fetch: "Web Fetch",
+    browser_fetch: "Browser Fetch",
+    x_search: "X Search",
+    twitter_search: "Twitter Search",
+    twitter_read: "Twitter Read",
+    search_x_user_posts: "X User Posts",
+    xhs_search: "Xiaohongshu Search",
+    xhs_read: "Xiaohongshu Read",
+    xhs_read_cmt: "Xiaohongshu Comments",
+    xhs_transcribe_full: "Xiaohongshu Transcribe",
+    xhs_user_posts: "Xiaohongshu User Posts",
+    bili_search: "Bilibili Search",
+    bili_get_user_videos: "Bilibili User Videos",
+    bili_transcribe: "Bilibili Transcribe",
+    bili_transcribe_full: "Bilibili Full Transcript",
+    youtube_transcribe: "YouTube Transcribe",
+    youtube_transcribe_full: "YouTube Full Transcript",
+    gen_img: "Generate Image",
+    gen_slides: "Generate Slides",
+  };
+  return labels[name] ?? name.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
+}
 
 function normalizeModelTarget(target: ModelTarget | "cloud" | null | undefined): ModelTarget {
   if (
@@ -819,7 +883,7 @@ function groupSources(sources: string[]): SourceGroup[] {
         key: source,
         href: source,
         ordinal: String(index + 1),
-        linkable: true,
+        download: false,
       });
       continue;
     }
@@ -828,7 +892,7 @@ function groupSources(sources: string[]): SourceGroup[] {
         key: source,
         href: source,
         ordinal: String(index + 1),
-        linkable: true,
+        download: false,
       },
     ]);
   }
@@ -844,9 +908,9 @@ function groupCitations(citations: CitationLink[]): SourceGroup[] {
     const existing = grouped.get(label);
     const link = {
       key: citation.id,
-      href: citation.url,
+      href: citationHref(citation),
       ordinal,
-      linkable: !isRag,
+      download: isRag,
     };
     if (existing) {
       existing.push(link);
@@ -876,8 +940,9 @@ function citationOrdinal(citationId: string, fallbackIndex: number): string {
 
 function citationDisplayText(citation: CitationLink): string {
   if (citation.url.startsWith("rag://")) {
-    return citation.title
-      ? `${citation.publisher || "RAG knowledge base"}: ${citation.title}`
+    const title = decodedRagTitle(citation);
+    return title
+      ? `${citation.publisher || "RAG knowledge base"}: ${title}`
       : citation.publisher || "RAG knowledge base";
   }
   const hostname = sourceLabel(citation.canonical_url || citation.url);
@@ -885,6 +950,30 @@ function citationDisplayText(citation: CitationLink): string {
     return `${hostname}: ${citation.title}`;
   }
   return hostname;
+}
+
+function decodedRagTitle(citation: CitationLink): string {
+  if (citation.title) {
+    try {
+      return decodeURIComponent(citation.title);
+    } catch {
+      return citation.title;
+    }
+  }
+  try {
+    const pathname = new URL(citation.url).pathname;
+    const filename = pathname.split("/").filter(Boolean).at(-1) ?? pathname;
+    return decodeURIComponent(filename);
+  } catch {
+    return citation.url;
+  }
+}
+
+function citationHref(citation: CitationLink): string {
+  if (!citation.url.startsWith("rag://")) {
+    return citation.url;
+  }
+  return `/api/rag/files?citation=${encodeURIComponent(citation.url)}`;
 }
 
 function pointConfidenceLabel(confidence: string): string {
@@ -1228,9 +1317,15 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
                     }
                     const ordinal = citationOrdinals.get(citationId) ?? citationOrdinal(citationId, citationIndex + 1);
                     return citation.url.startsWith("rag://") ? (
-                      <span key={citationId} className="citation-chip" title={citation.title || citation.url}>
+                      <a
+                        key={citationId}
+                        className="citation-chip"
+                        href={citationHref(citation)}
+                        download
+                        title={decodedRagTitle(citation)}
+                      >
                         [{ordinal}] {citationDisplayText(citation)}
-                      </span>
+                      </a>
                     ) : (
                       <a
                         key={citationId}
@@ -1260,30 +1355,20 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
               <div key={group.label} className="source-group">
                 <span className="source-group__label">{group.label}</span>
                 <div className="source-group__links">
-                  {group.links.map((link) =>
-                    link.linkable ? (
-                      <a
-                        key={link.key}
-                        className="source-group__link"
-                        href={link.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={`${group.label} source ${link.ordinal}`}
-                        title={link.href}
-                      >
-                        {link.ordinal}
-                      </a>
-                    ) : (
-                      <span
-                        key={link.key}
-                        className="source-group__link"
-                        aria-label={`${group.label} source ${link.ordinal}`}
-                        title={link.href}
-                      >
-                        {link.ordinal}
-                      </span>
-                    ),
-                  )}
+                  {group.links.map((link) => (
+                    <a
+                      key={link.key}
+                      className="source-group__link"
+                      href={link.href}
+                      target={link.download ? undefined : "_blank"}
+                      rel={link.download ? undefined : "noreferrer"}
+                      download={link.download || undefined}
+                      aria-label={`${group.label} source ${link.ordinal}`}
+                      title={link.href}
+                    >
+                      {link.ordinal}
+                    </a>
+                  ))}
                 </div>
               </div>
             ))}
@@ -1325,8 +1410,10 @@ export default function App() {
   const [mode, setMode] = useState<ChatMode>("fast");
   const [modelTarget, setModelTarget] = useState<ModelTarget>(DEFAULT_MODEL_TARGET);
   const [researchMode, setResearchMode] = useState<ResearchMode>("research");
-  const [ragEnabledByChatId, setRagEnabledByChatId] = useState<Record<string, boolean>>({});
-  const [draftRagEnabled, setDraftRagEnabled] = useState(false);
+  const [toolOptions, setToolOptions] = useState<ToolOption[]>(FALLBACK_TOOL_OPTIONS);
+  const [selectedToolsByChatId, setSelectedToolsByChatId] = useState<Record<string, string[]>>({});
+  const [draftSelectedTools, setDraftSelectedTools] = useState<string[]>([...DEFAULT_SELECTED_TOOLS]);
+  const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [composerValue, setComposerValue] = useState("");
   const [localModel, setLocalModel] = useState<LocalModelInfo | null>(null);
   const [chats, setChats] = useState<WebChatSummary[]>([]);
@@ -1341,14 +1428,21 @@ export default function App() {
   const transcriptRef = useRef<HTMLElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const toolSelectRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<TranscriptScrollTarget | null>(null);
   const selectedChatIdRef = useRef<string | null>(selectedChatId);
   const [slashCommandIndex, setSlashCommandIndex] = useState(0);
   const activeRuntime = selectedChatId ? chatRuntimeById[selectedChatId] : null;
   const activeMessages = activeRuntime?.messages ?? [];
   const sending = activeRuntime?.pending ?? false;
-  const selectedRagEnabled = selectedChatId ? Boolean(ragEnabledByChatId[selectedChatId]) : draftRagEnabled;
-  const ragEnabled = researchMode !== "chat" && selectedRagEnabled;
+  const selectedTools = selectedChatId
+    ? selectedToolsByChatId[selectedChatId] ?? [...DEFAULT_SELECTED_TOOLS]
+    : draftSelectedTools;
+  const enabledTools = researchMode === "chat" ? [] : selectedTools;
+  const orderedToolOptions = [
+    ...toolOptions.filter((tool) => tool.name === "rag_search"),
+    ...toolOptions.filter((tool) => tool.name !== "rag_search"),
+  ];
   const gpuToggleAvailable = Boolean(localModel?.available);
   const effectiveModelTarget =
     !gpuToggleAvailable && modelTarget === "gpu" ? DEFAULT_MODEL_TARGET : normalizeModelTarget(modelTarget);
@@ -1412,6 +1506,12 @@ export default function App() {
     }
   }
 
+  function applyToolOptions(nextToolOptions: ToolOption[] | null | undefined) {
+    if (nextToolOptions && nextToolOptions.length > 0) {
+      setToolOptions(nextToolOptions);
+    }
+  }
+
   function pruneChatRuntimes(validIds: Set<string>) {
     setChatRuntimeById((current) => {
       let changed = false;
@@ -1458,6 +1558,7 @@ export default function App() {
     const payload = await listChats();
     const nextChats = payload.chats;
     applyLocalModel(payload.local_model);
+    applyToolOptions(payload.tools);
     setChats(nextChats);
     pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
     const targetId =
@@ -1501,6 +1602,7 @@ export default function App() {
           return;
         }
         applyLocalModel(payload.local_model);
+        applyToolOptions(payload.tools);
         setChats(nextChats);
         pruneChatRuntimes(new Set(nextChats.map((chat) => chat.id)));
         const storedId = storageGetItem(STORAGE_KEY);
@@ -1567,6 +1669,37 @@ export default function App() {
       document.body.classList.remove(className);
     };
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!toolMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!toolSelectRef.current?.contains(event.target as Node)) {
+        setToolMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setToolMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [toolMenuOpen]);
+
+  useEffect(() => {
+    if (researchMode === "chat") {
+      setToolMenuOpen(false);
+    }
+  }, [researchMode]);
 
   useEffect(() => {
     const className = "deepfind-standalone";
@@ -1636,7 +1769,7 @@ export default function App() {
       setCurrentChat(chat);
       ensureChatRuntime(chat.id, []);
       setSelectedChatId(chat.id);
-      setDraftRagEnabled(false);
+      setDraftSelectedTools([...DEFAULT_SELECTED_TOOLS]);
       setChats((current) => upsertSummary(current, summaryFromChat(chat)));
       storageSetItem(STORAGE_KEY, chat.id);
       setSidebarOpen(false);
@@ -1660,7 +1793,7 @@ export default function App() {
         delete next[chat.id];
         return next;
       });
-      setRagEnabledByChatId((current) => {
+      setSelectedToolsByChatId((current) => {
         if (!(chat.id in current)) {
           return current;
         }
@@ -1692,25 +1825,31 @@ export default function App() {
     };
     setCurrentChat(titledChat);
     setSelectedChatId(chat.id);
-    if (draftRagEnabled) {
-      setRagEnabledByChatId((current) => ({ ...current, [chat.id]: true }));
-      setDraftRagEnabled(false);
-    }
+    setSelectedToolsByChatId((current) => ({ ...current, [chat.id]: draftSelectedTools }));
+    setDraftSelectedTools([...DEFAULT_SELECTED_TOOLS]);
     setChats((current) => upsertSummary(current, summaryFromChat(titledChat)));
     storageSetItem(STORAGE_KEY, chat.id);
     ensureChatRuntime(chat.id, []);
     return titledChat;
   }
 
-  function toggleRag() {
+  function updateSelectedTools(updater: (current: string[]) => string[]) {
     if (!selectedChatId) {
-      setDraftRagEnabled((current) => !current);
+      setDraftSelectedTools(updater);
       return;
     }
-    setRagEnabledByChatId((current) => ({
+    setSelectedToolsByChatId((current) => ({
       ...current,
-      [selectedChatId]: !current[selectedChatId],
+      [selectedChatId]: updater(current[selectedChatId] ?? [...DEFAULT_SELECTED_TOOLS]),
     }));
+  }
+
+  function toggleTool(name: string) {
+    updateSelectedTools((current) =>
+      current.includes(name)
+        ? current.filter((toolName) => toolName !== name)
+        : [...current, name],
+    );
   }
 
   function appendActivity(chatId: string, messageId: string, event: ProgressEvent) {
@@ -1853,7 +1992,8 @@ export default function App() {
           mode,
           model_target: currentModelTarget,
           research_mode: researchMode,
-          rag_enabled: ragEnabled,
+          rag_enabled: enabledTools.includes("rag_search"),
+          selected_tools: enabledTools,
         },
         (progressEvent) => {
           appendActivity(chat.id, assistantMessage.id, progressEvent);
@@ -2184,23 +2324,61 @@ export default function App() {
               <option value="research">Research</option>
               <option value="chat">Chat</option>
             </select>
-            <button
-              type="button"
-              className={`rag-toggle__button${ragEnabled ? " rag-toggle__button--active" : ""}`}
-              aria-label="RAG"
-              aria-pressed={ragEnabled}
-              title={
-                researchMode === "chat"
-                  ? "RAG is unavailable in Chat mode"
-                  : ragEnabled
-                    ? "RAG on: search the local knowledge base"
-                    : "RAG off"
-              }
-              disabled={researchMode === "chat"}
-              onClick={toggleRag}
-            >
-              RAG
-            </button>
+            <div className="tool-select" ref={toolSelectRef}>
+              <button
+                type="button"
+                className={`tool-select__button${toolMenuOpen ? " tool-select__button--active" : ""}`}
+                aria-label="Tools"
+                aria-expanded={toolMenuOpen}
+                aria-haspopup="dialog"
+                title={
+                  researchMode === "chat"
+                    ? "Tools are unavailable in Chat mode"
+                    : `${enabledTools.length} tools enabled`
+                }
+                disabled={researchMode === "chat"}
+                onClick={() => setToolMenuOpen((current) => !current)}
+              >
+                Tools {enabledTools.length}
+              </button>
+              {toolMenuOpen ? (
+                <div className="tool-select__menu" role="dialog" aria-label="Select tools">
+                  <div className="tool-select__header">
+                    <strong>Tools</strong>
+                    <span>{enabledTools.length} selected</span>
+                  </div>
+                  <div className="tool-select__actions">
+                    <button
+                      type="button"
+                      onClick={() => updateSelectedTools(() => orderedToolOptions.map((tool) => tool.name))}
+                    >
+                      Select all
+                    </button>
+                    <button type="button" onClick={() => updateSelectedTools(() => [])}>
+                      Clear
+                    </button>
+                  </div>
+                  <div className="tool-select__list">
+                    {orderedToolOptions.map((tool) => (
+                      <label
+                        className="tool-select__option"
+                        key={tool.name}
+                        title={tool.description || toolLabel(tool.name)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTools.includes(tool.name)}
+                          onChange={() => toggleTool(tool.name)}
+                        />
+                        <span>
+                          <strong>{toolLabel(tool.name)}</strong>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
               className={`model-toggle__button model-toggle__button--${effectiveModelTarget}`}

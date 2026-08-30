@@ -18,7 +18,15 @@ class FakeApp:
     def __init__(self, progress) -> None:
         self.progress = progress
 
-    def _run_turn_detailed(self, *, query, transcript, num_agent, max_iter_per_agent):
+    def _run_turn_detailed(
+        self,
+        *,
+        query,
+        transcript,
+        num_agent,
+        max_iter_per_agent,
+        long_report_mode: bool = False,
+    ):
         self.progress.run_started(query, num_agent, max_iter_per_agent)
         self.progress.plan_ready(["task"])
         report = WorkerReport(
@@ -50,6 +58,8 @@ class WebApiTests(unittest.TestCase):
             listed = client.get("/api/chats")
             self.assertEqual(listed.status_code, 200)
             self.assertEqual(len(listed.json()["chats"]), 1)
+            self.assertIn("web_search", [tool["name"] for tool in listed.json()["tools"]])
+            self.assertIn("rag_search", [tool["name"] for tool in listed.json()["tools"]])
 
             detail = client.get(f"/api/chats/{chat_id}")
             self.assertEqual(detail.status_code, 200)
@@ -57,7 +67,11 @@ class WebApiTests(unittest.TestCase):
 
             streamed = client.post(
                 f"/api/chats/{chat_id}/messages/stream",
-                json={"content": "hello", "mode": "fast"},
+                json={
+                    "content": "hello",
+                    "mode": "fast",
+                    "selected_tools": ["web_search"],
+                },
             )
             self.assertEqual(streamed.status_code, 200)
             self.assertIn("event: run_started", streamed.text)
@@ -111,3 +125,40 @@ class WebApiTests(unittest.TestCase):
 
             self.assertEqual(streamed.status_code, 400)
             self.assertEqual(streamed.text, "Set MIMO_API_KEY or XIAOMI_API_KEY, or switch to another model.")
+
+    def test_rag_file_endpoint_downloads_document(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir)
+            document = project_dir / "doc" / "pdf" / "腾讯财报.pdf"
+            document.parent.mkdir(parents=True)
+            document.write_bytes(b"pdf-content")
+            service = DeepFindWebService(store=ChatStore(project_dir / "chats"))
+            client = TestClient(build_app(service))
+            settings = Settings(api_key="", rag_mcp_project_dir=str(project_dir))
+            citation = (
+                "rag://knowledge-base/doc/pdf/"
+                "%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5.pdf?page_start=1"
+            )
+
+            with patch("deepfind.web_service.Settings.from_env", return_value=settings):
+                response = client.get("/api/rag/files", params={"citation": citation})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content, b"pdf-content")
+            self.assertIn("attachment", response.headers["content-disposition"])
+            self.assertIn("filename*=utf-8", response.headers["content-disposition"].lower())
+
+    def test_rag_file_endpoint_rejects_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir)
+            service = DeepFindWebService(store=ChatStore(project_dir / "chats"))
+            client = TestClient(build_app(service))
+            settings = Settings(api_key="", rag_mcp_project_dir=str(project_dir))
+
+            with patch("deepfind.web_service.Settings.from_env", return_value=settings):
+                response = client.get(
+                    "/api/rag/files",
+                    params={"citation": "rag://knowledge-base/../secret.txt"},
+                )
+
+            self.assertEqual(response.status_code, 403)

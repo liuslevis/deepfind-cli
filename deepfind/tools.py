@@ -9,7 +9,7 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 import httpx
@@ -925,9 +925,16 @@ def _rag_citations(data: object) -> list[str]:
 
 
 class Toolset:
-    def __init__(self, settings: Settings, *, rag_enabled: bool = False) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        rag_enabled: bool = True,
+        enabled_tools: Sequence[str] | None = None,
+    ) -> None:
         self.settings = settings
         self.rag_enabled = rag_enabled
+        self.enabled_tools = frozenset(enabled_tools) if enabled_tools is not None else None
         self._functions = {
             "web_search": self.web_search,
             "web_fetch": self.web_fetch,
@@ -960,6 +967,12 @@ class Toolset:
         }
         if rag_enabled:
             self._functions["rag_search"] = self.rag_search
+        if self.enabled_tools is not None:
+            self._functions = {
+                name: function
+                for name, function in self._functions.items()
+                if name in self.enabled_tools
+            }
 
     def specs(self) -> list[dict[str, Any]]:
         specs = [
@@ -1418,6 +1431,12 @@ class Toolset:
                     },
                 ),
             )
+        if self.enabled_tools is not None:
+            specs = [
+                spec
+                for spec in specs
+                if spec.get("function", {}).get("name") in self.enabled_tools
+            ]
         return specs
 
     def _function_spec(self, name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:

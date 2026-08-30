@@ -368,6 +368,55 @@ class OrchestratorTests(unittest.TestCase):
             "从腾讯财报看产业趋势.pdf (p. 2-3)",
         )
 
+    def test_long_report_rag_reference_is_a_download_link(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        rag_citation = (
+            "rag://knowledge-base/doc/pdf/%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5.pdf"
+            "?title=%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5&page_start=1"
+        )
+        fake_reports = [
+            WorkerReport(
+                task="task",
+                text="worker",
+                citations=[rag_citation],
+                parsed={
+                    "summary": "summary",
+                    "claims": [
+                        {
+                            "text": "Tencent result",
+                            "citations": [rag_citation],
+                            "confidence": "high",
+                        }
+                    ],
+                    "gaps": [],
+                },
+                agent_id="sub-1",
+            )
+        ]
+        fake_synthesis = {
+            "overview_md": "draft",
+            "key_points": [],
+            "disagreements": [],
+            "gaps": [],
+            "next_steps": [],
+        }
+        with patch.object(app, "_plan", return_value=["task"]):
+            with patch.object(app, "_run_workers", return_value=fake_reports):
+                with patch.object(app, "_synthesize", return_value=fake_synthesis):
+                    with patch.object(app, "_lead", return_value="## Conclusion\n\nTencent result [1]"):
+                        envelope, _ = app._run_turn_structured(
+                            "Tencent earnings",
+                            transcript=[],
+                            num_agent=1,
+                            max_iter_per_agent=2,
+                            long_report_mode=True,
+                        )
+
+        reference = envelope["lead"]["overview_md"]
+        self.assertIn("[RAG knowledge base — 腾讯财报 (p. 1)]", reference)
+        self.assertIn("/api/rag/files?citation=rag%3A%2F%2Fknowledge-base%2F", reference)
+
     def test_lead_skips_tools_for_normal_research_answer(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)

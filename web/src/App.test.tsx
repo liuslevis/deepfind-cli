@@ -285,7 +285,7 @@ describe("App", () => {
     render(<App />);
 
     const agentButton = await screen.findByRole("button", { name: "Mode" });
-    const ragButton = screen.getByRole("button", { name: "RAG" });
+    const toolsButton = screen.getByRole("button", { name: "Tools" });
     const researchSelect = screen.getByRole("combobox", { name: "Research mode" });
     expect(researchSelect).toHaveValue("research");
     expect(within(researchSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
@@ -296,7 +296,7 @@ describe("App", () => {
     await userEvent.selectOptions(researchSelect, "chat");
     expect(researchSelect).toHaveValue("chat");
     expect(agentButton).toBeDisabled();
-    expect(ragButton).toBeDisabled();
+    expect(toolsButton).toBeDisabled();
 
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Say hello");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -306,16 +306,23 @@ describe("App", () => {
       mode: "fast",
       research_mode: "chat",
       rag_enabled: false,
+      selected_tools: [],
     });
   });
 
-  it("toggles RAG and sends the per-turn RAG flag", async () => {
+  it("selects multiple tools and sends the per-turn tool allowlist", async () => {
     let capturedBody = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = (init?.method ?? "GET").toUpperCase();
       if (url === "/api/chats" && method === "GET") {
-        return jsonResponse({ chats: [] });
+        return jsonResponse({
+          chats: [],
+          tools: [
+            { name: "web_search", description: "Search the web." },
+            { name: "rag_search", description: "Search the local knowledge base." },
+          ],
+        });
       }
       if (url === "/api/chats" && method === "POST") {
         return jsonResponse({
@@ -352,15 +359,25 @@ describe("App", () => {
 
     render(<App />);
 
-    const ragButton = await screen.findByRole("button", { name: "RAG" });
-    expect(ragButton).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(ragButton);
-    expect(ragButton).toHaveAttribute("aria-pressed", "true");
+    const toolsButton = await screen.findByRole("button", { name: "Tools" });
+    await userEvent.click(toolsButton);
+    const toolDialog = screen.getByRole("dialog", { name: "Select tools" });
+    const ragCheckbox = within(toolDialog).getByRole("checkbox", { name: /RAG Search/ });
+    const webCheckbox = within(toolDialog).getByRole("checkbox", { name: /Web Search/ });
+    expect(within(toolDialog).getAllByRole("checkbox")[0]).toBe(ragCheckbox);
+    expect(webCheckbox).toBeChecked();
+    expect(ragCheckbox).toBeChecked();
+    expect(ragCheckbox.closest("label")).toHaveAttribute("title", "Search the local knowledge base.");
+    await userEvent.click(ragCheckbox);
+    expect(ragCheckbox).toBeChecked();
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Search my research");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(capturedBody).not.toBe(""));
-    expect(JSON.parse(capturedBody)).toMatchObject({ rag_enabled: true });
+    expect(JSON.parse(capturedBody)).toMatchObject({
+      rag_enabled: true,
+      selected_tools: expect.arrayContaining(["web_search", "rag_search"]),
+    });
   });
 
   it("cycles the model button through remote providers and GPU and sends the selected target", async () => {
@@ -802,8 +819,9 @@ describe("App", () => {
     }
   });
 
-  it("renders RAG citations as knowledge-base references instead of web links", async () => {
-    const ragUrl = "rag://knowledge-base/doc/pdf/tencent.pdf?page_start=2&page_end=3";
+  it("renders RAG citations as decoded knowledge-base download links", async () => {
+    const ragUrl =
+      "rag://knowledge-base/doc/pdf/%E4%BB%8E%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5%E7%9C%8B%E4%BA%A7%E4%B8%9A%E8%B6%8B%E5%8A%BF.pdf?page_start=2&page_end=3";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = (init?.method ?? "GET").toUpperCase();
@@ -849,7 +867,8 @@ describe("App", () => {
                     id: "c1",
                     canonical_url: ragUrl,
                     url: ragUrl,
-                    title: "tencent.pdf (p. 2-3)",
+                    title:
+                      "%E4%BB%8E%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5%E7%9C%8B%E4%BA%A7%E4%B8%9A%E8%B6%8B%E5%8A%BF.pdf%20(p.%202-3)",
                     publisher: "RAG knowledge base",
                   },
                 ],
@@ -871,8 +890,14 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("heading", { name: "Key Points" }).closest("summary")!);
     await userEvent.click(screen.getByRole("heading", { name: "References" }).closest("summary")!);
 
-    expect(screen.getByText("[1] RAG knowledge base: tencent.pdf (p. 2-3)")).toBeInTheDocument();
-    expect(screen.getByLabelText("RAG knowledge base source 1")).not.toHaveAttribute("href");
+    const keyPointLink = screen.getByRole("link", {
+      name: "[1] RAG knowledge base: 从腾讯财报看产业趋势.pdf (p. 2-3)",
+    });
+    expect(keyPointLink).toHaveAttribute("href", `/api/rag/files?citation=${encodeURIComponent(ragUrl)}`);
+    expect(keyPointLink).toHaveAttribute("download");
+    const referenceLink = screen.getByRole("link", { name: "RAG knowledge base source 1" });
+    expect(referenceLink).toHaveAttribute("href", `/api/rag/files?citation=${encodeURIComponent(ragUrl)}`);
+    expect(referenceLink).toHaveAttribute("download");
   });
 
   it("copies assistant markdown from the response card", async () => {

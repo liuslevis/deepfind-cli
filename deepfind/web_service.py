@@ -6,7 +6,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 from threading import Thread
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 from uuid import uuid4
 
 from .chat_store import ChatStore, repo_root, summarize_text, utc_now
@@ -25,6 +25,7 @@ from .web_models import (
     LocalModelInfo,
     ModelTarget,
     ResearchMode,
+    ToolOption,
     TurnResult,
     WebChatDetail,
     WebMessage,
@@ -205,8 +206,14 @@ def _tool_catalog(rag_enabled: bool = False) -> tuple[tuple[str, str], ...]:
     return tuple(catalog)
 
 
-def _tool_catalog_markdown(rag_enabled: bool = False) -> str:
+def _tool_catalog_markdown(
+    rag_enabled: bool = False,
+    enabled_tools: list[str] | None = None,
+) -> str:
     tools = _tool_catalog(rag_enabled)
+    if enabled_tools is not None:
+        enabled = set(enabled_tools)
+        tools = tuple((name, description) for name, description in tools if name in enabled)
     if not tools:
         return "No tools are currently available."
     lines = [f"- `{name}`: {description}" for name, description in tools]
@@ -241,6 +248,12 @@ class DeepFindWebService:
     def local_model_info(self) -> LocalModelInfo:
         return _local_model_info(Settings.from_env(require_api_key=False))
 
+    def tool_options(self) -> list[ToolOption]:
+        return [
+            ToolOption(name=name, description=description)
+            for name, description in _tool_catalog(rag_enabled=True)
+        ]
+
     def create_chat(self, title: str | None = None) -> WebChatDetail:
         return self.store.create_chat(title=title)
 
@@ -260,6 +273,7 @@ class DeepFindWebService:
         deep_mode: bool = False,
         research_mode: ResearchMode | None = None,
         rag_enabled: bool = False,
+        selected_tools: list[str] | None = None,
     ):
         query = content.strip()
         if not query:
@@ -272,7 +286,14 @@ class DeepFindWebService:
             if research_mode is not None
             else ("deep_research" if deep_mode else "research")
         )
-        effective_rag_enabled = rag_enabled and resolved_research_mode != "chat"
+        enabled_tools = self._validated_selected_tools(selected_tools)
+        if resolved_research_mode == "chat":
+            enabled_tools = []
+        effective_rag_enabled = (
+            ("rag_search" in enabled_tools)
+            if enabled_tools is not None
+            else rag_enabled
+        ) and resolved_research_mode != "chat"
         chat = self.get_chat(chat_id)
         prior_transcript = self._messages_to_transcript(chat.messages)
         updated_chat = chat.model_copy(deep=True)
@@ -298,6 +319,7 @@ class DeepFindWebService:
             model_label=model_label,
             research_mode=resolved_research_mode,
             rag_enabled=effective_rag_enabled,
+            enabled_tools=enabled_tools,
         )
         if command_result is not None:
             assistant_message = self._save_assistant_message(chat_id, command_result)
@@ -320,6 +342,7 @@ class DeepFindWebService:
                     progress,
                     settings,
                     rag_enabled=effective_rag_enabled,
+                    enabled_tools=enabled_tools,
                 )
                 envelope: dict[str, object] | None = None
                 if resolved_research_mode == "chat":
@@ -387,11 +410,12 @@ class DeepFindWebService:
         model_label: str,
         research_mode: ResearchMode,
         rag_enabled: bool = False,
+        enabled_tools: list[str] | None = None,
     ) -> TurnResult | None:
         if not query.startswith("/"):
             return None
         if query.lower() == _LIST_TOOL_COMMAND:
-            answer = _tool_catalog_markdown(rag_enabled)
+            answer = _tool_catalog_markdown(rag_enabled, enabled_tools)
         else:
             answer = _unknown_command_markdown(query)
         return TurnResult(
@@ -510,6 +534,33 @@ class DeepFindWebService:
             rel = p
         return f"/api/files?path={quote(str(rel))}"
 
+    def resolve_rag_document(self, citation_uri: str) -> Path:
+        try:
+            parsed = urlsplit(citation_uri)
+        except ValueError as exc:
+            raise ValueError("invalid RAG citation") from exc
+        if parsed.scheme.lower() != "rag" or parsed.netloc != "knowledge-base":
+            raise ValueError("invalid RAG citation")
+
+        raw_path = unquote(parsed.path.lstrip("/"))
+        if not raw_path or os.path.isabs(raw_path):
+            raise ValueError("invalid RAG document path")
+        normalized = os.path.normpath(raw_path)
+        if normalized.startswith("..") or "/.." in normalized or "\\.." in normalized:
+            raise ValueError("RAG document path traversal not allowed")
+
+        settings = Settings.from_env(require_api_key=False)
+        project_root = Path(settings.rag_mcp_project_dir).expanduser()
+        if not project_root.is_absolute():
+            project_root = self._repo_root / project_root
+        project_root = project_root.resolve()
+        path = (project_root / normalized).resolve()
+        try:
+            path.relative_to(project_root)
+        except ValueError as exc:
+            raise ValueError("RAG document path escapes knowledge base") from exc
+        return path
+
     def _settings_for_target(self, model_target: ModelTarget) -> Settings:
         base_settings = Settings.from_env(require_api_key=False)
         if model_target == "gpu":
@@ -535,19 +586,46 @@ class DeepFindWebService:
         settings: Settings,
         *,
         rag_enabled: bool = False,
+        enabled_tools: list[str] | None = None,
     ):
         if self.app_factory is None:
-            return DeepFind(progress=progress, settings=settings, rag_enabled=rag_enabled)
+            return DeepFind(
+                progress=progress,
+                settings=settings,
+                rag_enabled=rag_enabled,
+                enabled_tools=enabled_tools,
+            )
 
         signature = inspect.signature(self.app_factory)
         parameters = signature.parameters
-        if "rag_enabled" in parameters:
-            return self.app_factory(progress, settings=settings, rag_enabled=rag_enabled)
+        kwargs = {}
         if "settings" in parameters:
-            return self.app_factory(progress, settings=settings)
+            kwargs["settings"] = settings
+        if "rag_enabled" in parameters:
+            kwargs["rag_enabled"] = rag_enabled
+        if "enabled_tools" in parameters:
+            kwargs["enabled_tools"] = enabled_tools
+        if kwargs:
+            return self.app_factory(progress, **kwargs)
         if len(parameters) >= 2:
             return self.app_factory(progress, settings)
         return self.app_factory(progress)
+
+    def _validated_selected_tools(self, selected_tools: list[str] | None) -> list[str] | None:
+        if selected_tools is None:
+            return None
+        available = {name for name, _description in _tool_catalog(rag_enabled=True)}
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_name in selected_tools:
+            name = raw_name.strip()
+            if not name or name in seen:
+                continue
+            if name not in available:
+                raise ValueError(f"unknown tool: {name}")
+            normalized.append(name)
+            seen.add(name)
+        return normalized
 
     def _messages_to_transcript(self, messages: list[WebMessage]) -> list[ChatMessage]:
         return [ChatMessage(role=message.role, content=message.content) for message in messages]

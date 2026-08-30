@@ -72,6 +72,22 @@ class CapturingRagApp(FakeApp):
         seen["rag_enabled"] = rag_enabled
 
 
+class CapturingToolsApp(FakeApp):
+    def __init__(
+        self,
+        progress,
+        *,
+        settings: Settings,
+        rag_enabled: bool,
+        enabled_tools: list[str] | None,
+        seen: dict[str, Any],
+    ) -> None:
+        super().__init__(progress)
+        seen["settings"] = settings
+        seen["rag_enabled"] = rag_enabled
+        seen["enabled_tools"] = enabled_tools
+
+
 class DirectChatApp:
     def __init__(self, progress, seen: dict[str, Any]) -> None:
         self.progress = progress
@@ -141,6 +157,46 @@ class WebServiceTests(unittest.TestCase):
             )
 
         self.assertFalse(seen["rag_enabled"])
+
+    def test_stream_message_passes_selected_tools_to_app_factory(self) -> None:
+        seen: dict[str, Any] = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                app_factory=lambda progress, settings, rag_enabled, enabled_tools: CapturingToolsApp(
+                    progress,
+                    settings=settings,
+                    rag_enabled=rag_enabled,
+                    enabled_tools=enabled_tools,
+                    seen=seen,
+                ),
+            )
+            chat = service.create_chat()
+            events = list(
+                service.stream_message(
+                    chat.id,
+                    "hello",
+                    "fast",
+                    selected_tools=["rag_search", "web_search"],
+                )
+            )
+
+        self.assertEqual(seen["enabled_tools"], ["rag_search", "web_search"])
+        self.assertTrue(seen["rag_enabled"])
+        self.assertTrue(any(event.type == "answer_final" for event in events))
+
+    def test_stream_message_rejects_unknown_selected_tool(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(store=ChatStore(Path(temp_dir)))
+            chat = service.create_chat()
+
+            with self.assertRaisesRegex(ValueError, "unknown tool"):
+                service.stream_message(
+                    chat.id,
+                    "hello",
+                    "fast",
+                    selected_tools=["not_a_tool"],
+                )
 
     def test_chat_mode_skips_research_pipeline(self) -> None:
         seen: dict[str, Any] = {}

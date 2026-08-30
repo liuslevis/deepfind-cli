@@ -108,6 +108,7 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
         return ChatListResponse(
             chats=app.state.service.list_chats(),
             local_model=app.state.service.local_model_info(),
+            tools=app.state.service.tool_options(),
         )
 
     @app.post("/api/chats", response_model=CreateChatResponse)
@@ -142,6 +143,7 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
                 deep_mode=payload.deep_mode,
                 research_mode=payload.research_mode,
                 rag_enabled=payload.rag_enabled,
+                selected_tools=payload.selected_tools,
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"chat not found: {chat_id}") from exc
@@ -172,6 +174,20 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
         if not resolved.is_file():
             raise HTTPException(status_code=404, detail="file not found")
         return FileResponse(resolved)
+
+    @app.get("/api/rag/files")
+    def get_rag_file(citation: str = Query(...)) -> FileResponse:
+        try:
+            resolved = app.state.service.resolve_rag_document(citation)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        if not resolved.is_file():
+            raise HTTPException(status_code=404, detail="RAG document not found")
+        return FileResponse(
+            resolved,
+            filename=resolved.name,
+            content_disposition_type="attachment",
+        )
 
     dist_dir = repo_root() / "web" / "dist"
     if dist_dir.exists():

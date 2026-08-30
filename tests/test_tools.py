@@ -149,6 +149,17 @@ class ToolsetTests(unittest.TestCase):
         names = [item["function"]["name"] for item in toolset.specs()]
         self.assertIn("rag_search", names)
 
+    def test_enabled_tools_filters_specs_and_calls(self) -> None:
+        toolset = Toolset(
+            Settings(api_key="x"),
+            rag_enabled=True,
+            enabled_tools=["rag_search", "web_search"],
+        )
+        names = [item["function"]["name"] for item in toolset.specs()]
+
+        self.assertEqual(names, ["rag_search", "web_search"])
+        self.assertIn("unknown tool", toolset.call("web_fetch", {}))
+
     def test_rag_search_calls_mcp_search(self) -> None:
         toolset = Toolset(Settings(api_key="x"), rag_enabled=True)
         response = {
