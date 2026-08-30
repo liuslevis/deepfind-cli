@@ -16,12 +16,60 @@ from deepfind.config import (
     DEFAULT_MIMO_MODEL,
     DEFAULT_MODEL,
     Settings,
+    SettingsError,
     _clean_env_value,
 )
 from deepfind.gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
 
 
 class ConfigTests(unittest.TestCase):
+    def test_coding_config_defaults_to_disabled(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env"},
+            clear=True,
+        ):
+            settings = Settings.from_env(require_api_key=False)
+        self.assertFalse(settings.coding_enabled)
+        self.assertEqual(settings.coding_runtime, "docker")
+        self.assertEqual(settings.coding_root, "sandbox")
+        self.assertEqual(settings.coding_timeout, 120)
+        self.assertEqual(settings.coding_max_concurrent, 4)
+        self.assertFalse(settings.coding_network)
+        self.assertEqual(settings.coding_retention, 0)
+
+    def test_coding_enabled_requires_digest_pinned_image(self) -> None:
+        env = {
+            "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+            "DEEPFIND_CODING_ENABLED": "true",
+            "DEEPFIND_CODING_IMAGE": "deepfind-coding:latest",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(SettingsError, "immutable"):
+                Settings.from_env(require_api_key=False)
+
+    def test_coding_rejects_unknown_runtime_and_open_network(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+                "DEEPFIND_CODING_RUNTIME": "containerd",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(SettingsError, "docker or podman"):
+                Settings.from_env(require_api_key=False)
+        with patch.dict(
+            os.environ,
+            {
+                "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+                "DEEPFIND_CODING_NETWORK": "true",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(SettingsError, "not supported"):
+                Settings.from_env(require_api_key=False)
+
     def test_clean_env_value_strips_inline_comment(self) -> None:
         self.assertEqual(
             _clean_env_value("qwen3-max # qwen-flash qwen-plus qwen3-max"),

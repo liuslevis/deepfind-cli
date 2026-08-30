@@ -162,6 +162,42 @@ DEEPFIND_IMAGE_DIR=tmp
 DEEPFIND_IMAGE_SIZE=2K
 ```
 
+### Isolated Python coding tool
+
+The `coding` tool is disabled by default. Build its minimal Python image from a
+digest-pinned base image, push or tag it in a registry that records a
+`RepoDigest`, then configure that immutable digest:
+
+```bash
+docker build \
+  --build-arg BASE_IMAGE=python@sha256:<python-image-digest> \
+  -f docker/coding/Dockerfile \
+  -t <registry>/deepfind-coding:local .
+docker push <registry>/deepfind-coding:local
+docker image inspect <registry>/deepfind-coding:local \
+  --format '{{index .RepoDigests 0}}'
+```
+
+For a local-only build that has no registry `RepoDigest`, you can use its
+immutable image ID from `docker image inspect --format '{{.Id}}'`.
+
+```bash
+DEEPFIND_CODING_ENABLED=true
+DEEPFIND_CODING_RUNTIME=docker
+DEEPFIND_CODING_IMAGE=<registry>/deepfind-coding@sha256:<digest>
+DEEPFIND_CODING_ROOT=sandbox
+DEEPFIND_CODING_TIMEOUT=120
+DEEPFIND_CODING_MAX_CONCURRENT=4
+DEEPFIND_CODING_NETWORK=false
+DEEPFIND_CODING_RETENTION=0
+```
+
+At startup, DeepFind verifies the runtime, image digest, non-root user,
+read-only root filesystem, seccomp, dropped capabilities, and
+`no-new-privileges`. If any check fails, `coding` is not registered. The host
+model creates a constrained Python file/command plan; only that plan enters the
+network-disabled container, so API keys are never exposed to generated code.
+
 ## Run
 
 ```bash

@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Sequence
 from urllib.parse import parse_qs, quote, urlencode, urlparse
+from uuid import uuid4
 
 import httpx
 
@@ -25,6 +26,8 @@ from .bili_transcribe import (
     transcribe_bili_audio,
 )
 from .browser_fetch import fetch_web_document_browser
+from .coding import CodingError, CodingResult, get_coding_service
+from .coding_runtime import CodingRuntimeError
 from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
@@ -964,6 +967,15 @@ class Toolset:
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
         }
+        if settings.coding_enabled:
+            try:
+                self._coding_service = get_coding_service(settings)
+            except CodingRuntimeError:
+                self._coding_service = None
+            else:
+                self._functions["coding"] = self.coding
+        else:
+            self._coding_service = None
         if self.enabled_tools is not None:
             self._functions = {
                 name: function
@@ -1412,6 +1424,29 @@ class Toolset:
                 },
             ),
         ]
+        if self._coding_service is not None:
+            specs.append(
+                self._function_spec(
+                    "coding",
+                    "Create and validate a Python solution in an isolated, one-time "
+                    "container sandbox. The container has no host credentials or network access.",
+                    {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "maxLength": 20000,
+                            },
+                            "context": {
+                                "type": "string",
+                                "maxLength": 100000,
+                            },
+                        },
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                )
+            )
         specs.insert(
             0,
             self._function_spec(
@@ -1452,6 +1487,22 @@ class Toolset:
             return dump_json(self._functions[name](**arguments))
         except Exception as exc:  # pragma: no cover - defensive
             return dump_json({"ok": False, "tool": name, "error": str(exc)})
+
+    def coding(self, query: str, context: str | None = None) -> dict[str, Any]:
+        if self._coding_service is None:
+            error = CodingError(
+                "sandbox_unavailable",
+                "The coding sandbox is unavailable",
+            )
+            result = CodingResult(
+                ok=False,
+                task_id=f"task_{uuid4().hex}",
+                status="failed",
+                answer=error.message,
+                error=error,
+            )
+            return result.to_dict()
+        return self._coding_service.coding(query, context).to_dict()
 
     def rag_search(self, query: str) -> dict[str, Any]:
         query = query.strip()

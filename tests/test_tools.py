@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,7 @@ from deepfind.bili_transcribe import (
     TranscriptionError,
 )
 from deepfind.config import Settings
+from deepfind.coding_runtime import CodingRuntimeError
 from deepfind.gen_slides import SlideGenerationError
 from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
 from deepfind.json_utils import dump_json
@@ -110,6 +112,48 @@ def build_minimal_pdf(text: str) -> bytes:
 
 
 class ToolsetTests(unittest.TestCase):
+    def test_coding_tool_registers_only_after_successful_probe(self) -> None:
+        service = SimpleNamespace(
+            coding=lambda query, context=None: SimpleNamespace(
+                to_dict=lambda: {
+                    "ok": True,
+                    "task_id": "task_" + ("a" * 32),
+                    "status": "completed",
+                    "answer": "done",
+                    "artifacts": [],
+                    "commands": [],
+                    "error": None,
+                    "duration_ms": 1,
+                }
+            )
+        )
+        settings = Settings(
+            api_key="x",
+            coding_enabled=True,
+            coding_image="example/coding@sha256:" + ("a" * 64),
+        )
+        with patch("deepfind.tools.get_coding_service", return_value=service):
+            toolset = Toolset(settings, enabled_tools=["coding"])
+            names = [item["function"]["name"] for item in toolset.specs()]
+            result = json.loads(toolset.call("coding", {"query": "make it"}))
+        self.assertEqual(names, ["coding"])
+        self.assertTrue(result["ok"])
+
+    def test_coding_tool_is_not_registered_when_probe_fails(self) -> None:
+        settings = Settings(
+            api_key="x",
+            coding_enabled=True,
+            coding_image="example/coding@sha256:" + ("a" * 64),
+        )
+        with patch(
+            "deepfind.tools.get_coding_service",
+            side_effect=CodingRuntimeError("sandbox_unavailable", "no runtime"),
+        ):
+            toolset = Toolset(settings)
+        names = [item["function"]["name"] for item in toolset.specs()]
+        self.assertNotIn("coding", names)
+        self.assertIn("unknown tool", toolset.call("coding", {"query": "make it"}))
+
     def test_specs_use_chat_completion_function_shape(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         spec = toolset.specs()[0]

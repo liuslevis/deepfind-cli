@@ -85,7 +85,7 @@ def _should_enter_chat_mode(args: argparse.Namespace, stdin: TextIO, stdout: Tex
 
 
 def _print_tools(stdout: TextIO) -> None:
-    toolset = Toolset(Settings(api_key=""))
+    toolset = Toolset(Settings.from_env(require_api_key=False))
     for spec in toolset.specs():
         function = spec.get("function", {})
         name = str(function.get("name", "")).strip()

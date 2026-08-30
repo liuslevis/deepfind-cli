@@ -193,7 +193,7 @@ def _local_model_info(settings: Settings) -> LocalModelInfo:
 @lru_cache(maxsize=2)
 def _tool_catalog() -> tuple[tuple[str, str, tuple[str, ...]], ...]:
     catalog: list[tuple[str, str, tuple[str, ...]]] = []
-    for item in Toolset(Settings(api_key="web")).specs():
+    for item in Toolset(Settings.from_env(require_api_key=False)).specs():
         if not isinstance(item, dict):
             continue
         function_spec = item.get("function")
