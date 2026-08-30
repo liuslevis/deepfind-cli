@@ -138,7 +138,6 @@ export async function streamChatMessage(
     model_target: ModelTarget;
     deep_mode?: boolean;
     research_mode?: ResearchMode;
-    rag_enabled?: boolean;
     selected_tools?: string[];
   },
   onEvent: (event: ProgressEvent) => void,

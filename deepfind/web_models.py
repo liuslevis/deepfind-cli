@@ -61,6 +61,7 @@ class LocalModelInfo(BaseModel):
 class ToolOption(BaseModel):
     name: str
     description: str
+    parameters: list[str] = Field(default_factory=list)
 
 
 class WebMessage(BaseModel):
@@ -146,7 +147,6 @@ class SendMessageRequest(BaseModel):
     model_target: ModelTarget = "qwen"
     deep_mode: bool = False
     research_mode: ResearchMode | None = None
-    rag_enabled: bool = True
     selected_tools: list[str] | None = None
 
     @field_validator("model_target", mode="before")

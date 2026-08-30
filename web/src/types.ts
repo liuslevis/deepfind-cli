@@ -44,6 +44,7 @@ export interface LocalModelInfo {
 export interface ToolOption {
   name: string;
   description: string;
+  parameters: string[];
 }
 
 export interface WebMessage {

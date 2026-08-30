@@ -929,13 +929,12 @@ class Toolset:
         self,
         settings: Settings,
         *,
-        rag_enabled: bool = True,
         enabled_tools: Sequence[str] | None = None,
     ) -> None:
         self.settings = settings
-        self.rag_enabled = rag_enabled
         self.enabled_tools = frozenset(enabled_tools) if enabled_tools is not None else None
         self._functions = {
+            "rag_search": self.rag_search,
             "web_search": self.web_search,
             "web_fetch": self.web_fetch,
             "browser_fetch": self.browser_fetch,
@@ -965,8 +964,6 @@ class Toolset:
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
         }
-        if rag_enabled:
-            self._functions["rag_search"] = self.rag_search
         if self.enabled_tools is not None:
             self._functions = {
                 name: function
@@ -1415,22 +1412,21 @@ class Toolset:
                 },
             ),
         ]
-        if self.rag_enabled:
-            specs.insert(
-                0,
-                self._function_spec(
-                    "rag_search",
-                    "Search the local investment-research knowledge base. Use this for the user's private indexed documents before relying on web search. Results include source paths plus PDF page or media time ranges.",
-                    {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string"},
-                        },
-                        "required": ["query"],
-                        "additionalProperties": False,
+        specs.insert(
+            0,
+            self._function_spec(
+                "rag_search",
+                "Search the local investment-research knowledge base. Use this for the user's private indexed documents before relying on web search. Results include source paths plus PDF page or media time ranges.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
                     },
-                ),
-            )
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+        )
         if self.enabled_tools is not None:
             specs = [
                 spec

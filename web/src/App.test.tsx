@@ -305,7 +305,6 @@ describe("App", () => {
     expect(JSON.parse(capturedBody)).toMatchObject({
       mode: "fast",
       research_mode: "chat",
-      rag_enabled: false,
       selected_tools: [],
     });
   });
@@ -319,8 +318,16 @@ describe("App", () => {
         return jsonResponse({
           chats: [],
           tools: [
-            { name: "web_search", description: "Search the web." },
-            { name: "rag_search", description: "Search the local knowledge base." },
+            {
+              name: "web_search",
+              description: "Search the web.",
+              parameters: ["engine", "query", "limit"],
+            },
+            {
+              name: "rag_search",
+              description: "Search the local knowledge base.",
+              parameters: ["query"],
+            },
           ],
         });
       }
@@ -367,15 +374,15 @@ describe("App", () => {
     expect(within(toolDialog).getAllByRole("checkbox")[0]).toBe(ragCheckbox);
     expect(webCheckbox).toBeChecked();
     expect(ragCheckbox).toBeChecked();
-    expect(ragCheckbox.closest("label")).toHaveAttribute("title", "Search the local knowledge base.");
-    await userEvent.click(ragCheckbox);
-    expect(ragCheckbox).toBeChecked();
+    expect(ragCheckbox.closest("label")).toHaveAttribute(
+      "title",
+      "Search the local knowledge base.\n\nrag_search(query)",
+    );
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Search my research");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(capturedBody).not.toBe(""));
     expect(JSON.parse(capturedBody)).toMatchObject({
-      rag_enabled: true,
       selected_tools: expect.arrayContaining(["web_search", "rag_search"]),
     });
   });

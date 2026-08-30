@@ -58,33 +58,17 @@ class CapturingApp(FakeApp):
         seen["settings"] = settings
 
 
-class CapturingRagApp(FakeApp):
-    def __init__(
-        self,
-        progress,
-        *,
-        settings: Settings,
-        rag_enabled: bool,
-        seen: dict[str, Any],
-    ) -> None:
-        super().__init__(progress)
-        seen["settings"] = settings
-        seen["rag_enabled"] = rag_enabled
-
-
 class CapturingToolsApp(FakeApp):
     def __init__(
         self,
         progress,
         *,
         settings: Settings,
-        rag_enabled: bool,
         enabled_tools: list[str] | None,
         seen: dict[str, Any],
     ) -> None:
         super().__init__(progress)
         seen["settings"] = settings
-        seen["rag_enabled"] = rag_enabled
         seen["enabled_tools"] = enabled_tools
 
 
@@ -108,40 +92,15 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(mode_to_agent_count("fast"), 1)
         self.assertEqual(mode_to_agent_count("expert"), 4)
 
-    def test_stream_message_passes_rag_enabled_to_app_factory(self) -> None:
-        seen: dict[str, Any] = {}
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = DeepFindWebService(
-                store=ChatStore(Path(temp_dir)),
-                app_factory=lambda progress, settings, rag_enabled: CapturingRagApp(
-                    progress,
-                    settings=settings,
-                    rag_enabled=rag_enabled,
-                    seen=seen,
-                ),
-            )
-            chat = service.create_chat()
-            events = list(
-                service.stream_message(
-                    chat.id,
-                    "hello",
-                    "fast",
-                    rag_enabled=True,
-                )
-            )
-
-        self.assertTrue(seen["rag_enabled"])
-        self.assertTrue(any(event.type == "answer_final" for event in events))
-
     def test_chat_mode_disables_rag_tools(self) -> None:
         seen: dict[str, Any] = {}
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(
                 store=ChatStore(Path(temp_dir)),
-                app_factory=lambda progress, settings, rag_enabled: CapturingRagApp(
+                app_factory=lambda progress, settings, enabled_tools: CapturingToolsApp(
                     progress,
                     settings=settings,
-                    rag_enabled=rag_enabled,
+                    enabled_tools=enabled_tools,
                     seen=seen,
                 ),
             )
@@ -152,21 +111,20 @@ class WebServiceTests(unittest.TestCase):
                     "hello",
                     "fast",
                     research_mode="chat",
-                    rag_enabled=True,
+                    selected_tools=["rag_search"],
                 )
             )
 
-        self.assertFalse(seen["rag_enabled"])
+        self.assertEqual(seen["enabled_tools"], [])
 
     def test_stream_message_passes_selected_tools_to_app_factory(self) -> None:
         seen: dict[str, Any] = {}
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(
                 store=ChatStore(Path(temp_dir)),
-                app_factory=lambda progress, settings, rag_enabled, enabled_tools: CapturingToolsApp(
+                app_factory=lambda progress, settings, enabled_tools: CapturingToolsApp(
                     progress,
                     settings=settings,
-                    rag_enabled=rag_enabled,
                     enabled_tools=enabled_tools,
                     seen=seen,
                 ),
@@ -180,9 +138,8 @@ class WebServiceTests(unittest.TestCase):
                     selected_tools=["rag_search", "web_search"],
                 )
             )
-
         self.assertEqual(seen["enabled_tools"], ["rag_search", "web_search"])
-        self.assertTrue(seen["rag_enabled"])
+        self.assertEqual(seen["enabled_tools"], ["rag_search", "web_search"])
         self.assertTrue(any(event.type == "answer_final" for event in events))
 
     def test_stream_message_rejects_unknown_selected_tool(self) -> None:
@@ -212,7 +169,6 @@ class WebServiceTests(unittest.TestCase):
                     "hello",
                     "expert",
                     research_mode="chat",
-                    rag_enabled=True,
                 )
             )
 

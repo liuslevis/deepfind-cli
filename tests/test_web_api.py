@@ -60,6 +60,8 @@ class WebApiTests(unittest.TestCase):
             self.assertEqual(len(listed.json()["chats"]), 1)
             self.assertIn("web_search", [tool["name"] for tool in listed.json()["tools"]])
             self.assertIn("rag_search", [tool["name"] for tool in listed.json()["tools"]])
+            web_search = next(tool for tool in listed.json()["tools"] if tool["name"] == "web_search")
+            self.assertEqual(web_search["parameters"], ["engine", "query", "limit"])
 
             detail = client.get(f"/api/chats/{chat_id}")
             self.assertEqual(detail.status_code, 200)

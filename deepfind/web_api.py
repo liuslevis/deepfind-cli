@@ -142,7 +142,6 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
                 payload.model_target,
                 deep_mode=payload.deep_mode,
                 research_mode=payload.research_mode,
-                rag_enabled=payload.rag_enabled,
                 selected_tools=payload.selected_tools,
             )
         except FileNotFoundError as exc:

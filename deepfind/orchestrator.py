@@ -751,13 +751,11 @@ class DeepFind:
         settings: Settings | None = None,
         progress: ConsoleProgress | None = None,
         *,
-        rag_enabled: bool = True,
         enabled_tools: Sequence[str] | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.tools = Toolset(
             self.settings,
-            rag_enabled=rag_enabled,
             enabled_tools=enabled_tools,
         )
         self.progress = progress

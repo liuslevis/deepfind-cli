@@ -191,9 +191,9 @@ def _local_model_info(settings: Settings) -> LocalModelInfo:
 
 
 @lru_cache(maxsize=2)
-def _tool_catalog(rag_enabled: bool = False) -> tuple[tuple[str, str], ...]:
-    catalog: list[tuple[str, str]] = []
-    for item in Toolset(Settings(api_key="web"), rag_enabled=rag_enabled).specs():
+def _tool_catalog() -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    catalog: list[tuple[str, str, tuple[str, ...]]] = []
+    for item in Toolset(Settings(api_key="web")).specs():
         if not isinstance(item, dict):
             continue
         function_spec = item.get("function")
@@ -201,22 +201,24 @@ def _tool_catalog(rag_enabled: bool = False) -> tuple[tuple[str, str], ...]:
             continue
         name = str(function_spec.get("name", "")).strip()
         description = str(function_spec.get("description", "")).strip()
+        parameters_spec = function_spec.get("parameters")
+        properties = parameters_spec.get("properties") if isinstance(parameters_spec, dict) else None
+        parameters = tuple(str(parameter) for parameter in properties) if isinstance(properties, dict) else ()
         if name and description:
-            catalog.append((name, description))
+            catalog.append((name, description, parameters))
     return tuple(catalog)
 
 
 def _tool_catalog_markdown(
-    rag_enabled: bool = False,
     enabled_tools: list[str] | None = None,
 ) -> str:
-    tools = _tool_catalog(rag_enabled)
+    tools = _tool_catalog()
     if enabled_tools is not None:
         enabled = set(enabled_tools)
-        tools = tuple((name, description) for name, description in tools if name in enabled)
+        tools = tuple(tool for tool in tools if tool[0] in enabled)
     if not tools:
         return "No tools are currently available."
-    lines = [f"- `{name}`: {description}" for name, description in tools]
+    lines = [f"- `{name}`: {description}" for name, description, _parameters in tools]
     return "Available tools:\n\n" + "\n".join(lines)
 
 
@@ -250,8 +252,8 @@ class DeepFindWebService:
 
     def tool_options(self) -> list[ToolOption]:
         return [
-            ToolOption(name=name, description=description)
-            for name, description in _tool_catalog(rag_enabled=True)
+            ToolOption(name=name, description=description, parameters=list(parameters))
+            for name, description, parameters in _tool_catalog()
         ]
 
     def create_chat(self, title: str | None = None) -> WebChatDetail:
@@ -272,7 +274,6 @@ class DeepFindWebService:
         *,
         deep_mode: bool = False,
         research_mode: ResearchMode | None = None,
-        rag_enabled: bool = False,
         selected_tools: list[str] | None = None,
     ):
         query = content.strip()
@@ -289,11 +290,6 @@ class DeepFindWebService:
         enabled_tools = self._validated_selected_tools(selected_tools)
         if resolved_research_mode == "chat":
             enabled_tools = []
-        effective_rag_enabled = (
-            ("rag_search" in enabled_tools)
-            if enabled_tools is not None
-            else rag_enabled
-        ) and resolved_research_mode != "chat"
         chat = self.get_chat(chat_id)
         prior_transcript = self._messages_to_transcript(chat.messages)
         updated_chat = chat.model_copy(deep=True)
@@ -318,7 +314,6 @@ class DeepFindWebService:
             model_target=model_target,
             model_label=model_label,
             research_mode=resolved_research_mode,
-            rag_enabled=effective_rag_enabled,
             enabled_tools=enabled_tools,
         )
         if command_result is not None:
@@ -341,7 +336,6 @@ class DeepFindWebService:
                 app = self._app_for_settings(
                     progress,
                     settings,
-                    rag_enabled=effective_rag_enabled,
                     enabled_tools=enabled_tools,
                 )
                 envelope: dict[str, object] | None = None
@@ -409,13 +403,12 @@ class DeepFindWebService:
         model_target: ModelTarget,
         model_label: str,
         research_mode: ResearchMode,
-        rag_enabled: bool = False,
         enabled_tools: list[str] | None = None,
     ) -> TurnResult | None:
         if not query.startswith("/"):
             return None
         if query.lower() == _LIST_TOOL_COMMAND:
-            answer = _tool_catalog_markdown(rag_enabled, enabled_tools)
+            answer = _tool_catalog_markdown(enabled_tools)
         else:
             answer = _unknown_command_markdown(query)
         return TurnResult(
@@ -585,14 +578,12 @@ class DeepFindWebService:
         progress: WebProgress,
         settings: Settings,
         *,
-        rag_enabled: bool = False,
         enabled_tools: list[str] | None = None,
     ):
         if self.app_factory is None:
             return DeepFind(
                 progress=progress,
                 settings=settings,
-                rag_enabled=rag_enabled,
                 enabled_tools=enabled_tools,
             )
 
@@ -601,8 +592,6 @@ class DeepFindWebService:
         kwargs = {}
         if "settings" in parameters:
             kwargs["settings"] = settings
-        if "rag_enabled" in parameters:
-            kwargs["rag_enabled"] = rag_enabled
         if "enabled_tools" in parameters:
             kwargs["enabled_tools"] = enabled_tools
         if kwargs:
@@ -614,7 +603,7 @@ class DeepFindWebService:
     def _validated_selected_tools(self, selected_tools: list[str] | None) -> list[str] | None:
         if selected_tools is None:
             return None
-        available = {name for name, _description in _tool_catalog(rag_enabled=True)}
+        available = {name for name, _description, _parameters in _tool_catalog()}
         normalized: list[str] = []
         seen: set[str] = set()
         for raw_name in selected_tools:

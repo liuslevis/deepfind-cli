@@ -114,7 +114,7 @@ class ToolsetTests(unittest.TestCase):
         toolset = Toolset(Settings(api_key="x"))
         spec = toolset.specs()[0]
         self.assertEqual(spec["type"], "function")
-        self.assertEqual(spec["function"]["name"], "web_search")
+        self.assertEqual(spec["function"]["name"], "rag_search")
 
     def test_specs_include_bilibili_and_media_tools(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -142,17 +142,11 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(names.count("xhs_transcribe_full"), 1)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
-        self.assertNotIn("rag_search", names)
-
-    def test_rag_search_is_only_exposed_when_enabled(self) -> None:
-        toolset = Toolset(Settings(api_key="x"), rag_enabled=True)
-        names = [item["function"]["name"] for item in toolset.specs()]
         self.assertIn("rag_search", names)
 
     def test_enabled_tools_filters_specs_and_calls(self) -> None:
         toolset = Toolset(
             Settings(api_key="x"),
-            rag_enabled=True,
             enabled_tools=["rag_search", "web_search"],
         )
         names = [item["function"]["name"] for item in toolset.specs()]
@@ -161,7 +155,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("unknown tool", toolset.call("web_fetch", {}))
 
     def test_rag_search_calls_mcp_search(self) -> None:
-        toolset = Toolset(Settings(api_key="x"), rag_enabled=True)
+        toolset = Toolset(Settings(api_key="x"))
         response = {
             "query": "rates",
             "mode": "hybrid",
@@ -180,7 +174,7 @@ class ToolsetTests(unittest.TestCase):
         )
 
     def test_rag_search_citation_includes_title_and_media_time_range(self) -> None:
-        toolset = Toolset(Settings(api_key="x"), rag_enabled=True)
+        toolset = Toolset(Settings(api_key="x"))
         response = {
             "query": "earnings call",
             "mode": "hybrid",

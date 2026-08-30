@@ -69,46 +69,147 @@ const SLASH_COMMANDS: SlashCommandOption[] = [
 ];
 const DEFAULT_MODEL_TARGET: ModelTarget = "qwen";
 const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax", "glm", "deepseek"] as const;
-const FALLBACK_TOOL_NAMES = [
-  "rag_search",
-  "web_search",
-  "web_fetch",
-  "browser_fetch",
-  "arxiv_search",
-  "paper_search",
-  "read_paper",
-  "twitter_search",
-  "x_search",
-  "twitter_read",
-  "search_x_user_posts",
-  "zhihu_search",
-  "boss_search",
-  "boss_detail",
-  "boss_chatlist",
-  "boss_send",
-  "xhs_search",
-  "xhs_read",
-  "xhs_read_cmt",
-  "xhs_transcribe_full",
-  "xhs_user_posts",
-  "bili_search",
-  "bili_get_user_videos",
-  "bili_transcribe",
-  "bili_transcribe_full",
-  "youtube_transcribe",
-  "youtube_transcribe_full",
-  "gen_img",
-  "gen_slides",
-  "rag_search",
-] as const;
-const FALLBACK_TOOL_OPTIONS: ToolOption[] = FALLBACK_TOOL_NAMES.map((name) => ({
-  name,
-  description: "",
-}));
-const DEFAULT_SELECTED_TOOLS = FALLBACK_TOOL_NAMES.filter((name) => name !== "rag_search");
+const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
+  {
+    name: "rag_search",
+    description: "Search the local investment-research knowledge base.",
+    parameters: ["query"],
+  },
+  {
+    name: "web_search",
+    description: "Search the web for relevant sources.",
+    parameters: ["engine", "query", "limit"],
+  },
+  {
+    name: "web_fetch",
+    description: "Fetch a web page and return a targeted Markdown summary.",
+    parameters: ["url", "prompt"],
+  },
+  {
+    name: "browser_fetch",
+    description: "Render and fetch a web page that requires JavaScript, cookies, or manual verification.",
+    parameters: ["url", "prompt", "headless"],
+  },
+  { name: "arxiv_search", description: "Search arXiv papers.", parameters: ["query", "limit"] },
+  {
+    name: "paper_search",
+    description: "Search arXiv and return detailed paper metadata and links.",
+    parameters: ["query", "limit"],
+  },
+  {
+    name: "read_paper",
+    description: "Fetch and analyze an arXiv paper for a specific question.",
+    parameters: ["paper_html_url", "query"],
+  },
+  {
+    name: "twitter_search",
+    description: "Search posts on X.",
+    parameters: ["query", "max_results", "tab"],
+  },
+  {
+    name: "x_search",
+    description: "Search posts on X. Alias of twitter_search.",
+    parameters: ["query", "max_results", "tab"],
+  },
+  { name: "twitter_read", description: "Read one X post by URL or ID.", parameters: ["ref"] },
+  {
+    name: "search_x_user_posts",
+    description: "Get recent posts from an X user.",
+    parameters: ["username", "max_results", "exclude"],
+  },
+  { name: "zhihu_search", description: "Search Zhihu.", parameters: ["query", "limit"] },
+  {
+    name: "boss_search",
+    description: "Search BOSS Zhipin job postings.",
+    parameters: ["query", "city", "experience", "degree", "salary", "industry", "page", "limit"],
+  },
+  {
+    name: "boss_detail",
+    description: "Read one BOSS Zhipin job posting.",
+    parameters: ["security_id"],
+  },
+  {
+    name: "boss_chatlist",
+    description: "List BOSS Zhipin chat threads.",
+    parameters: ["page", "limit", "job_id"],
+  },
+  {
+    name: "boss_send",
+    description: "Send a message in a BOSS Zhipin chat.",
+    parameters: ["uid", "text"],
+  },
+  {
+    name: "xhs_search",
+    description: "Search Xiaohongshu notes.",
+    parameters: ["query", "page", "sort", "note_type"],
+  },
+  {
+    name: "xhs_read",
+    description: "Read one Xiaohongshu note.",
+    parameters: ["ref", "xsec_token"],
+  },
+  {
+    name: "xhs_read_cmt",
+    description: "Read comments from one Xiaohongshu note.",
+    parameters: ["ref", "xsec_token", "cursor", "fetch_all"],
+  },
+  {
+    name: "xhs_transcribe_full",
+    description: "Read a Xiaohongshu note and fully transcribe video audio when present.",
+    parameters: ["ref", "xsec_token"],
+  },
+  {
+    name: "xhs_user_posts",
+    description: "List posts from a Xiaohongshu user.",
+    parameters: ["user_id", "cursor"],
+  },
+  {
+    name: "bili_search",
+    description: "Search Bilibili videos.",
+    parameters: ["query", "page", "limit"],
+  },
+  {
+    name: "bili_get_user_videos",
+    description: "List videos uploaded by a Bilibili user.",
+    parameters: ["uid", "order", "page", "limit"],
+  },
+  {
+    name: "bili_transcribe",
+    description: "Transcribe Bilibili video audio and summarize it for a query.",
+    parameters: ["bili_id", "query"],
+  },
+  {
+    name: "bili_transcribe_full",
+    description: "Return the full transcript of a Bilibili video.",
+    parameters: ["bili_id"],
+  },
+  {
+    name: "youtube_transcribe",
+    description: "Transcribe YouTube audio and summarize it for a query.",
+    parameters: ["url", "query"],
+  },
+  {
+    name: "youtube_transcribe_full",
+    description: "Return the full transcript of a YouTube video.",
+    parameters: ["url"],
+  },
+  {
+    name: "gen_img",
+    description: "Generate an image and save it locally.",
+    parameters: ["prompt", "aspect_ratio", "image_size"],
+  },
+  {
+    name: "gen_slides",
+    description: "Generate or edit an HTML slide deck.",
+    parameters: ["prompt", "slide_count", "template_name", "html_path"],
+  },
+];
+const FALLBACK_TOOL_NAMES = FALLBACK_TOOL_OPTIONS.map((tool) => tool.name);
+const DEFAULT_SELECTED_TOOLS = [...FALLBACK_TOOL_NAMES];
 
 function toolLabel(name: string): string {
   const labels: Record<string, string> = {
+    rag_search: "RAG Search",
     web_search: "Web Search",
     web_fetch: "Web Fetch",
     browser_fetch: "Browser Fetch",
@@ -131,6 +232,11 @@ function toolLabel(name: string): string {
     gen_slides: "Generate Slides",
   };
   return labels[name] ?? name.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
+}
+
+function toolTitle(tool: ToolOption): string {
+  const signature = `${tool.name}(${tool.parameters.join(", ")})`;
+  return tool.description ? `${tool.description}\n\n${signature}` : signature;
 }
 
 function normalizeModelTarget(target: ModelTarget | "cloud" | null | undefined): ModelTarget {
@@ -1508,7 +1614,17 @@ export default function App() {
 
   function applyToolOptions(nextToolOptions: ToolOption[] | null | undefined) {
     if (nextToolOptions && nextToolOptions.length > 0) {
-      setToolOptions(nextToolOptions);
+      const fallbacks = new Map(FALLBACK_TOOL_OPTIONS.map((tool) => [tool.name, tool]));
+      setToolOptions(
+        nextToolOptions.map((tool) => {
+          const fallback = fallbacks.get(tool.name);
+          return {
+            name: tool.name,
+            description: tool.description?.trim() || fallback?.description || "",
+            parameters: tool.parameters?.length ? tool.parameters : fallback?.parameters || [],
+          };
+        }),
+      );
     }
   }
 
@@ -1992,7 +2108,6 @@ export default function App() {
           mode,
           model_target: currentModelTarget,
           research_mode: researchMode,
-          rag_enabled: enabledTools.includes("rag_search"),
           selected_tools: enabledTools,
         },
         (progressEvent) => {
@@ -2363,7 +2478,7 @@ export default function App() {
                       <label
                         className="tool-select__option"
                         key={tool.name}
-                        title={tool.description || toolLabel(tool.name)}
+                        title={toolTitle(tool)}
                       >
                         <input
                           type="checkbox"
