@@ -22,7 +22,7 @@ from deepfind.orchestrator import (
 
 
 class OrchestratorTests(unittest.TestCase):
-    def test_chat_turn_is_direct_and_disables_tools(self) -> None:
+    def test_chat_turn_is_direct_and_enables_selected_tools(self) -> None:
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
         transcript = [
@@ -41,8 +41,18 @@ class OrchestratorTests(unittest.TestCase):
         run_kwargs = agent_cls.return_value.run.call_args.kwargs
         self.assertEqual(run_kwargs["name"], "chat")
         self.assertEqual(run_kwargs["instructions"], CHAT_PROMPT)
-        self.assertFalse(run_kwargs["use_tools"])
+        self.assertTrue(run_kwargs["use_tools"])
         self.assertEqual(run_kwargs["history"][0]["content"], "Earlier question")
+
+    def test_chat_turn_disables_tools_when_none_are_selected(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings, enabled_tools=[])
+
+        with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
+            agent_cls.return_value.run.return_value.text = "Direct answer"
+            app._run_chat_turn("Hello", transcript=[], max_iter_per_agent=2)
+
+        self.assertFalse(agent_cls.return_value.run.call_args.kwargs["use_tools"])
 
     def test_plan_pads_missing_tasks(self) -> None:
         settings = Settings(api_key="x")

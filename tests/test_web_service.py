@@ -92,7 +92,7 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(mode_to_agent_count("fast"), 1)
         self.assertEqual(mode_to_agent_count("expert"), 4)
 
-    def test_chat_mode_disables_rag_tools(self) -> None:
+    def test_chat_mode_passes_selected_tools_to_app_factory(self) -> None:
         seen: dict[str, Any] = {}
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(
@@ -115,7 +115,7 @@ class WebServiceTests(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(seen["enabled_tools"], [])
+        self.assertEqual(seen["enabled_tools"], ["rag_search"])
 
     def test_stream_message_passes_selected_tools_to_app_factory(self) -> None:
         seen: dict[str, Any] = {}

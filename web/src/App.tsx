@@ -1542,9 +1542,9 @@ export default function App() {
   const activeMessages = activeRuntime?.messages ?? [];
   const sending = activeRuntime?.pending ?? false;
   const selectedTools = selectedChatId
-    ? selectedToolsByChatId[selectedChatId] ?? [...DEFAULT_SELECTED_TOOLS]
+    ? selectedToolsByChatId[selectedChatId] ?? toolOptions.map((tool) => tool.name)
     : draftSelectedTools;
-  const enabledTools = researchMode === "chat" ? [] : selectedTools;
+  const enabledTools = selectedTools;
   const orderedToolOptions = [
     ...toolOptions.filter((tool) => tool.name === "rag_search"),
     ...toolOptions.filter((tool) => tool.name !== "rag_search"),
@@ -1615,15 +1615,20 @@ export default function App() {
   function applyToolOptions(nextToolOptions: ToolOption[] | null | undefined) {
     if (nextToolOptions && nextToolOptions.length > 0) {
       const fallbacks = new Map(FALLBACK_TOOL_OPTIONS.map((tool) => [tool.name, tool]));
-      setToolOptions(
-        nextToolOptions.map((tool) => {
-          const fallback = fallbacks.get(tool.name);
-          return {
-            name: tool.name,
-            description: tool.description?.trim() || fallback?.description || "",
-            parameters: tool.parameters?.length ? tool.parameters : fallback?.parameters || [],
-          };
-        }),
+      const normalizedTools = nextToolOptions.map((tool) => {
+        const fallback = fallbacks.get(tool.name);
+        return {
+          name: tool.name,
+          description: tool.description?.trim() || fallback?.description || "",
+          parameters: tool.parameters?.length ? tool.parameters : fallback?.parameters || [],
+        };
+      });
+      setToolOptions(normalizedTools);
+      setDraftSelectedTools((current) =>
+        current.length === DEFAULT_SELECTED_TOOLS.length &&
+        DEFAULT_SELECTED_TOOLS.every((name) => current.includes(name))
+          ? normalizedTools.map((tool) => tool.name)
+          : current,
       );
     }
   }
@@ -1812,12 +1817,6 @@ export default function App() {
   }, [toolMenuOpen]);
 
   useEffect(() => {
-    if (researchMode === "chat") {
-      setToolMenuOpen(false);
-    }
-  }, [researchMode]);
-
-  useEffect(() => {
     const className = "deepfind-standalone";
     document.body.classList.toggle(className, isStandalonePwa());
     return () => {
@@ -1885,7 +1884,7 @@ export default function App() {
       setCurrentChat(chat);
       ensureChatRuntime(chat.id, []);
       setSelectedChatId(chat.id);
-      setDraftSelectedTools([...DEFAULT_SELECTED_TOOLS]);
+      setDraftSelectedTools(toolOptions.map((tool) => tool.name));
       setChats((current) => upsertSummary(current, summaryFromChat(chat)));
       storageSetItem(STORAGE_KEY, chat.id);
       setSidebarOpen(false);
@@ -1942,7 +1941,7 @@ export default function App() {
     setCurrentChat(titledChat);
     setSelectedChatId(chat.id);
     setSelectedToolsByChatId((current) => ({ ...current, [chat.id]: draftSelectedTools }));
-    setDraftSelectedTools([...DEFAULT_SELECTED_TOOLS]);
+    setDraftSelectedTools(toolOptions.map((tool) => tool.name));
     setChats((current) => upsertSummary(current, summaryFromChat(titledChat)));
     storageSetItem(STORAGE_KEY, chat.id);
     ensureChatRuntime(chat.id, []);
@@ -1956,7 +1955,7 @@ export default function App() {
     }
     setSelectedToolsByChatId((current) => ({
       ...current,
-      [selectedChatId]: updater(current[selectedChatId] ?? [...DEFAULT_SELECTED_TOOLS]),
+      [selectedChatId]: updater(current[selectedChatId] ?? toolOptions.map((tool) => tool.name)),
     }));
   }
 
@@ -2348,7 +2347,7 @@ export default function App() {
               <h3>Choose the right depth for each question.</h3>
               <p>
                 Deep Research produces comprehensive reports, Research handles standard evidence gathering, and Chat
-                answers directly without tools or agent fan-out.
+                answers directly with your selected tools and no agent fan-out.
               </p>
             </div>
           ) : null}
@@ -2431,7 +2430,7 @@ export default function App() {
                   ? "Deep Research: longer, more comprehensive multi-agent research"
                   : researchMode === "research"
                     ? "Research: standard multi-agent research"
-                    : "Chat: direct response without tools or agent fan-out"
+                    : "Chat: direct response with selected tools and no agent fan-out"
               }
               onChange={(event) => setResearchMode(event.target.value as ResearchMode)}
             >
@@ -2446,12 +2445,7 @@ export default function App() {
                 aria-label="Tools"
                 aria-expanded={toolMenuOpen}
                 aria-haspopup="dialog"
-                title={
-                  researchMode === "chat"
-                    ? "Tools are unavailable in Chat mode"
-                    : `${enabledTools.length} tools enabled`
-                }
-                disabled={researchMode === "chat"}
+                title={`${enabledTools.length} tools enabled`}
                 onClick={() => setToolMenuOpen((current) => !current)}
               >
                 Tools {enabledTools.length}

@@ -241,13 +241,27 @@ describe("App", () => {
     expect(JSON.parse(capturedBody)).toMatchObject({ mode: "expert" });
   });
 
-  it("uses direct Chat mode and disables agent selection", async () => {
+  it("uses direct Chat mode with all tools selected and disables agent selection", async () => {
     let capturedBody = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = (init?.method ?? "GET").toUpperCase();
       if (url === "/api/chats" && method === "GET") {
-        return jsonResponse({ chats: [] });
+        return jsonResponse({
+          chats: [],
+          tools: [
+            {
+              name: "web_search",
+              description: "Search the web.",
+              parameters: ["engine", "query", "limit"],
+            },
+            {
+              name: "rag_search",
+              description: "Search the local knowledge base.",
+              parameters: ["query"],
+            },
+          ],
+        });
       }
       if (url === "/api/chats" && method === "POST") {
         return jsonResponse({
@@ -296,7 +310,8 @@ describe("App", () => {
     await userEvent.selectOptions(researchSelect, "chat");
     expect(researchSelect).toHaveValue("chat");
     expect(agentButton).toBeDisabled();
-    expect(toolsButton).toBeDisabled();
+    expect(toolsButton).toBeEnabled();
+    await waitFor(() => expect(toolsButton).toHaveTextContent("Tools 2"));
 
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Say hello");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -305,7 +320,7 @@ describe("App", () => {
     expect(JSON.parse(capturedBody)).toMatchObject({
       mode: "fast",
       research_mode: "chat",
-      selected_tools: [],
+      selected_tools: ["web_search", "rag_search"],
     });
   });
 
@@ -367,6 +382,7 @@ describe("App", () => {
     render(<App />);
 
     const toolsButton = await screen.findByRole("button", { name: "Tools" });
+    await waitFor(() => expect(toolsButton).toHaveTextContent("Tools 2"));
     await userEvent.click(toolsButton);
     const toolDialog = screen.getByRole("dialog", { name: "Select tools" });
     const ragCheckbox = within(toolDialog).getByRole("checkbox", { name: /RAG Search/ });

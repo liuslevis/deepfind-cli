@@ -97,10 +97,9 @@ FORMAT_FOLLOWUP_PROMPT = (
 )
 CHAT_PROMPT = (
     "You are a direct chat assistant. Answer the latest user message naturally and promptly in the user's language. "
-    "Use the conversation history when it is relevant. Do not research, browse, call tools, delegate work, mention "
-    "agents, or describe a lead/sub-agent workflow. Give a concise, useful answer based only on the conversation and "
-    "your existing knowledge. If current or external verification is required, say briefly that Chat mode cannot "
-    "verify it instead of pretending that you searched."
+    "Use the conversation history when it is relevant. Use the available tools when they help answer the request, "
+    "especially when current or external verification is needed. Do not delegate work, mention agents, or describe "
+    "a lead/sub-agent workflow. Give a concise, useful answer and accurately reflect what the tools returned."
 )
 
 _TRACKING_QUERY_KEYS = frozenset(
@@ -900,7 +899,7 @@ class DeepFind:
             name="chat",
             instructions=CHAT_PROMPT,
             user_input=query,
-            use_tools=False,
+            use_tools=bool(self.tools.specs()),
             history=_history_messages(transcript),
             max_tokens=4000,
         )

@@ -288,8 +288,6 @@ class DeepFindWebService:
             else ("deep_research" if deep_mode else "research")
         )
         enabled_tools = self._validated_selected_tools(selected_tools)
-        if resolved_research_mode == "chat":
-            enabled_tools = []
         chat = self.get_chat(chat_id)
         prior_transcript = self._messages_to_transcript(chat.messages)
         updated_chat = chat.model_copy(deep=True)
