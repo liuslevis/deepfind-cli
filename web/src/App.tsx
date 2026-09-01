@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { checkHealth, createChat, deleteChat, getChat, getAuthToken, listChats, setAuthToken, streamChatMessage } from "./api";
+import WorkspacePanel from "./WorkspacePanel";
+import type { WorkspaceCommandRequest, WorkspaceOpenRequest } from "./WorkspacePanel";
 import type {
   ActivityPhase,
   ActivitySummary,
@@ -1340,7 +1342,19 @@ function CopyMarkdownButton({ text }: { text: string }) {
   );
 }
 
-const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { message: ClientMessage; firstUserQuery?: string }) {
+const MessageCard = memo(function MessageCard({
+  message,
+  firstUserQuery,
+  onOpenArtifact,
+  onRunCommand,
+  approvedProposalIds,
+}: {
+  message: ClientMessage;
+  firstUserQuery?: string;
+  onOpenArtifact?: (artifact: ArtifactLink) => void;
+  onRunCommand?: (proposalId: string, command: string) => void;
+  approvedProposalIds?: ReadonlySet<string>;
+}) {
   const body = message.content || (message.pending ? "Thinking through the web..." : "");
   const markdownBody = normalizeMermaidMarkdown(body);
   const citations = message.citations ?? [];
@@ -1354,6 +1368,14 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
   const downloadFilename = firstUserQuery
     ? `${firstUserQuery.trim().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 80)}.md`
     : "response.md";
+  const terminalProposals = (message.activity ?? []).flatMap((event) => {
+    if (event.type !== "tool_result" || event.data.tool_name !== "propose_terminal_command") return [];
+    const proposal = event.data.proposal;
+    if (!proposal || typeof proposal !== "object") return [];
+    const command = "command" in proposal && typeof proposal.command === "string" ? proposal.command : "";
+    const reason = "reason" in proposal && typeof proposal.reason === "string" ? proposal.reason : "";
+    return command ? [{ command, reason }] : [];
+  });
 
   return (
     <article
@@ -1489,19 +1511,34 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
               {artifact.kind === "slides" ? (
                 <SlidesArtifact artifact={artifact} />
               ) : (
-                <a className="artifact-card" href={artifact.url} target="_blank" rel="noreferrer">
+                <div className="artifact-card">
                   {artifact.kind === "image" ? (
                     <img className="artifact-card__image" src={artifact.url} alt={artifact.label} />
                   ) : null}
                   <span className="artifact-card__kind">{artifact.kind}</span>
                   <strong>{artifact.label}</strong>
                   <span className="artifact-card__path">{artifact.path}</span>
-                </a>
+                  <div className="artifact-card__actions">
+                    <a href={artifact.url} target="_blank" rel="noreferrer">Open</a>
+                    <button type="button" onClick={() => onOpenArtifact?.(artifact)}>Open in workspace</button>
+                  </div>
+                </div>
               )}
             </div>
           ))}
         </div>
       ) : null}
+
+      {terminalProposals.map((proposal, index) => (
+        <TerminalProposal
+          key={`${message.id}_${index}`}
+          proposalId={`${message.id}_${index}`}
+          command={proposal.command}
+          reason={proposal.reason}
+          onRun={onRunCommand}
+          approved={approvedProposalIds?.has(`${message.id}_${index}`)}
+        />
+      ))}
 
       {message.activity && message.activity.length > 0 ? (
         <ActivityPanel activity={message.activity} pending={Boolean(message.pending)} />
@@ -1512,10 +1549,54 @@ const MessageCard = memo(function MessageCard({ message, firstUserQuery }: { mes
 
 MessageCard.displayName = "MessageCard";
 
+export function TerminalProposal({
+  proposalId,
+  command,
+  reason,
+  onRun,
+  approved = false,
+}: {
+  proposalId: string;
+  command: string;
+  reason: string;
+  onRun?: (proposalId: string, command: string) => void;
+  approved?: boolean;
+}) {
+  const [editedCommand, setEditedCommand] = useState(command);
+  const [cancelled, setCancelled] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  if (cancelled) return null;
+  return (
+    <section className="terminal-proposal" aria-label="Proposed terminal command">
+      <strong>Approve Docker command</strong>
+      <p>{reason}</p>
+      <label>
+        Command
+        <textarea value={editedCommand} onChange={(event) => setEditedCommand(event.target.value)} />
+      </label>
+      <small>Working directory: /workspace. This command may modify the current chat workspace.</small>
+      <div>
+        <button
+          type="button"
+          onClick={() => {
+            setSubmitted(true);
+            onRun?.(proposalId, editedCommand);
+          }}
+          disabled={!editedCommand.trim() || approved || submitted}
+        >
+          {approved || submitted ? "Approved" : "Run"}
+        </button>
+        <button type="button" onClick={() => setEditedCommand(command)}>Reset</button>
+        <button type="button" onClick={() => setCancelled(true)}>Cancel</button>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [mode, setMode] = useState<ChatMode>("fast");
   const [modelTarget, setModelTarget] = useState<ModelTarget>(DEFAULT_MODEL_TARGET);
-  const [researchMode, setResearchMode] = useState<ResearchMode>("research");
+  const [researchMode, setResearchMode] = useState<ResearchMode>("chat");
   const [toolOptions, setToolOptions] = useState<ToolOption[]>(FALLBACK_TOOL_OPTIONS);
   const [selectedToolsByChatId, setSelectedToolsByChatId] = useState<Record<string, string[]>>({});
   const [draftSelectedTools, setDraftSelectedTools] = useState<string[]>([...DEFAULT_SELECTED_TOOLS]);
@@ -1528,6 +1609,10 @@ export default function App() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(() => storageGetItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [workspaceVisible, setWorkspaceVisible] = useState(true);
+  const [workspaceOpenRequest, setWorkspaceOpenRequest] = useState<WorkspaceOpenRequest | null>(null);
+  const [workspaceCommandRequest, setWorkspaceCommandRequest] = useState<WorkspaceCommandRequest | null>(null);
+  const [approvedProposalIds, setApprovedProposalIds] = useState<Set<string>>(() => new Set());
   const [pageError, setPageError] = useState<string | null>(null);
   const [requiresToken, setRequiresToken] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
@@ -2319,6 +2404,7 @@ export default function App() {
         </div>
       </aside>
 
+      <div className={`content-shell${workspaceVisible ? " content-shell--workspace" : ""}`}>
       <main className="workspace">
         <header className="workspace__header">
           <div className="workspace__title">
@@ -2336,6 +2422,14 @@ export default function App() {
               <span aria-hidden="true">☰</span>
             </button>
             <span className="workspace__mobile-title mobile-only">{selectedTitle}</span>
+            <button
+              className="ghost-button"
+              type="button"
+              aria-pressed={workspaceVisible}
+              onClick={() => setWorkspaceVisible((current) => !current)}
+            >
+              {workspaceVisible ? "Chat" : "Workspace"}
+            </button>
           </div>
         </header>
 
@@ -2353,7 +2447,30 @@ export default function App() {
           ) : null}
 
           {activeMessages.map((message) => (
-            <MessageCard key={message.id} message={message} firstUserQuery={activeMessages.find((m) => m.role === "user")?.content} />
+            <MessageCard
+              key={message.id}
+              message={message}
+              firstUserQuery={activeMessages.find((m) => m.role === "user")?.content}
+              onOpenArtifact={(artifact) => {
+                setWorkspaceOpenRequest({
+                  id: Date.now(),
+                  path: artifact.path.replaceAll("\\", "/"),
+                  title: artifact.label,
+                });
+                setWorkspaceVisible(true);
+              }}
+              approvedProposalIds={approvedProposalIds}
+              onRunCommand={(proposalId, command) => {
+                setApprovedProposalIds((current) => {
+                  if (current.has(proposalId)) return current;
+                  const next = new Set(current);
+                  next.add(proposalId);
+                  return next;
+                });
+                setWorkspaceCommandRequest({ id: Date.now(), command });
+                setWorkspaceVisible(true);
+              }}
+            />
           ))}
 
           <div ref={bottomRef} />
@@ -2505,6 +2622,14 @@ export default function App() {
           {pageError ? <p className="composer__error">{pageError}</p> : null}
         </footer>
       </main>
+      <WorkspacePanel
+        chatId={selectedChatId}
+        visible={workspaceVisible}
+        onVisibleChange={setWorkspaceVisible}
+        openRequest={workspaceOpenRequest}
+        commandRequest={workspaceCommandRequest}
+      />
+      </div>
     </div>
   );
 }

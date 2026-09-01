@@ -233,6 +233,7 @@ describe("App", () => {
 
     render(<App />);
 
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Research mode" }), "research");
     await userEvent.click(screen.getByRole("button", { name: "Mode" }));
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Explain the latest AI launches");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -301,7 +302,7 @@ describe("App", () => {
     const agentButton = await screen.findByRole("button", { name: "Mode" });
     const toolsButton = screen.getByRole("button", { name: "Tools" });
     const researchSelect = screen.getByRole("combobox", { name: "Research mode" });
-    expect(researchSelect).toHaveValue("research");
+    expect(researchSelect).toHaveValue("chat");
     expect(within(researchSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
       "Deep Research",
       "Research",

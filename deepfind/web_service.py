@@ -31,6 +31,7 @@ from .web_models import (
     WebMessage,
 )
 from .web_progress import ToolObservation, WebProgress
+from .workspace import ChatContainerManager, WorkspaceConfig
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
 _DEFAULT_MAX_ITER_PER_AGENT = 50
@@ -238,11 +239,22 @@ class DeepFindWebService:
         *,
         app_factory=None,
         max_iter_per_agent: int = _DEFAULT_MAX_ITER_PER_AGENT,
+        workspace_manager: ChatContainerManager | None = None,
+        enable_workspace: bool = False,
     ) -> None:
         self.store = store or ChatStore()
         self.app_factory = app_factory
         self.max_iter_per_agent = max_iter_per_agent
         self._repo_root = repo_root()
+        settings = Settings.from_env(require_api_key=False)
+        self.workspace_manager = workspace_manager or ChatContainerManager(
+            WorkspaceConfig(
+                enabled=enable_workspace and settings.coding_enabled and bool(settings.coding_image),
+                runtime=settings.coding_runtime,
+                image=settings.coding_image,
+                seccomp_profile=Path(__file__).with_name("coding_seccomp.json"),
+            )
+        )
 
     def list_chats(self):
         return self.store.list_chats()
@@ -257,12 +269,21 @@ class DeepFindWebService:
         ]
 
     def create_chat(self, title: str | None = None) -> WebChatDetail:
-        return self.store.create_chat(title=title)
+        chat = self.store.create_chat(title=title)
+        if self.workspace_manager.config.enabled:
+            try:
+                self.workspace_manager.ensure(chat.id)
+            except Exception:
+                self.store.delete_chat(chat.id)
+                raise
+        return chat
 
     def get_chat(self, chat_id: str) -> WebChatDetail:
         return self.store.get_chat(chat_id)
 
     def delete_chat(self, chat_id: str) -> None:
+        if self.workspace_manager.config.enabled:
+            self.workspace_manager.remove(chat_id)
         self.store.delete_chat(chat_id)
 
     def stream_message(
@@ -335,6 +356,7 @@ class DeepFindWebService:
                     progress,
                     settings,
                     enabled_tools=enabled_tools,
+                    chat_id=chat_id,
                 )
                 envelope: dict[str, object] | None = None
                 if resolved_research_mode == "chat":
@@ -577,12 +599,15 @@ class DeepFindWebService:
         settings: Settings,
         *,
         enabled_tools: list[str] | None = None,
+        chat_id: str | None = None,
     ):
         if self.app_factory is None:
             return DeepFind(
                 progress=progress,
                 settings=settings,
                 enabled_tools=enabled_tools,
+                chat_id=chat_id,
+                workspace_manager=self.workspace_manager,
             )
 
         signature = inspect.signature(self.app_factory)
@@ -592,6 +617,10 @@ class DeepFindWebService:
             kwargs["settings"] = settings
         if "enabled_tools" in parameters:
             kwargs["enabled_tools"] = enabled_tools
+        if "chat_id" in parameters:
+            kwargs["chat_id"] = chat_id
+        if "workspace_manager" in parameters:
+            kwargs["workspace_manager"] = self.workspace_manager
         if kwargs:
             return self.app_factory(progress, **kwargs)
         if len(parameters) >= 2:

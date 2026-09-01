@@ -1,4 +1,16 @@
-import type { ChatListResponse, ChatMode, ModelTarget, ProgressEvent, ResearchMode, WebChatDetail } from "./types";
+import type {
+  ChatListResponse,
+  ChatMode,
+  ModelTarget,
+  ProgressEvent,
+  ResearchMode,
+  SheetRange,
+  WebChatDetail,
+  WordDocument,
+  WorkbookMetadata,
+  WorkspaceListing,
+  WorkspaceStatus,
+} from "./types";
 
 const TOKEN_KEY = "deepfind_auth_token";
 
@@ -33,9 +45,20 @@ async function readErrorMessage(response: Response): Promise<string> {
     return response.statusText || `Request failed (${response.status})`;
   }
   try {
-    const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
+    const parsed = JSON.parse(text) as {
+      detail?: unknown;
+      message?: unknown;
+    };
     if (typeof parsed.detail === "string" && parsed.detail.trim()) {
       return parsed.detail;
+    }
+    if (
+      parsed.detail &&
+      typeof parsed.detail === "object" &&
+      "message" in parsed.detail &&
+      typeof parsed.detail.message === "string"
+    ) {
+      return parsed.detail.message;
     }
     if (typeof parsed.message === "string" && parsed.message.trim()) {
       return parsed.message;
@@ -128,6 +151,104 @@ export async function deleteChat(chatId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
   }
+}
+
+export async function getWorkspaceStatus(chatId: string): Promise<WorkspaceStatus> {
+  return readJson<WorkspaceStatus>(
+    await fetch(`/api/chats/${chatId}/workspace`, { headers: authHeaders() }),
+  );
+}
+
+export async function listWorkspaceFiles(chatId: string, path = "."): Promise<WorkspaceListing> {
+  const query = new URLSearchParams({ path });
+  return readJson<WorkspaceListing>(
+    await fetch(`/api/chats/${chatId}/workspace/files?${query}`, { headers: authHeaders() }),
+  );
+}
+
+export function workspaceContentUrl(chatId: string, path: string): string {
+  return `/api/chats/${chatId}/workspace/content?${new URLSearchParams({ path })}`;
+}
+
+export function workspacePdfUrl(chatId: string, path: string): string {
+  return `/api/chats/${chatId}/workspace/documents/pdf?${new URLSearchParams({ path })}`;
+}
+
+export async function getWorkbook(chatId: string, path: string): Promise<WorkbookMetadata> {
+  const query = new URLSearchParams({ path });
+  return readJson<WorkbookMetadata>(
+    await fetch(`/api/chats/${chatId}/workspace/documents/workbook?${query}`, {
+      headers: authHeaders(),
+    }),
+  );
+}
+
+export async function getSheetRange(
+  chatId: string,
+  path: string,
+  sheetId: string,
+  cellRange: string,
+): Promise<SheetRange> {
+  const query = new URLSearchParams({ path, sheet_id: sheetId, cell_range: cellRange });
+  return readJson<SheetRange>(
+    await fetch(`/api/chats/${chatId}/workspace/documents/sheet?${query}`, {
+      headers: authHeaders(),
+    }),
+  );
+}
+
+export async function getWordDocument(chatId: string, path: string): Promise<WordDocument> {
+  const query = new URLSearchParams({ path });
+  return readJson<WordDocument>(
+    await fetch(`/api/chats/${chatId}/workspace/documents/word?${query}`, {
+      headers: authHeaders(),
+    }),
+  );
+}
+
+export async function createWorkspaceTerminal(chatId: string): Promise<{
+  terminal_id: string;
+  status: string;
+}> {
+  return readJson(
+    await fetch(`/api/chats/${chatId}/workspace/terminals`, {
+      method: "POST",
+      headers: authHeaders(),
+    }),
+  );
+}
+
+export async function listWorkspaceTerminals(chatId: string): Promise<Array<{
+  terminal_id: string;
+  status: string;
+  sequence: number;
+}>> {
+  const payload = await readJson<{ terminals: Array<{ terminal_id: string; status: string; sequence: number }> }>(
+    await fetch(`/api/chats/${chatId}/workspace/terminals`, { headers: authHeaders() }),
+  );
+  return payload.terminals;
+}
+
+export async function closeWorkspaceTerminal(chatId: string, terminalId: string): Promise<void> {
+  const response = await fetch(`/api/chats/${chatId}/workspace/terminals/${terminalId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+}
+
+export function workspaceTerminalUrl(chatId: string, terminalId: string): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const token = getAuthToken();
+  const query = new URLSearchParams();
+  if (token) {
+    query.set("token", token);
+  }
+  return `${protocol}//${window.location.host}/api/chats/${chatId}/workspace/terminals/${terminalId}/stream${
+    query.size ? `?${query}` : ""
+  }`;
 }
 
 export async function streamChatMessage(

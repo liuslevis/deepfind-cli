@@ -26,8 +26,9 @@ from .bili_transcribe import (
     transcribe_bili_audio,
 )
 from .browser_fetch import fetch_web_document_browser
-from .coding import CodingError, CodingResult, get_coding_service
+from .coding import CodingError, CodingResult, CodingService, coding_config, get_coding_service
 from .coding_runtime import CodingRuntimeError
+from .workspace import ChatContainerCodingRuntime, ChatContainerManager
 from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
@@ -933,8 +934,12 @@ class Toolset:
         settings: Settings,
         *,
         enabled_tools: Sequence[str] | None = None,
+        chat_id: str | None = None,
+        workspace_manager: ChatContainerManager | None = None,
     ) -> None:
         self.settings = settings
+        self.chat_id = chat_id
+        self.workspace_manager = workspace_manager
         self.enabled_tools = frozenset(enabled_tools) if enabled_tools is not None else None
         self._functions = {
             "rag_search": self.rag_search,
@@ -966,10 +971,18 @@ class Toolset:
             "youtube_transcribe_full": self.youtube_transcribe_full,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
+            "propose_terminal_command": self.propose_terminal_command,
         }
         if settings.coding_enabled:
             try:
-                self._coding_service = get_coding_service(settings)
+                if chat_id is not None and workspace_manager is not None:
+                    self._coding_service = CodingService(
+                        settings,
+                        coding_config(settings),
+                        runtime=ChatContainerCodingRuntime(workspace_manager, chat_id),
+                    )
+                else:
+                    self._coding_service = get_coding_service(settings)
             except CodingRuntimeError:
                 self._coding_service = None
             else:
@@ -985,6 +998,25 @@ class Toolset:
 
     def specs(self) -> list[dict[str, Any]]:
         specs = [
+            self._function_spec(
+                "propose_terminal_command",
+                "Propose one Bash command for the current chat container. This never executes the command; "
+                "the user must review or edit it and explicitly approve it in the workspace UI.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "maxLength": 4096},
+                        "reason": {"type": "string", "maxLength": 1000},
+                        "cwd": {
+                            "type": "string",
+                            "enum": ["."],
+                            "description": "Commands run from the chat container's /workspace directory.",
+                        },
+                    },
+                    "required": ["command", "reason"],
+                    "additionalProperties": False,
+                },
+            ),
             self._function_spec(
                 "web_search",
                 "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin.",
@@ -1428,8 +1460,8 @@ class Toolset:
             specs.append(
                 self._function_spec(
                     "coding",
-                    "Create and validate a Python solution in an isolated, one-time "
-                    "container sandbox. The container has no host credentials or network access.",
+                    "Create and validate a solution in the current chat's isolated container "
+                    "workspace. The container has no host credentials or network access.",
                     {
                         "type": "object",
                         "properties": {
@@ -1503,6 +1535,39 @@ class Toolset:
             )
             return result.to_dict()
         return self._coding_service.coding(query, context).to_dict()
+
+    def propose_terminal_command(
+        self,
+        command: str,
+        reason: str,
+        cwd: str = ".",
+    ) -> dict[str, Any]:
+        normalized_command = command.strip()
+        normalized_reason = reason.strip()
+        if not normalized_command or len(normalized_command) > 4096 or "\x00" in normalized_command:
+            return {
+                "ok": False,
+                "tool": "propose_terminal_command",
+                "error_code": "invalid_command",
+                "error": "The proposed command is invalid",
+            }
+        if not normalized_reason or len(normalized_reason) > 1000 or cwd != ".":
+            return {
+                "ok": False,
+                "tool": "propose_terminal_command",
+                "error_code": "invalid_command",
+                "error": "The command reason or working directory is invalid",
+            }
+        return {
+            "ok": True,
+            "tool": "propose_terminal_command",
+            "proposal": {
+                "command": normalized_command,
+                "reason": normalized_reason,
+                "cwd": ".",
+                "requires_approval": True,
+            },
+        }
 
     def rag_search(self, query: str) -> dict[str, Any]:
         query = query.strip()

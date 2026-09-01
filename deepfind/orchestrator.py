@@ -15,6 +15,7 @@ from .llm import ResponseAgent
 from .models import ChatMessage, WorkerReport
 from .progress import ConsoleProgress
 from .tools import Toolset
+from .workspace import ChatContainerManager
 
 PLAN_PROMPT = (
     "You are the lead planner for an ongoing research chat. Use the prior conversation for context when needed, "
@@ -751,11 +752,15 @@ class DeepFind:
         progress: ConsoleProgress | None = None,
         *,
         enabled_tools: Sequence[str] | None = None,
+        chat_id: str | None = None,
+        workspace_manager: ChatContainerManager | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.tools = Toolset(
             self.settings,
             enabled_tools=enabled_tools,
+            chat_id=chat_id,
+            workspace_manager=workspace_manager,
         )
         self.progress = progress
 

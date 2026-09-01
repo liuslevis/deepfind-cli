@@ -102,6 +102,68 @@ export interface ProgressEvent {
   data: Record<string, unknown>;
 }
 
+export type WorkspaceApp = "terminal" | "pdf" | "excel" | "word" | "files";
+
+export interface WorkspaceStatus {
+  available: boolean;
+  status: "running" | "stopped" | "missing";
+  chat_id: string;
+  container_id?: string;
+  workspace_root?: string;
+}
+
+export interface WorkspaceFile {
+  name: string;
+  path: string;
+  size: number;
+  modified_at: string;
+  is_directory: boolean;
+  mime_type: string;
+}
+
+export interface WorkspaceListing {
+  path: string;
+  entries: WorkspaceFile[];
+  truncated: boolean;
+}
+
+export interface WorkspaceTab {
+  id: string;
+  app: WorkspaceApp;
+  title: string;
+  chatId: string;
+  relativePath?: string;
+  terminalId?: string;
+  status: "loading" | "ready" | "running" | "disconnected" | "error";
+}
+
+export interface WorkbookMetadata {
+  file: WorkspaceFile;
+  sheets: Array<{
+    id: string;
+    name: string;
+    rows: number;
+    columns: number;
+    hidden: boolean;
+    freeze_panes?: string;
+  }>;
+  warnings: string[];
+}
+
+export interface SheetRange {
+  sheet_id: string;
+  range: string;
+  cells: Array<Array<{ value: unknown; display: string; formula: string | null; number_format?: string }>>;
+  truncated: boolean;
+}
+
+export interface WordDocument {
+  title: string;
+  outline: Array<{ id: string; level: number; text: string }>;
+  html: string;
+  warnings: string[];
+}
+
 export type ActivityPhase = "planning" | "researching" | "synthesizing" | "complete" | "error";
 
 export interface ActivitySummary {

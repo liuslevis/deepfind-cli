@@ -124,17 +124,22 @@ class WebProgress:
 
     def tool_result(self, name: str, tool_name: str, output: str) -> None:
         status, summary = _summary_from_output(output)
+        parsed = try_load_json(output)
+        event_data: dict[str, Any] = {
+            "name": name,
+            "tool_name": tool_name,
+            "status": status,
+            "summary": summary,
+        }
+        if (
+            tool_name == "propose_terminal_command"
+            and isinstance(parsed, dict)
+            and isinstance(parsed.get("proposal"), dict)
+        ):
+            event_data["proposal"] = parsed["proposal"]
         with self._lock:
             self.tool_outputs.append(ToolObservation(tool_name=tool_name, output=output))
-        self._event(
-            "tool_result",
-            {
-                "name": name,
-                "tool_name": tool_name,
-                "status": status,
-                "summary": summary,
-            },
-        )
+        self._event("tool_result", event_data)
         self._console_progress.tool_result(name, tool_name, output)
 
     def synthesize_started(self, report_count: int) -> None:
