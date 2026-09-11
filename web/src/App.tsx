@@ -462,6 +462,10 @@ function shouldHideActivityEvent(event: ProgressEvent): boolean {
   return toolName === "web_search" && status === "ok";
 }
 
+function usesCodingWorkspace(event: ProgressEvent): boolean {
+  return event.type === "tool_call" && event.data.tool_name === "coding";
+}
+
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -1609,7 +1613,7 @@ export default function App() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(() => storageGetItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [workspaceVisible, setWorkspaceVisible] = useState(true);
+  const [workspaceVisible, setWorkspaceVisible] = useState(false);
   const [workspaceOpenRequest, setWorkspaceOpenRequest] = useState<WorkspaceOpenRequest | null>(null);
   const [workspaceCommandRequest, setWorkspaceCommandRequest] = useState<WorkspaceCommandRequest | null>(null);
   const [approvedProposalIds, setApprovedProposalIds] = useState<Set<string>>(() => new Set());
@@ -2195,6 +2199,9 @@ export default function App() {
           selected_tools: enabledTools,
         },
         (progressEvent) => {
+          if (usesCodingWorkspace(progressEvent)) {
+            setWorkspaceVisible(true);
+          }
           appendActivity(chat.id, assistantMessage.id, progressEvent);
           if (progressEvent.type === "answer_delta") {
             const delta = String(progressEvent.data.delta ?? "");
@@ -2622,13 +2629,15 @@ export default function App() {
           {pageError ? <p className="composer__error">{pageError}</p> : null}
         </footer>
       </main>
-      <WorkspacePanel
-        chatId={selectedChatId}
-        visible={workspaceVisible}
-        onVisibleChange={setWorkspaceVisible}
-        openRequest={workspaceOpenRequest}
-        commandRequest={workspaceCommandRequest}
-      />
+      {workspaceVisible ? (
+        <WorkspacePanel
+          chatId={selectedChatId}
+          visible
+          onVisibleChange={setWorkspaceVisible}
+          openRequest={workspaceOpenRequest}
+          commandRequest={workspaceCommandRequest}
+        />
+      ) : null}
       </div>
     </div>
   );

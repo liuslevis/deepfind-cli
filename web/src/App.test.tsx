@@ -102,6 +102,116 @@ describe("App", () => {
     vi.restoreAllMocks();
   });
 
+  it("mounts the workspace only after the workspace button is clicked", async () => {
+    localStorage.setItem("deepfind.web.selected-chat", "chat_1");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [{
+            id: "chat_1",
+            title: "Workspace test",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            preview: "",
+          }],
+        });
+      }
+      if (url === "/api/chats/chat_1" && method === "GET") {
+        return jsonResponse({
+          chat: {
+            id: "chat_1",
+            title: "Workspace test",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_1/workspace" && method === "GET") {
+        return jsonResponse({ available: false, status: "missing", chat_id: "chat_1" });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const workspaceButton = await screen.findByRole("button", { name: "Workspace" });
+    expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/chats/chat_1/workspace", expect.anything());
+
+    await userEvent.click(workspaceButton);
+
+    expect(await screen.findByLabelText("Chat workspace")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/chats/chat_1/workspace", expect.anything()));
+  });
+
+  it("mounts the workspace when the coding tool starts", async () => {
+    const stream = createControlledStreamResponse();
+    let chatsRequestCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      if (url === "/api/chats" && method === "GET") {
+        chatsRequestCount += 1;
+        return jsonResponse({
+          chats: chatsRequestCount === 1 ? [] : [{
+            id: "chat_coding",
+            title: "Coding task",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:01:00Z",
+            preview: "",
+          }],
+        });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_coding",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_coding/messages/stream" && method === "POST") {
+        return stream.response;
+      }
+      if (url === "/api/chats/chat_coding/workspace" && method === "GET") {
+        return jsonResponse({ available: false, status: "missing", chat_id: "chat_coding" });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Workspace" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Update the project");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    stream.push({
+      type: "tool_call",
+      data: { name: "lead", tool_name: "coding", arguments: { query: "Update the project" } },
+    });
+
+    expect(await screen.findByLabelText("Chat workspace")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/chats/chat_coding/workspace", expect.anything()));
+    stream.close();
+  });
+
   it("shows slash command autocomplete and resolves / to /list-tool on submit", async () => {
     let capturedBody = "";
     let chatsRequestCount = 0;

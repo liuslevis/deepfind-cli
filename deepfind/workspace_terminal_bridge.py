@@ -29,6 +29,7 @@ def main() -> int:
         env = {
             "HOME": "/workspace",
             "LANG": "C.UTF-8",
+            "MPLCONFIGDIR": "/workspace/.mplcache",
             "PATH": "/opt/venv-template/bin:/usr/local/bin:/usr/bin:/bin",
             "TERM": "xterm-256color",
         }

@@ -428,6 +428,8 @@ class ChatContainerManager:
             "HOME=/workspace",
             "--env",
             "PATH=/opt/venv-template/bin:/usr/local/bin:/usr/bin:/bin",
+            "--env",
+            "MPLCONFIGDIR=/workspace/.mplcache",
             "--entrypoint",
             "sleep",
             self.config.image,

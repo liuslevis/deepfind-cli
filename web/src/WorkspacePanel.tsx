@@ -368,6 +368,7 @@ function TerminalView({
       terminal.loadAddon(fit);
       terminal.open(hostRef.current);
       fit.fit();
+      terminal.focus();
       terminal.writeln("\x1b[33mDocker shell - commands may modify this chat workspace.\x1b[0m");
       const socket = new WebSocket(workspaceTerminalUrl(chatId, terminalId));
       socket.addEventListener("open", () => {
@@ -384,6 +385,11 @@ function TerminalView({
         if (message.type === "exit") {
           terminal.writeln(`\r\n[process exited: ${message.exit_code ?? "signal"}]`);
           onExitRef.current();
+        }
+      });
+      socket.addEventListener("close", (event) => {
+        if (active && event.code !== 1000) {
+          terminal.writeln(`\r\n\x1b[31mTerminal connection closed (${event.code || "network error"}). Refresh or open a new terminal.\x1b[0m`);
         }
       });
       const input = terminal.onData((data) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify({ type: "input", data })));
@@ -424,6 +430,7 @@ export default function WorkspacePanel({
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const handledCommandRequestIdRef = useRef<number | null>(null);
   const [initialCommands, setInitialCommands] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -514,9 +521,9 @@ export default function WorkspacePanel({
   }
 
   useEffect(() => {
-    if (commandRequest) {
-      void openTerminal(commandRequest.command);
-    }
+    if (!commandRequest || handledCommandRequestIdRef.current === commandRequest.id) return;
+    handledCommandRequestIdRef.current = commandRequest.id;
+    void openTerminal(commandRequest.command);
     // The request id intentionally controls one approved command.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commandRequest?.id]);
