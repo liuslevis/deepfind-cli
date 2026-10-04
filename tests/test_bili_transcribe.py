@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import MagicMock, patch
 
 import deepfind.asr as asr
@@ -52,6 +53,37 @@ class BiliTranscribeTests(unittest.TestCase):
 
         self.assertEqual(segments, [first, second])
         resolve_mock.assert_not_called()
+
+    def test_ensure_segments_downloads_without_split_then_uses_ffmpeg(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+
+            def run_command(command: list[str], **_: object) -> CompletedProcess[str]:
+                if command[0] == "bili":
+                    (output_dir / "source.m4a").write_bytes(b"audio")
+                else:
+                    (output_dir / "seg_000.wav").write_bytes(b"segment")
+                return CompletedProcess(command, 0, "", "")
+
+            with patch("deepfind.bili_transcribe.resolve_bili_bin", return_value="bili"):
+                with patch("deepfind.bili_transcribe.resolve_ffmpeg_bin", return_value="ffmpeg"):
+                    with patch("deepfind.bili_transcribe.subprocess.run", side_effect=run_command) as run_mock:
+                        segments = ensure_segments(
+                            "BV1cgPSzeEj5",
+                            output_dir=output_dir,
+                            bili_bin="bili",
+                            ffmpeg_bin="ffmpeg",
+                            timeout=5,
+                        )
+
+        self.assertEqual([path.name for path in segments], ["seg_000.wav"])
+        download_command = run_mock.call_args_list[0].args[0]
+        self.assertIn("--no-split", download_command)
+        self.assertNotIn("--segment", download_command)
+        ffmpeg_command = run_mock.call_args_list[1].args[0]
+        self.assertEqual(ffmpeg_command[0], "ffmpeg")
+        self.assertIn("segment", ffmpeg_command)
+        self.assertIn("300", ffmpeg_command)
 
     def test_transcribe_bili_audio_writes_transcript_and_no_summary_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

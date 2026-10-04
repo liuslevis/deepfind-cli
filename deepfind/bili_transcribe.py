@@ -20,6 +20,7 @@ from .asr import (
     load_text,
     write_text,
 )
+from .youtube_audio_transcribe import resolve_ffmpeg_bin
 
 BVID_PATTERN = re.compile(r"(BV[0-9A-Za-z]{10})")
 
@@ -88,6 +89,22 @@ def find_segments(root: Path) -> list[Path]:
     )
 
 
+def find_source_audio(root: Path) -> Path | None:
+    candidates = [
+        path
+        for path in root.iterdir()
+        if path.is_file()
+        and path.suffix.lower() in AUDIO_SUFFIXES
+        and not path.stem.startswith("seg_")
+    ]
+    if not candidates:
+        return None
+    try:
+        return max(candidates, key=lambda path: path.stat().st_size)
+    except OSError:
+        return candidates[0]
+
+
 def load_cached_transcript(audio_root: Path, bili_id: str) -> tuple[Path, str] | None:
     candidate = audio_root / "transcripts" / f"{bili_id}.txt"
     transcript = load_text(candidate)
@@ -101,14 +118,63 @@ def ensure_segments(
     output_dir: Path,
     bili_bin: str | None,
     timeout: int,
+    ffmpeg_bin: str | None = None,
 ) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     segments = find_segments(output_dir)
     if segments:
         return segments
 
-    resolved_bin = resolve_bili_bin(bili_bin)
-    command = [resolved_bin, "audio", bili_id, "--segment", str(SEGMENT_SECONDS), "-o", str(output_dir)]
+    source_audio = find_source_audio(output_dir)
+    if source_audio is None:
+        resolved_bin = resolve_bili_bin(bili_bin)
+        command = [resolved_bin, "audio", bili_id, "--no-split", "-o", str(output_dir)]
+        try:
+            proc = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=max(timeout, 1),
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise BiliDownloadError(f"bili audio download timed out: {exc}") from exc
+        except OSError as exc:
+            raise MissingDependencyError(str(exc)) from exc
+
+        if proc.returncode != 0:
+            message = (proc.stderr or proc.stdout).strip() or "bili audio download failed."
+            raise BiliDownloadError(message[:4000])
+
+        source_audio = find_source_audio(output_dir)
+        if source_audio is None:
+            raise BiliDownloadError(f"bili finished but no audio file was created under {output_dir}")
+
+    resolved_ffmpeg = resolve_ffmpeg_bin(ffmpeg_bin)
+    segment_template = output_dir / "seg_%03d.wav"
+    command = [
+        resolved_ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(source_audio),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-f",
+        "segment",
+        "-segment_time",
+        str(SEGMENT_SECONDS),
+        "-reset_timestamps",
+        "1",
+        str(segment_template),
+    ]
     try:
         proc = subprocess.run(
             command,
@@ -118,12 +184,12 @@ def ensure_segments(
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        raise BiliDownloadError(f"bili audio download timed out: {exc}") from exc
+        raise BiliDownloadError(f"ffmpeg segment timed out: {exc}") from exc
     except OSError as exc:
         raise MissingDependencyError(str(exc)) from exc
 
     if proc.returncode != 0:
-        message = (proc.stderr or proc.stdout).strip() or "bili audio download failed."
+        message = (proc.stderr or proc.stdout).strip() or "ffmpeg segment failed."
         raise BiliDownloadError(message[:4000])
 
     segments = find_segments(output_dir)
@@ -136,6 +202,7 @@ def transcribe_bili_audio(
     bili_id: str,
     *,
     bili_bin: str | None = None,
+    ffmpeg_bin: str | None = None,
     asr_model: str = DEFAULT_ASR_MODEL,
     audio_dir: str | None = None,
     timeout: int = 90,
@@ -158,6 +225,7 @@ def transcribe_bili_audio(
         output_dir=audio_dir_path,
         bili_bin=bili_bin,
         timeout=timeout,
+        ffmpeg_bin=ffmpeg_bin,
     )
     transcript = transcribe_segments(segments, asr_model=asr_model)
 

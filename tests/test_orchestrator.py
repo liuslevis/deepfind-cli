@@ -17,6 +17,7 @@ from deepfind.orchestrator import (
     _LONG_REPORT_LEAD_MAX_TOKENS,
     _canonicalize_url,
     _parse_report,
+    _query_requests_coding,
     _should_shortcut_format_follow_up,
 )
 
@@ -43,6 +44,55 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(run_kwargs["instructions"], CHAT_PROMPT)
         self.assertTrue(run_kwargs["use_tools"])
         self.assertEqual(run_kwargs["history"][0]["content"], "Earlier question")
+        self.assertNotIn("coding", run_kwargs["tool_names"])
+
+    def test_chat_turn_allows_coding_for_explicit_python_request(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        with patch.object(
+            app.tools,
+            "specs",
+            return_value=[
+                {"function": {"name": "web_search"}},
+                {"function": {"name": "coding"}},
+            ],
+        ):
+            with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
+                agent_cls.return_value.run.return_value.text = "Direct answer"
+                app._run_chat_turn(
+                    "Use Python to calculate 2130912412 * 124901255",
+                    transcript=[],
+                    max_iter_per_agent=2,
+                )
+
+        self.assertIn("coding", agent_cls.return_value.run.call_args.kwargs["tool_names"])
+
+    def test_worker_excludes_coding_for_bilibili_transcription(self) -> None:
+        settings = Settings(api_key="x")
+        app = DeepFind(settings=settings)
+        with patch.object(
+            app.tools,
+            "specs",
+            return_value=[
+                {"function": {"name": "bili_transcribe_full"}},
+                {"function": {"name": "coding"}},
+            ],
+        ):
+            with patch("deepfind.orchestrator.ResponseAgent") as agent_cls:
+                agent_cls.return_value.run.return_value.text = "worker text"
+                agent_cls.return_value.run.return_value.citations = []
+                app._run_worker(
+                    1,
+                    "帮我转译 transcribe full https://www.bilibili.com/video/BV1a5Y36MEWM 总结",
+                    transcript=[],
+                    task="Transcribe and summarize the video",
+                    max_iter=2,
+                )
+
+        self.assertEqual(
+            agent_cls.return_value.run.call_args.kwargs["tool_names"],
+            ["bili_transcribe_full"],
+        )
 
     def test_chat_turn_disables_tools_when_none_are_selected(self) -> None:
         settings = Settings(api_key="x")
@@ -64,6 +114,16 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(tasks[0], "one task")
         self.assertTrue(agent_cls.return_value.run.call_args.kwargs["use_tools"])
 
+    def test_coding_intent_requires_explicit_request(self) -> None:
+        self.assertFalse(
+            _query_requests_coding(
+                "帮我转译 transcribe full https://www.bilibili.com/video/BV1a5Y36MEWM 总结"
+            )
+        )
+        self.assertTrue(_query_requests_coding("用 Python 写一个 dataframe 处理脚本"))
+        self.assertTrue(_query_requests_coding("写代码帮我计算 21 * 9"))
+        self.assertTrue(_query_requests_coding("Write a script for processing files"))
+
     def test_run_worker_uses_sub_model(self) -> None:
         settings = Settings(api_key="x", model="lead-model", sub_model="sub-model")
         app = DeepFind(settings=settings)
@@ -78,9 +138,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("boss_search", WORKER_PROMPT)
         self.assertIn("bili_search", WORKER_PROMPT)
         self.assertIn("bili_transcribe", WORKER_PROMPT)
-        self.assertIn("youtube_transcribe", WORKER_PROMPT)
-        self.assertIn("youtube_transcribe_full", WORKER_PROMPT)
-        self.assertNotIn("youtube_audio_transcribe", WORKER_PROMPT)
+        self.assertNotIn("youtube", WORKER_PROMPT.lower())
         self.assertIn('"claims"', WORKER_PROMPT)
         self.assertIn('"citations"', WORKER_PROMPT)
         self.assertIn('"confidence"', WORKER_PROMPT)
@@ -108,7 +166,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("web_search", PLAN_PROMPT)
         self.assertIn("web_fetch", PLAN_PROMPT)
         self.assertIn("BOSS Zhipin", PLAN_PROMPT)
-        self.assertIn("YouTube", PLAN_PROMPT)
+        self.assertNotIn("youtube", PLAN_PROMPT.lower())
 
     def test_parse_report_non_json_does_not_fabricate_citations(self) -> None:
         report = _parse_report("sub-1", "task", "plain text result", ["https://example.com/source"])

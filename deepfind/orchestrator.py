@@ -25,7 +25,7 @@ PLAN_PROMPT = (
     "the most promising pages before splitting work. If web_fetch is blocked or the page requires JavaScript/cookies, "
     "use browser_fetch as a fallback, and retry with headless=false when a site needs manual verification. If the user wants an image or slides, plan only supporting "
     "research/context tasks and leave the final asset creation for the lead response. Reserve Xiaohongshu, "
-    "X/Twitter, Bilibili, YouTube, and BOSS Zhipin-specific tasks for their matching platform tools. Split it into "
+    "X/Twitter, Bilibili, and BOSS Zhipin-specific tasks for their matching platform tools. Split it into "
     "{n} distinct research tasks. Make each task specific and evidence-seeking, and include discovered URLs when "
     "helpful. JSON array only."
 )
@@ -35,16 +35,14 @@ WORKER_PROMPT = (
     "user's local knowledge base. For broad web research, prefer a two-step flow: use "
     "web_search to find candidate URLs, then use web_fetch to inspect the highest-value pages with a targeted prompt "
     "(use browser_fetch when web_fetch is blocked or the page requires JavaScript/cookies, and retry with headless=false when manual verification is needed) "
-    "instead of relying only on snippets. Keep using the Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS "
+    "instead of relying only on snippets. Keep using the Xiaohongshu, X/Twitter, Bilibili, and BOSS "
     "Zhipin-specific tools for those platforms. Use boss_search for job searches, boss_detail when you need one "
     "posting's full description, boss_chatlist when you need existing BOSS chat threads or uid values, and boss_send "
     "when you need to send a follow-up message such as asking which company a hidden-company posting belongs to. "
     "Prefer boss_detail before messaging because it may already reveal the company. If the task needs Bilibili "
     "creator discovery or channel uploads, use bili_search or bili_get_user_videos. If the task mentions Bilibili "
     "video/audio, call bili_transcribe with the URL or BVID plus a short query that captures the user's research "
-    "goal; use bili_transcribe_full only when you truly need the raw transcript. If the task mentions YouTube "
-    "video/audio, call youtube_transcribe with the URL plus a short query that captures the user's research goal; "
-    "use youtube_transcribe_full only when you truly need the raw transcript. For rag_search evidence, include the "
+    "goal; use bili_transcribe_full only when you truly need the raw transcript. For rag_search evidence, include the "
     "source path and PDF page range or media time range in the claim text, and copy the exact rag:// URI returned in "
     "rag_search.citations into claim.citations. If the latest user request "
     "asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image "
@@ -366,6 +364,33 @@ def _query_requests_image(query: str) -> bool:
 def _query_requests_slides(query: str) -> bool:
     lowered = query.lower()
     return any(token in lowered for token in ("slides", "slide deck", "\u5e7b\u706f", "\u5e7b\u706f\u7247"))
+
+
+_CODING_INTENT_RE = re.compile(
+    r"\b(?:python|pandas|numpy|dataframe|code|coding|program|programming|script|function|algorithm|calculate|compute"
+    r"|file processing|process(?:ing)? (?:a |the )?files?|read(?:ing)? (?:a |the )?files?"
+    r"|writ(?:e|ing) (?:a |the )?files?|modif(?:y|ying) (?:a |the )?files?"
+    r"|convert(?:ing)? (?:a |the )?files?)\b",
+    re.IGNORECASE,
+)
+_CODING_INTENT_MARKERS = (
+    "\u5199\u4ee3\u7801",
+    "\u7f16\u7a0b",
+    "\u811a\u672c",
+    "\u51fd\u6570",
+    "\u7b97\u6cd5",
+    "\u8ba1\u7b97",
+    "\u6570\u636e\u6846",
+    "\u5904\u7406\u6587\u4ef6",
+    "\u8bfb\u53d6\u6587\u4ef6",
+    "\u751f\u6210\u6587\u4ef6",
+    "\u4fee\u6539\u6587\u4ef6",
+    "\u8f6c\u6362\u6587\u4ef6",
+)
+
+
+def _query_requests_coding(query: str) -> bool:
+    return bool(_CODING_INTENT_RE.search(query)) or any(marker in query for marker in _CODING_INTENT_MARKERS)
 
 
 def _lead_tool_names(query: str) -> list[str]:
@@ -894,6 +919,7 @@ class DeepFind:
         max_iter_per_agent: int,
     ) -> str:
         _, max_iter_per_agent = self._validated_run_args(1, max_iter_per_agent)
+        tool_names = self._tool_names_for_query(query)
         agent = ResponseAgent(
             self.settings,
             self.tools,
@@ -904,8 +930,9 @@ class DeepFind:
             name="chat",
             instructions=CHAT_PROMPT,
             user_input=query,
-            use_tools=bool(self.tools.specs()),
+            use_tools=bool(tool_names),
             history=_history_messages(transcript),
+            tool_names=tool_names,
             max_tokens=4000,
         )
         return result.text.strip()
@@ -954,13 +981,15 @@ class DeepFind:
         max_iter: int,
     ) -> list[str]:
         history = _history_messages(transcript)
+        tool_names = self._tool_names_for_query(query)
         agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
         result = agent.run(
             name="lead-plan",
             instructions=PLAN_PROMPT.format(n=num_agent),
             user_input=_planner_payload(query),
-            use_tools=True,
+            use_tools=bool(tool_names),
             history=history,
+            tool_names=tool_names,
         )
         parsed = try_load_json(result.text)
         if isinstance(parsed, list):
@@ -1004,13 +1033,15 @@ class DeepFind:
             self.progress.worker_started(name, task)
         history = _history_messages(transcript)
         worker_settings = replace(self.settings, model=self.settings.sub_model)
+        tool_names = self._tool_names_for_query(query)
         agent = ResponseAgent(worker_settings, self.tools, max_iter=max_iter, progress=self.progress)
         result = agent.run(
             name=name,
             instructions=WORKER_PROMPT,
             user_input=_worker_payload(query, task),
-            use_tools=True,
+            use_tools=bool(tool_names),
             history=history,
+            tool_names=tool_names,
         )
         return _parse_report(name, task, result.text, result.citations)
 
@@ -1046,6 +1077,7 @@ class DeepFind:
         if self.progress:
             self.progress.synthesize_started(len(reports))
         history = _history_messages(transcript)
+        tool_names = self._tool_names_for_query(query)
         agent = ResponseAgent(self.settings, self.tools, max_iter=max_iter, progress=self.progress)
         report_blob = dump_json(
             [
@@ -1065,13 +1097,25 @@ class DeepFind:
             name="lead-synthesis",
             instructions=SYNTHESIS_PROMPT,
             user_input=_synthesis_payload(query, report_blob),
-            use_tools=True,
+            use_tools=bool(tool_names),
             history=history,
+            tool_names=tool_names,
         )
         parsed = try_load_json(result.text)
         if isinstance(parsed, dict):
             return _normalize_synthesis(parsed, reports)
         return _fallback_synthesis(reports)
+
+    def _tool_names_for_query(self, query: str) -> list[str]:
+        names = [
+            str(spec.get("function", {}).get("name", ""))
+            for spec in self.tools.specs()
+        ]
+        return [
+            name
+            for name in names
+            if name and (name != "coding" or _query_requests_coding(query))
+        ]
 
 
 @dataclass

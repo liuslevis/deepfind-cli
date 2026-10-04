@@ -5,7 +5,7 @@ A multi-agent research tool in both Web App and CLI, which can:
 - Search (no limit) in Google / Baidu / Xiaohongshu via opencli
 - Search BOSS Zhipin jobs via opencli
 - Follow up on BOSS Zhipin job chats via opencli
-- Watch video in Bilibili / YouTube and summarize via opencli
+- Watch video in Bilibili and summarize via opencli
 - Customize any other cli as agent tool
 
 
@@ -26,8 +26,6 @@ uv run -m deepfind.cli "Help me do a research on Robotic Hands, give me a TLDR t
 uv run -m deepfind.cli "Help me summarize nVidia press conference https://www.bilibili.com/video/BV1EhwmzsEqB - What's new?" --num-agent 1
 
 uv run -m deepfind.cli "Help me summarize https://www.bilibili.com/video/BV1tew5zVEDf What Saining Xie point of view in the interview" --num-agent 1 --quiet
-
-uv run -m deepfind.cli "Help me summarize this YouTube talk https://www.youtube.com/watch?v=dQw4w9WgXcQ" --num-agent 1
 
 uv run -m deepfind.cli "How people think Elon Musk in Xiaohongshu?" --num-agent 2
 
@@ -203,7 +201,6 @@ network-disabled container, so API keys are never exposed to generated code.
 ```bash
 uv run -m deepfind.cli "What's new in Xiaohongshu?" --num-agent 2
 uv run -m deepfind.cli "Help me summarize video https://www.bilibili.com/video/BV1tew5zVEDf" --num-agent 1
-uv run -m deepfind.cli "Help me summarize video https://www.youtube.com/watch?v=dQw4w9WgXcQ" --num-agent 1
 uv run -m deepfind.cli "same query" --num-agent 2 --quiet
 uv run -m deepfind.cli "same query" 
 ```
@@ -350,7 +347,7 @@ curl http://127.0.0.1:8000/api/health
 
 - Lead planner can use tools before task split, usually with a `web_search -> web_fetch` flow on the most promising URLs.
 - If a page is blocked or requires JavaScript/cookies, use `browser_fetch` instead of `web_fetch`.
-- Sub-agents call local tools such as `web_search`, `web_fetch`, `browser_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_user_posts`, `xhs_read`, `xhs_read_cmt`, `twitter_search`, `twitter_read`, `bili_transcribe`, `youtube_transcribe`, and `youtube_transcribe_full`.
+- Sub-agents call local tools such as `web_search`, `web_fetch`, `browser_fetch`, `boss_search`, `boss_detail`, `boss_chatlist`, `boss_send`, `xhs_user_posts`, `xhs_read`, `xhs_read_cmt`, `twitter_search`, `twitter_read`, and `bili_transcribe`.
 - Lead synthesis merges worker reports, fills gaps, and can do another `web_search -> web_fetch` (or `browser_fetch`) pass when evidence is weak or conflicting.
 - Lead final answer turns the synthesis into the user-facing response, and only uses asset tools for final image/slide requests.
 
@@ -359,29 +356,18 @@ curl http://127.0.0.1:8000/api/health
 `bili_transcribe(bili_id, query)` accepts a Bilibili video URL or `BV...` ID, runs download + ASR if needed,
 then returns a query-focused summary. Use `bili_transcribe_full(bili_id)` when you need the full transcript.
 
-`youtube_transcribe(url, query)` downloads YouTube audio via `yt-dlp` + `ffmpeg`, transcribes it with local ASR,
-then returns a query-focused summary for the given query.
-
-`youtube_transcribe_full(url)` downloads YouTube audio via `yt-dlp` + `ffmpeg`, transcribes it with local ASR,
-and returns the full transcript. The raw transcript is cached under
-`audio/transcripts/youtube_audio/<VIDEO_ID>.txt`.
-
 Setup:
 
 ```bash
-uv tool install bilibili-cli
-uv tool install yt-dlp
+uv tool install "bilibili-cli[audio]"
 # test
 bili status
-yt-dlp --no-playlist -f beataudio/best -o ~/Downloads/ab.mp4 --cookie-from-browser chrome https://www.youtube.com/watch?v=Bns7_hd02pE 
 ```
 
 Artifacts:
 
 - Bilibili segments: `audio/<BVID>/seg_*`
 - Bilibili transcript: `audio/transcripts/<BVID>.txt`
-- YouTube audio segments: `audio/youtube/<VIDEO_ID>/seg_*`
-- YouTube audio transcript: `audio/transcripts/youtube_audio/<VIDEO_ID>.txt`
 
 ## Test
 
@@ -407,7 +393,7 @@ When a follow-up only asks to reformat the previous answer in chat mode, the app
 | Agent | Main task / goal | Tool policy | Output format |
 | --- | --- | --- | --- |
 | `lead-plan` | Split the latest user request into `N` distinct, evidence-seeking research tasks. It may use the prior conversation for context and can do a light `web_search -> web_fetch` pass before splitting work (use `browser_fetch` when blocked or JS-only). | Tools allowed during planning, but used sparingly. Platform-specific work should stay on matching tools. If the user asks for an image or slides, this stage only plans supporting research, not final asset generation. | JSON array only. Each item is usually a task string, but object items are also accepted when they contain a task-like field such as `task`, `title`, or `summary`. |
-| `sub-N` worker | Execute one assigned research task, gather evidence, and report the strongest findings plus open gaps. | Tools allowed. Workers should prefer `web_search -> web_fetch` for broad web research (use `browser_fetch` when blocked or JS-only) and use platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin. They should not call `gen_img` or `gen_slides` unless the assigned task explicitly asks for the final asset. | JSON only: `{"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}` |
+| `sub-N` worker | Execute one assigned research task, gather evidence, and report the strongest findings plus open gaps. | Tools allowed. Workers should prefer `web_search -> web_fetch` for broad web research (use `browser_fetch` when blocked or JS-only) and use platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, and BOSS Zhipin. They should not call `gen_img` or `gen_slides` unless the assigned task explicitly asks for the final asset. | JSON only: `{"summary":"","claims":[{"text":"","citations":[],"confidence":"medium"}],"gaps":[]}` |
 | `lead-synthesis` | Merge worker reports, identify the strongest evidence, resolve or highlight conflicts, and fill missing gaps with tools when needed. | Tools allowed. It can do another `web_search -> web_fetch` (or `browser_fetch`) pass if worker evidence is incomplete or conflicting. | JSON only: `{"overview_md":"","key_points":[{"text":"","citations":[],"confidence":"medium"}],"disagreements":[],"gaps":[],"next_steps":[]}` |
 | `lead-final` | Turn synthesis into the user-facing answer for the latest request. | No new research. Tools are reserved only for final asset creation, and only when the user explicitly asked for it: `gen_img` once for an image, `gen_slides` once for slides. | Markdown. Default mode is a concise answer. With `--long-report-mode`, it switches to thesis-like Markdown in the current language and should include `## Conclusion`. The system appends `## Reference` from collected citations. |
 | `lead-format` | Reformat the previous assistant answer for a follow-up such as a table, list, translation, rewrite, or shorter/longer version. | No tools and no new research. It must work only from the prior assistant answer plus the latest user request. | Plain Markdown / text in the requested format. If the previous answer does not contain enough detail, it should say so briefly instead of inventing new content. |

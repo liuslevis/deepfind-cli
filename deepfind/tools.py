@@ -967,8 +967,6 @@ class Toolset:
             "bili_get_user_videos": self.bili_get_user_videos,
             "bili_transcribe": self.bili_transcribe,
             "bili_transcribe_full": self.bili_transcribe_full,
-            "youtube_transcribe": self.youtube_transcribe,
-            "youtube_transcribe_full": self.youtube_transcribe_full,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
             "propose_terminal_command": self.propose_terminal_command,
@@ -1019,7 +1017,7 @@ class Toolset:
             ),
             self._function_spec(
                 "web_search",
-                "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, YouTube, and BOSS Zhipin.",
+                "Search the web through opencli. Prefer this for broad web research, and use the platform-specific tools for Xiaohongshu, X/Twitter, Bilibili, and BOSS Zhipin.",
                 {
                     "type": "object",
                     "properties": {
@@ -1385,31 +1383,6 @@ class Toolset:
                         "bili_id": {"type": "string"},
                     },
                     "required": ["bili_id"],
-                    "additionalProperties": False,
-                },
-            ),
-            self._function_spec(
-                "youtube_transcribe",
-                "Download YouTube audio with yt-dlp, transcribe it with local ASR, then summarize it for the research query.",
-                {
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string"},
-                        "query": {"type": "string"},
-                    },
-                    "required": ["url", "query"],
-                    "additionalProperties": False,
-                },
-            ),
-            self._function_spec(
-                "youtube_transcribe_full",
-                "Download YouTube audio with yt-dlp and transcribe it with local ASR, returning the full transcript.",
-                {
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string"},
-                    },
-                    "required": ["url"],
                     "additionalProperties": False,
                 },
             ),
@@ -2861,6 +2834,7 @@ class Toolset:
         return transcribe_bili_audio(
             bili_id,
             bili_bin=self.settings.bili_bin,
+            ffmpeg_bin=self.settings.ffmpeg_bin,
             asr_model=self.settings.asr_model,
             audio_dir=self.settings.audio_dir,
             timeout=self.settings.subprocess_timeout,

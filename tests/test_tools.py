@@ -176,12 +176,10 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("bili_get_user_videos", names)
         self.assertIn("bili_transcribe", names)
         self.assertIn("bili_transcribe_full", names)
-        self.assertIn("youtube_transcribe", names)
-        self.assertIn("youtube_transcribe_full", names)
+        self.assertNotIn("youtube_transcribe", names)
+        self.assertNotIn("youtube_transcribe_full", names)
         self.assertIn("xhs_read_cmt", names)
         self.assertIn("xhs_transcribe_full", names)
-        self.assertEqual(names.count("youtube_transcribe"), 1)
-        self.assertEqual(names.count("youtube_transcribe_full"), 1)
         self.assertEqual(names.count("xhs_read_cmt"), 1)
         self.assertEqual(names.count("xhs_transcribe_full"), 1)
         self.assertIn("gen_img", names)
@@ -248,11 +246,13 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(spec["function"]["parameters"]["required"], ["bili_id", "query"])
         self.assertIn("query", spec["function"]["parameters"]["properties"])
 
-    def test_youtube_transcribe_spec_requires_query(self) -> None:
+    def test_youtube_transcribe_is_not_callable(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
-        spec = next(item for item in toolset.specs() if item["function"]["name"] == "youtube_transcribe")
-        self.assertEqual(spec["function"]["parameters"]["required"], ["url", "query"])
-        self.assertIn("query", spec["function"]["parameters"]["properties"])
+        result = toolset.call(
+            "youtube_transcribe",
+            {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "query": "summarize"},
+        )
+        self.assertIn("unknown tool", result)
 
     def test_web_search_missing_binary_returns_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -1736,11 +1736,19 @@ class ToolsetTests(unittest.TestCase):
                 "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
                 "transcript": "line one",
             },
-        ):
+        ) as transcribe_mock:
             result = toolset.bili_transcribe_full("https://www.bilibili.com/video/BV1cgPSzeEj5")
         self.assertTrue(result["ok"])
         self.assertEqual(result["tool"], "bili_transcribe_full")
         self.assertEqual(result["data"]["transcript"], "line one")
+        transcribe_mock.assert_called_once_with(
+            "https://www.bilibili.com/video/BV1cgPSzeEj5",
+            bili_bin=toolset.settings.bili_bin,
+            ffmpeg_bin=toolset.settings.ffmpeg_bin,
+            asr_model=toolset.settings.asr_model,
+            audio_dir=toolset.settings.audio_dir,
+            timeout=toolset.settings.subprocess_timeout,
+        )
 
     def test_bili_transcribe_invalid_bili_id_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

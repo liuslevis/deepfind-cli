@@ -202,10 +202,12 @@ def ensure_youtube_audio_segments(
     if proc.returncode != 0:
         message = (proc.stderr or proc.stdout).strip() or "yt-dlp download failed."
         if "Sign in to confirm" in message or "LOGIN_REQUIRED" in message:
+            browser = cookies_from_browser.strip() if cookies_from_browser else "chrome"
             message += (
                 "\n\nThis video requires YouTube authentication. "
-                "Export cookies with: python scripts/export_yt_cookies.py "
-                "then set YTDLP_COOKIES=/path/to/yt_cookies.txt in .env"
+                f"Set YTDLP_COOKIES_FROM_BROWSER={browser} in .env and close the browser while "
+                "yt-dlp reads its cookie database, or export a Netscape-format cookies.txt "
+                "file and set YTDLP_COOKIES to its path."
             )
         raise YouTubeDownloadError(message[:4000])
 
