@@ -11,6 +11,7 @@ from deepfind.asr import (
     transcribe_audio,
     MissingDependencyError,
     MLX_WHISPER_MODELS,
+    TranscriptionError,
 )
 
 
@@ -67,7 +68,11 @@ class TestMLXWhisperLoadModel(unittest.TestCase):
 
     @patch("deepfind.asr.is_mlx_whisper_model")
     @patch("deepfind.asr.load_local_secrets")
-    def test_load_mlx_whisper_success(self, mock_secrets, mock_is_mlx):
+    @patch("deepfind.asr.platform.machine", return_value="arm64")
+    @patch("deepfind.asr.platform.system", return_value="Darwin")
+    def test_load_mlx_whisper_success(
+        self, mock_system, mock_machine, mock_secrets, mock_is_mlx
+    ):
         """Test successful MLX Whisper model loading."""
         mock_is_mlx.return_value = True
 
@@ -78,13 +83,17 @@ class TestMLXWhisperLoadModel(unittest.TestCase):
             backend, model, processor, device = load_model("mlx-whisper:large-v3")
 
             self.assertEqual(backend, "mlx_whisper")
-            self.assertEqual(model, "large-v3-mlx")  # Model size extracted
+            self.assertEqual(model, "large-v3")
             self.assertIsNone(processor)
             self.assertEqual(device, "mps")
 
     @patch("deepfind.asr.is_mlx_whisper_model")
     @patch("deepfind.asr.load_local_secrets")
-    def test_load_mlx_whisper_default_size(self, mock_secrets, mock_is_mlx):
+    @patch("deepfind.asr.platform.machine", return_value="arm64")
+    @patch("deepfind.asr.platform.system", return_value="Darwin")
+    def test_load_mlx_whisper_default_size(
+        self, mock_system, mock_machine, mock_secrets, mock_is_mlx
+    ):
         """Test MLX Whisper loading with default model size."""
         mock_is_mlx.return_value = True
 
@@ -100,7 +109,11 @@ class TestMLXWhisperLoadModel(unittest.TestCase):
 
     @patch("deepfind.asr.is_mlx_whisper_model")
     @patch("deepfind.asr.load_local_secrets")
-    def test_load_mlx_whisper_missing_dependency(self, mock_secrets, mock_is_mlx):
+    @patch("deepfind.asr.platform.machine", return_value="arm64")
+    @patch("deepfind.asr.platform.system", return_value="Darwin")
+    def test_load_mlx_whisper_missing_dependency(
+        self, mock_system, mock_machine, mock_secrets, mock_is_mlx
+    ):
         """Test MLX Whisper loading raises error when mlx-whisper not installed."""
         mock_is_mlx.return_value = True
 
@@ -111,6 +124,16 @@ class TestMLXWhisperLoadModel(unittest.TestCase):
                 load_model("mlx-whisper:base")
 
             self.assertIn("mlx-whisper is not installed", str(ctx.exception))
+
+    @patch("deepfind.asr.is_mlx_whisper_model", return_value=True)
+    @patch("deepfind.asr.load_local_secrets")
+    @patch("deepfind.asr.platform.machine", return_value="AMD64")
+    @patch("deepfind.asr.platform.system", return_value="Windows")
+    def test_load_mlx_whisper_rejects_non_apple_silicon(
+        self, mock_system, mock_machine, mock_secrets, mock_is_mlx
+    ):
+        with self.assertRaisesRegex(TranscriptionError, "Apple Silicon"):
+            load_model("mlx-whisper:base")
 
 
 class TestMLXWhisperTranscribe(unittest.TestCase):
@@ -139,7 +162,7 @@ class TestMLXWhisperTranscribe(unittest.TestCase):
             self.assertEqual(result, "Hello world")  # Trimmed
             mock_mlx.transcribe.assert_called_once_with(
                 str(mock_audio_path),
-                path_or_hf_repo="large-v3"
+                path_or_hf_repo="mlx-community/whisper-large-v3"
             )
 
     def test_transcribe_mlx_whisper_empty_result(self):

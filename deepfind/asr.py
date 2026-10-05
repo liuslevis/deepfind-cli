@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 from collections.abc import Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -73,22 +74,9 @@ def load_local_secrets() -> None:
             os.environ[key] = value
 
 
-def _gpu_available() -> bool:
-    try:
-        import torch
-    except ImportError:
-        return False
-    return bool(torch.cuda.is_available())
-
-
 @contextmanager
 def gpu_asr_slot():
-    if not _gpu_available():
-        yield
-        return
-
-    # Serialize GPU ASR jobs so concurrent requests queue instead of competing
-    # for VRAM and model-load resources.
+    # Every supported backend uses GPU acceleration, so serialize all ASR jobs.
     _GPU_ASR_SEMAPHORE.acquire()
     try:
         yield
@@ -165,6 +153,10 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
 
     # MLX Whisper backend for Apple Silicon
     if is_mlx_whisper_model(model_name):
+        if platform.system() != "Darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
+            raise TranscriptionError(
+                "MLX Whisper ASR requires an Apple Silicon Mac with MLX/Metal support."
+            )
         try:
             import mlx_whisper
         except ImportError as exc:
@@ -187,12 +179,14 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
             "ASR dependencies are missing. Install with: uv sync --extra media"
         ) from exc
 
-    if torch.cuda.is_available():
-        device = "cuda"
-        dtype = torch.float16
-    else:
-        device = "cpu"
-        dtype = torch.float32
+    if not torch.cuda.is_available():
+        raise TranscriptionError(
+            "CUDA ASR requires an NVIDIA GPU and a CUDA-enabled PyTorch build; "
+            f"installed torch reports CUDA {torch.version.cuda or 'unavailable'}."
+        )
+
+    device = "cuda"
+    dtype = torch.float16
 
     source = resolve_model_source(model_name)
     if source != model_name:
@@ -213,8 +207,8 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
             try:
                 model = Qwen3ASRModel.from_pretrained(
                     source,
-                    dtype=torch.bfloat16 if device == "cuda" else torch.float32,
-                    device_map="cuda:0" if device == "cuda" else "cpu",
+                    dtype=torch.bfloat16,
+                    device_map="cuda:0",
                 )
             except Exception as exc:
                 raise TranscriptionError(f"Failed to load ASR model '{model_name}': {exc}") from exc
@@ -223,7 +217,7 @@ def load_model(model_name: str) -> tuple[str, Any, Any, str]:
         try:
             model = QwenASR.from_pretrained(
                 source,
-                torch_dtype="bfloat16" if device == "cuda" else "float32",
+                torch_dtype="bfloat16",
                 device=device,
             )
         except Exception as exc:

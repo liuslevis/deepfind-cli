@@ -42,7 +42,15 @@ uv run -m deepfind.cli --list-tools
 Install everything needed for local GPU mode, browser fetch, and Bilibili ASR in one setup step:
 
 ```bash
-uv sync --extra media --extra browser --extra local-llm --extra-index-url https://mirrors.aliyun.com/pytorch-wheels/torch_stable.html
+uv sync --extra media --extra browser --extra local-llm
+```
+
+On Windows and Linux, the `media` extra installs the CUDA 13.0 builds of PyTorch
+and torchaudio from the Aliyun mirror. Other Python packages also use the
+Aliyun PyPI mirror. Verify CUDA before starting a long transcription:
+
+```bash
+uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 ```
 
 Install `opencli` for web search and video download:

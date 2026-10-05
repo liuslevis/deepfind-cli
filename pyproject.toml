@@ -30,14 +30,21 @@ media = [
   "librosa>=0.10.0",
   "mlx-whisper>=0.4.0; sys_platform == 'darwin'",
   "qwen-asr",
-  "torch>=2.0.0",
-  "torchaudio>=2.0.0",
+  "torch==2.11.0+cu130; sys_platform == 'win32' or sys_platform == 'linux'",
+  "torch>=2.0.0; sys_platform == 'darwin'",
+  "torchaudio==2.11.0+cu130; sys_platform == 'win32' or sys_platform == 'linux'",
+  "torchaudio>=2.0.0; sys_platform == 'darwin'",
   "transformers>=4.37.0",
 ]
 
 [[tool.uv.index]]
-url = "https://pypi.org/simple"
+url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
+
+[tool.uv]
+find-links = [
+  "https://mirrors.aliyun.com/pytorch-wheels/cu130/",
+]
 
 [project.scripts]
 deepfind = "deepfind.cli:main"

@@ -207,20 +207,10 @@ class BiliTranscribeTests(unittest.TestCase):
         slot.__enter__.assert_called_once()
         slot.__exit__.assert_called_once()
 
-    def test_gpu_asr_slot_skips_semaphore_without_gpu(self) -> None:
+    def test_gpu_asr_slot_acquires_and_releases(self) -> None:
         semaphore = MagicMock()
-        with patch("deepfind.asr._gpu_available", return_value=False):
-            with patch.object(asr, "_GPU_ASR_SEMAPHORE", semaphore):
-                with gpu_asr_slot():
-                    pass
-        semaphore.acquire.assert_not_called()
-        semaphore.release.assert_not_called()
-
-    def test_gpu_asr_slot_acquires_and_releases_with_gpu(self) -> None:
-        semaphore = MagicMock()
-        with patch("deepfind.asr._gpu_available", return_value=True):
-            with patch.object(asr, "_GPU_ASR_SEMAPHORE", semaphore):
-                with gpu_asr_slot():
-                    pass
+        with patch.object(asr, "_GPU_ASR_SEMAPHORE", semaphore):
+            with gpu_asr_slot():
+                pass
         semaphore.acquire.assert_called_once()
         semaphore.release.assert_called_once()
