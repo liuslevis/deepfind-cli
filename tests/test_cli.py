@@ -6,10 +6,10 @@ import unittest
 from contextlib import redirect_stdout
 from dataclasses import replace
 from itertools import count
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from deepfind.config import Settings, DEFAULT_LOCAL_MODEL
-from deepfind.cli import main
+from deepfind.cli import _configure_utf8_stdio, main
 
 
 class NonTtyStringIO(io.StringIO):
@@ -23,6 +23,15 @@ class TtyStringIO(io.StringIO):
 
 
 class CliTests(unittest.TestCase):
+    def test_configure_utf8_stdio_reconfigures_only_system_stream(self) -> None:
+        system_stream = Mock()
+        _configure_utf8_stdio(system_stream, system_stream)
+        system_stream.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+
+        injected_stream = Mock()
+        _configure_utf8_stdio(injected_stream, system_stream)
+        injected_stream.reconfigure.assert_not_called()
+
     def test_list_tools_prints_tools_without_initializing_app(self) -> None:
         with patch("deepfind.cli.DeepFind") as app_cls:
             stdout = io.StringIO()

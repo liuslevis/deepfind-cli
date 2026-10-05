@@ -80,6 +80,14 @@ def _isatty(stream: TextIO) -> bool:
     return bool(getattr(stream, "isatty", lambda: False)())
 
 
+def _configure_utf8_stdio(stream: TextIO, system_stream: TextIO) -> None:
+    if stream is not system_stream:
+        return
+    reconfigure = getattr(stream, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="replace")
+
+
 def _should_enter_chat_mode(args: argparse.Namespace, stdin: TextIO, stdout: TextIO) -> bool:
     return not args.once and not args.json and _isatty(stdin) and _isatty(stdout)
 
@@ -133,6 +141,8 @@ def main(
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
+    _configure_utf8_stdio(stdout, sys.stdout)
+    _configure_utf8_stdio(stderr, sys.stderr)
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.list_tools:

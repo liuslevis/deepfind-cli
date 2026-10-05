@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from subprocess import CompletedProcess
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +21,48 @@ from deepfind.bili_transcribe import (
 
 
 class BiliTranscribeTests(unittest.TestCase):
+    def test_concurrent_requests_transcribe_same_video_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            segment = root / "BV1cgPSzeEj5" / "seg_000.wav"
+            segment.parent.mkdir(parents=True)
+            segment.write_bytes(b"audio")
+            transcription_started = Event()
+            release_transcription = Event()
+
+            def transcribe(*args: object, **kwargs: object) -> str:
+                transcription_started.set()
+                release_transcription.wait(timeout=2)
+                return "shared transcript"
+
+            with patch(
+                "deepfind.bili_transcribe.ensure_segments",
+                return_value=[segment],
+            ) as ensure_mock:
+                with patch(
+                    "deepfind.bili_transcribe.transcribe_segments",
+                    side_effect=transcribe,
+                ) as transcribe_mock:
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        first = pool.submit(
+                            transcribe_bili_audio,
+                            "BV1cgPSzeEj5",
+                            audio_dir=temp_dir,
+                        )
+                        self.assertTrue(transcription_started.wait(timeout=2))
+                        second = pool.submit(
+                            transcribe_bili_audio,
+                            "BV1cgPSzeEj5",
+                            audio_dir=temp_dir,
+                        )
+                        release_transcription.set()
+                        futures = [first, second]
+                        results = [future.result(timeout=5) for future in futures]
+
+            self.assertEqual([result["transcript"] for result in results], ["shared transcript"] * 2)
+            ensure_mock.assert_called_once()
+            transcribe_mock.assert_called_once()
+
     def test_parse_bili_id_accepts_bvid(self) -> None:
         self.assertEqual(parse_bili_id("BV1cgPSzeEj5"), "BV1cgPSzeEj5")
 

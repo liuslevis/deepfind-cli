@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from threading import Lock
 
 from .asr import (
     AUDIO_SUFFIXES,
@@ -23,6 +24,8 @@ from .asr import (
 from .youtube_audio_transcribe import resolve_ffmpeg_bin
 
 BVID_PATTERN = re.compile(r"(BV[0-9A-Za-z]{10})")
+_TRANSCRIPTION_LOCKS: dict[str, Lock] = {}
+_TRANSCRIPTION_LOCKS_GUARD = Lock()
 
 
 class BiliTranscribeError(RuntimeError):
@@ -111,6 +114,11 @@ def load_cached_transcript(audio_root: Path, bili_id: str) -> tuple[Path, str] |
     if transcript is None:
         return None
     return candidate, transcript
+
+
+def _transcription_lock(bili_id: str) -> Lock:
+    with _TRANSCRIPTION_LOCKS_GUARD:
+        return _TRANSCRIPTION_LOCKS.setdefault(bili_id, Lock())
 
 
 def ensure_segments(
@@ -218,24 +226,33 @@ def transcribe_bili_audio(
             "transcript": transcript,
         }
 
-    audio_dir_path = audio_root / resolved_id
+    with _transcription_lock(resolved_id):
+        cached = load_cached_transcript(audio_root, resolved_id)
+        if cached:
+            transcript_path, transcript = cached
+            return {
+                "bili_id": resolved_id,
+                "transcript_path": str(transcript_path),
+                "transcript": transcript,
+            }
 
-    segments = ensure_segments(
-        resolved_id,
-        output_dir=audio_dir_path,
-        bili_bin=bili_bin,
-        timeout=timeout,
-        ffmpeg_bin=ffmpeg_bin,
-    )
-    transcript = transcribe_segments(segments, asr_model=asr_model)
+        audio_dir_path = audio_root / resolved_id
+        segments = ensure_segments(
+            resolved_id,
+            output_dir=audio_dir_path,
+            bili_bin=bili_bin,
+            timeout=timeout,
+            ffmpeg_bin=ffmpeg_bin,
+        )
+        transcript = transcribe_segments(segments, asr_model=asr_model)
 
-    transcript_path = audio_root / "transcripts" / f"{resolved_id}.txt"
-    write_text(transcript_path, transcript)
-    return {
-        "bili_id": resolved_id,
-        "transcript_path": str(transcript_path),
-        "transcript": transcript,
-    }
+        transcript_path = audio_root / "transcripts" / f"{resolved_id}.txt"
+        write_text(transcript_path, transcript)
+        return {
+            "bili_id": resolved_id,
+            "transcript_path": str(transcript_path),
+            "transcript": transcript,
+        }
 
 
 __all__ = [
