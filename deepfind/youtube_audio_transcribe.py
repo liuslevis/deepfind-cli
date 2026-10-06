@@ -17,6 +17,7 @@ from .asr import (
     write_text,
 )
 from .youtube_transcribe import InvalidYouTubeIdError, parse_youtube_id
+from .video_resources import video_resource_paths
 
 
 class YouTubeAudioTranscribeError(RuntimeError):
@@ -28,7 +29,7 @@ class YouTubeDownloadError(YouTubeAudioTranscribeError):
 
 
 def resolve_youtube_audio_transcript_path(audio_root: Path, youtube_id: str) -> Path:
-    return audio_root / "transcripts" / "youtube_audio" / f"{youtube_id}.txt"
+    return video_resource_paths(audio_root, "youtube", youtube_id).transcript
 
 
 def load_cached_youtube_audio_transcript(audio_root: Path, youtube_id: str) -> tuple[Path, str] | None:
@@ -40,7 +41,7 @@ def load_cached_youtube_audio_transcript(audio_root: Path, youtube_id: str) -> t
 
 
 def store_youtube_audio_transcript(audio_root: Path, youtube_id: str, transcript: str) -> Path:
-    path = resolve_youtube_audio_transcript_path(audio_root, youtube_id)
+    path = video_resource_paths(audio_root, "youtube", youtube_id, create=True).transcript
     write_text(path, transcript)
     return path
 
@@ -291,10 +292,10 @@ def transcribe_youtube_audio(
             "transcript": transcript,
         }
 
-    audio_dir_path = audio_root / "youtube" / youtube_id
+    resources = video_resource_paths(audio_root, "youtube", youtube_id, create=True)
     segments = ensure_youtube_audio_segments(
         youtube_id,
-        output_dir=audio_dir_path,
+        output_dir=resources.audio,
         ytdlp_bin=ytdlp_bin,
         ffmpeg_bin=ffmpeg_bin,
         timeout=timeout,

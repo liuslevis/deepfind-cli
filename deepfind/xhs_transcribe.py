@@ -15,6 +15,7 @@ from .asr import (
     write_text,
 )
 from .youtube_audio_transcribe import resolve_ffmpeg_bin
+from .video_resources import video_resource_paths
 
 
 class XhsTranscribeError(RuntimeError):
@@ -30,7 +31,7 @@ class XhsDownloadError(XhsTranscribeError):
 
 
 def resolve_xhs_transcript_path(audio_root: Path, note_id: str) -> Path:
-    return audio_root / "transcripts" / "xhs" / f"{note_id}.txt"
+    return video_resource_paths(audio_root, "xhs", note_id).transcript
 
 
 def load_cached_xhs_transcript(audio_root: Path, note_id: str) -> tuple[Path, str] | None:
@@ -42,7 +43,7 @@ def load_cached_xhs_transcript(audio_root: Path, note_id: str) -> tuple[Path, st
 
 
 def store_xhs_transcript(audio_root: Path, note_id: str, transcript: str) -> Path:
-    path = resolve_xhs_transcript_path(audio_root, note_id)
+    path = video_resource_paths(audio_root, "xhs", note_id, create=True).transcript
     write_text(path, transcript)
     return path
 
@@ -144,11 +145,11 @@ def transcribe_xhs_video(
             "transcript": transcript,
         }
 
-    audio_dir_path = audio_root / "xhs" / resolved_note_id
+    resources = video_resource_paths(audio_root, "xhs", resolved_note_id, create=True)
     segments = ensure_xhs_audio_segments(
         resolved_note_id,
         video_url,
-        output_dir=audio_dir_path,
+        output_dir=resources.audio,
         ffmpeg_bin=ffmpeg_bin,
         timeout=timeout,
     )

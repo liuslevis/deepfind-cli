@@ -160,7 +160,7 @@ TWITTER_CLI_BIN=twitter
 XHS_CLI_BIN=xhs
 BILI_BIN=bili
 ASR_MODEL=Qwen/Qwen3-ASR-1.7B
-DEEPFIND_AUDIO_DIR=audio
+DEEPFIND_VIDEO_DIR=video
 DEEPFIND_TOOL_TIMEOUT=90
 GOOGLE_NANO_BANANA_API_KEY=...
 GOOGLE_NANO_BANANA_MODEL=gemini-3.1-flash-image-preview
@@ -372,10 +372,18 @@ uv tool install "bilibili-cli[audio]"
 bili status
 ```
 
-Artifacts:
+Artifacts for Bilibili, YouTube, and Xiaohongshu are grouped by platform and
+video ID:
 
-- Bilibili segments: `audio/<BVID>/seg_*`
-- Bilibili transcript: `audio/transcripts/<BVID>.txt`
+```text
+video/
+  <bili|youtube|xhs>/
+    <video_id>/
+      audio/
+      video/
+      text/
+        transcript.txt
+```
 
 ## Test
 

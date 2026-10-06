@@ -22,6 +22,7 @@ from .asr import (
     write_text,
 )
 from .youtube_audio_transcribe import resolve_ffmpeg_bin
+from .video_resources import video_resource_paths
 
 BVID_PATTERN = re.compile(r"(BV[0-9A-Za-z]{10})")
 _TRANSCRIPTION_LOCKS: dict[str, Lock] = {}
@@ -109,7 +110,7 @@ def find_source_audio(root: Path) -> Path | None:
 
 
 def load_cached_transcript(audio_root: Path, bili_id: str) -> tuple[Path, str] | None:
-    candidate = audio_root / "transcripts" / f"{bili_id}.txt"
+    candidate = video_resource_paths(audio_root, "bili", bili_id).transcript
     transcript = load_text(candidate)
     if transcript is None:
         return None
@@ -236,17 +237,17 @@ def transcribe_bili_audio(
                 "transcript": transcript,
             }
 
-        audio_dir_path = audio_root / resolved_id
+        resources = video_resource_paths(audio_root, "bili", resolved_id, create=True)
         segments = ensure_segments(
             resolved_id,
-            output_dir=audio_dir_path,
+            output_dir=resources.audio,
             bili_bin=bili_bin,
             timeout=timeout,
             ffmpeg_bin=ffmpeg_bin,
         )
         transcript = transcribe_segments(segments, asr_model=asr_model)
 
-        transcript_path = audio_root / "transcripts" / f"{resolved_id}.txt"
+        transcript_path = resources.transcript
         write_text(transcript_path, transcript)
         return {
             "bili_id": resolved_id,

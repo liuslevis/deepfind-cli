@@ -91,7 +91,7 @@ class ConfigTests(unittest.TestCase):
             "XHS_CLI_BIN": "xhs # comment",
             "BILI_BIN": "bili # comment",
             "ASR_MODEL": "Qwen/Qwen3-ASR-1.7B # comment",
-            "DEEPFIND_AUDIO_DIR": "audio # comment",
+            "DEEPFIND_VIDEO_DIR": "video # comment",
             "DEEPFIND_TOOL_TIMEOUT": "45 # comment",
         }
         with patch.dict(os.environ, env, clear=True):
@@ -117,7 +117,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.xhs_bin, "xhs")
         self.assertEqual(settings.bili_bin, "bili")
         self.assertEqual(settings.asr_model, "Qwen/Qwen3-ASR-1.7B")
-        self.assertEqual(settings.audio_dir, "audio")
+        self.assertEqual(settings.audio_dir, "video")
         self.assertEqual(settings.subprocess_timeout, 45)
 
     def test_from_env_qwen_sub_model_defaults_to_lead_model(self) -> None:
@@ -164,7 +164,7 @@ class ConfigTests(unittest.TestCase):
                         "XHS_CLI_BIN=xhs",
                         "BILI_BIN=bili",
                         "ASR_MODEL=Qwen/Qwen3-ASR-1.7B",
-                        "DEEPFIND_AUDIO_DIR=audio",
+                        "DEEPFIND_VIDEO_DIR=video",
                         "DEEPFIND_TOOL_TIMEOUT=30",
                     ]
                 )
@@ -189,7 +189,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.image_size, DEFAULT_IMAGE_SIZE)
         self.assertEqual(settings.opencli_bin, "opencli-dotenv")
         self.assertEqual(settings.bili_bin, "bili")
-        self.assertEqual(settings.audio_dir, "audio")
+        self.assertEqual(settings.audio_dir, "video")
         self.assertEqual(settings.subprocess_timeout, 30)
 
     def test_from_env_falls_back_to_mimo_when_qwen_is_missing(self) -> None:

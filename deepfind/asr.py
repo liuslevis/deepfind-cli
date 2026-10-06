@@ -13,7 +13,6 @@ from typing import Any
 DEFAULT_ASR_MODEL = "Qwen/Qwen3-ASR-1.7B"
 SEGMENT_SECONDS = 300
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac"}
-REPO_ROOT = Path(__file__).resolve().parent.parent
 _GPU_ASR_SEMAPHORE = Semaphore(1)
 
 # Supported model prefixes for different backends
@@ -36,11 +35,9 @@ class TranscriptionError(RuntimeError):
 
 
 def resolve_audio_root(audio_dir: str | None) -> Path:
-    raw = (audio_dir or "audio").strip() or "audio"
-    path = Path(raw).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    return path
+    from .video_resources import resolve_video_root
+
+    return resolve_video_root(audio_dir)
 
 
 def load_text(path: Path) -> str | None:

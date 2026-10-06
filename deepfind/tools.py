@@ -39,6 +39,7 @@ from .transcript_summary import (
     TranscriptSummaryError,
     summarize_transcript_for_query,
 )
+from .video_resources import video_resource_paths
 from .web_fetch import (
     WebFetchError,
     fetch_web_document,
@@ -2864,9 +2865,10 @@ class Toolset:
             timeout=self.settings.subprocess_timeout,
         )
 
-    def _summary_cache_path(self, audio_root: Path, namespace: str, item_id: str, query: str) -> Path:
+    def _summary_cache_path(self, audio_root: Path, platform: str, item_id: str, query: str) -> Path:
         digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
-        return audio_root / "transcripts" / namespace / item_id / f"{digest}.json"
+        resources = video_resource_paths(audio_root, platform, item_id, create=True)
+        return resources.text / "summaries" / f"{digest}.json"
 
     def _load_cached_summary(
         self,
@@ -2935,7 +2937,7 @@ class Toolset:
             return
 
     def _bili_summary_cache_path(self, audio_root: Path, bili_id: str, query: str) -> Path:
-        return self._summary_cache_path(audio_root, "bili_summary", bili_id, query)
+        return self._summary_cache_path(audio_root, "bili", bili_id, query)
 
     def _load_cached_bili_summary(
         self,
@@ -2978,7 +2980,7 @@ class Toolset:
         self._store_cached_summary(cache_path, payload)
 
     def _youtube_audio_summary_cache_path(self, audio_root: Path, youtube_id: str, query: str) -> Path:
-        return self._summary_cache_path(audio_root, "youtube_audio_summary", youtube_id, query)
+        return self._summary_cache_path(audio_root, "youtube", youtube_id, query)
 
     def _load_cached_youtube_audio_summary(
         self,

@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .asr import load_text, resolve_audio_root, write_text
+from .video_resources import video_resource_paths
 
 
 YOUTUBE_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]{11}$")
@@ -63,7 +64,7 @@ def _extract_youtube_id(parsed: Any) -> str:
 
 
 def resolve_youtube_transcript_path(audio_root: Path, youtube_id: str) -> Path:
-    return audio_root / "transcripts" / "youtube" / f"{youtube_id}.txt"
+    return video_resource_paths(audio_root, "youtube", youtube_id).transcript
 
 
 def load_cached_youtube_transcript(audio_root: Path, youtube_id: str) -> tuple[Path, str] | None:
@@ -75,7 +76,7 @@ def load_cached_youtube_transcript(audio_root: Path, youtube_id: str) -> tuple[P
 
 
 def store_youtube_transcript(audio_root: Path, youtube_id: str, transcript: str) -> Path:
-    path = resolve_youtube_transcript_path(audio_root, youtube_id)
+    path = video_resource_paths(audio_root, "youtube", youtube_id, create=True).transcript
     write_text(path, transcript)
     return path
 

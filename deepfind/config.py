@@ -144,7 +144,7 @@ class Settings:
     ytdlp_extractor_args: str | None = "youtube:player_client=web;fetch_pot=always"
     ffmpeg_bin: str = "ffmpeg"
     asr_model: str = DEFAULT_ASR_MODEL
-    audio_dir: str = "audio"
+    audio_dir: str = "video"
     subprocess_timeout: int = 90
     rag_mcp_command: str = "uv"
     rag_mcp_project_dir: str = "../deepfind-rag"
@@ -376,7 +376,7 @@ class Settings:
             ),
             ffmpeg_bin=_env("FFMPEG_BIN", "ffmpeg") or "ffmpeg",
             asr_model=cls._resolve_asr_model(),
-            audio_dir=_env("DEEPFIND_AUDIO_DIR", "audio") or "audio",
+            audio_dir=_env("DEEPFIND_VIDEO_DIR", "video") or "video",
             subprocess_timeout=int(timeout or "90"),
             rag_mcp_command=_env("DEEPFIND_RAG_MCP_COMMAND", "uv") or "uv",
             rag_mcp_project_dir=(

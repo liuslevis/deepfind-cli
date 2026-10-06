@@ -75,8 +75,8 @@ class BiliTranscribeTests(unittest.TestCase):
             parse_bili_id("https://example.com/not-bilibili")
 
     def test_resolve_audio_root_uses_repo_relative_default(self) -> None:
-        path = resolve_audio_root("audio")
-        self.assertEqual(path.name, "audio")
+        path = resolve_audio_root(None)
+        self.assertEqual(path.name, "video")
         self.assertTrue(path.is_absolute())
 
     def test_ensure_segments_reuses_existing_segments(self) -> None:
@@ -158,14 +158,20 @@ class BiliTranscribeTests(unittest.TestCase):
                 transcript_path.read_text(encoding="utf-8"),
                 "first line\nsecond line\n",
             )
+            self.assertEqual(
+                transcript_path,
+                tmp_path / "bili" / "BV1cgPSzeEj5" / "text" / "transcript.txt",
+            )
+            self.assertTrue((tmp_path / "bili" / "BV1cgPSzeEj5" / "audio").is_dir())
+            self.assertTrue((tmp_path / "bili" / "BV1cgPSzeEj5" / "video").is_dir())
             self.assertFalse((tmp_path / "transcripts" / "summary.txt").exists())
 
     def test_transcribe_bili_audio_uses_cached_transcript_and_skips_pipeline(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            transcript_dir = tmp_path / "transcripts"
+            transcript_dir = tmp_path / "bili" / "BV1cgPSzeEj5" / "text"
             transcript_dir.mkdir(parents=True, exist_ok=True)
-            cached_path = transcript_dir / "BV1cgPSzeEj5.txt"
+            cached_path = transcript_dir / "transcript.txt"
             cached_path.write_text("cached line\n", encoding="utf-8")
 
             with patch("deepfind.bili_transcribe.ensure_segments") as ensure_mock:

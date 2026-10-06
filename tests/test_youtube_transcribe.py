@@ -50,3 +50,9 @@ class YouTubeTranscribeTests(unittest.TestCase):
             self.assertEqual(cached_path, stored)
             self.assertEqual(transcript, "cached line")
             self.assertEqual(stored.read_text(encoding="utf-8"), "cached line\n")
+            self.assertEqual(
+                stored,
+                audio_root / "youtube" / "dQw4w9WgXcQ" / "text" / "transcript.txt",
+            )
+            self.assertTrue((audio_root / "youtube" / "dQw4w9WgXcQ" / "audio").is_dir())
+            self.assertTrue((audio_root / "youtube" / "dQw4w9WgXcQ" / "video").is_dir())
