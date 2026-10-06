@@ -39,13 +39,13 @@ class FakeApp:
 
 
 class WebApiTests(unittest.TestCase):
-    def test_default_app_disables_container_workspace(self) -> None:
+    def test_default_app_enables_configured_container_workspace(self) -> None:
         with patch("deepfind.web_api.DeepFindWebService") as service_class:
             service = service_class.return_value
 
             app = build_app()
 
-        service_class.assert_called_once_with(enable_workspace=False)
+        service_class.assert_called_once_with(enable_workspace=True)
         self.assertIs(app.state.service, service)
 
     def test_chat_endpoints_and_stream(self) -> None:

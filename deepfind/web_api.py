@@ -110,7 +110,7 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
         )
 
     app.add_middleware(SecurityHeadersMiddleware)
-    app.state.service = service or DeepFindWebService(enable_workspace=False)
+    app.state.service = service or DeepFindWebService(enable_workspace=True)
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
