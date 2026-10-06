@@ -11,4 +11,5 @@ web/coverage/
 web/*.tsbuildinfo
 slide
 audio
+video
 sandbox/
