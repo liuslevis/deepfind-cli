@@ -95,6 +95,9 @@ function Invoke-SetupStep {
         Push-Location $repoRoot
         try {
             & uv sync --extra media --extra local-llm --extra browser
+            if ($LASTEXITCODE -ne 0) {
+                throw "uv sync failed with exit code $LASTEXITCODE."
+            }
 
             # Create sync marker
             $venvPath = Join-Path $repoRoot '.venv'
@@ -112,7 +115,7 @@ function Invoke-SetupStep {
     # Install Playwright browsers if playwright is available
     Push-Location $repoRoot
     try {
-        $playwrightCheck = & uv run python -c "import playwright" 2>$null
+        & uv run python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('playwright') else 1)"
         if ($LASTEXITCODE -eq 0) {
             $playwrightCache = Join-Path $env:USERPROFILE 'AppData\Local\ms-playwright'
             if (-not (Test-Path -Path "$playwrightCache\chromium-*")) {
@@ -138,6 +141,9 @@ function Invoke-SetupStep {
             }
             else {
                 & npm install
+            }
+            if ($LASTEXITCODE -ne 0) {
+                throw "npm dependency installation failed with exit code $LASTEXITCODE."
             }
 
             # Create sync marker
