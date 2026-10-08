@@ -12,6 +12,16 @@ import deepfind.asr as asr
 
 
 class ASRTests(unittest.TestCase):
+    def test_load_local_secrets_uses_repo_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secrets_path = Path(tmpdir) / ".secrets"
+            secrets_path.write_text("TEST_ASR_SECRET=loaded\n", encoding="utf-8")
+
+            with patch.object(asr, "REPO_ROOT", Path(tmpdir)):
+                with patch.dict(os.environ, {}, clear=True):
+                    asr.load_local_secrets()
+                    self.assertEqual(os.environ["TEST_ASR_SECRET"], "loaded")
+
     def test_resolve_model_source_uses_cached_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             hub_dir = Path(tmpdir) / "hub"

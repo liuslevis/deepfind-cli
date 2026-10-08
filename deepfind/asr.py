@@ -13,6 +13,7 @@ from typing import Any
 DEFAULT_ASR_MODEL = "Qwen/Qwen3-ASR-1.7B"
 SEGMENT_SECONDS = 300
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac"}
+REPO_ROOT = Path(__file__).resolve().parent.parent
 _GPU_ASR_SEMAPHORE = Semaphore(1)
 
 # Supported model prefixes for different backends
