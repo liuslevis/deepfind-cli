@@ -168,8 +168,8 @@ TWITTER_CLI_BIN=twitter
 XHS_CLI_BIN=xhs
 BILI_BIN=bili
 ASR_MODEL=Qwen/Qwen3-ASR-1.7B
-DEEPFIND_VIDEO_DIR=video
-DEEPFIND_RAG_DIR=.
+DEEPFIND_VIDEO_DIR=assets/video
+DEEPFIND_RAG_DIR=assets
 QDRANT_URL=http://127.0.0.1:6333
 QDRANT_COLLECTION=investment_kb
 DENSE_MODEL=intfloat/multilingual-e5-large
@@ -228,9 +228,10 @@ uv run -m deepfind.cli "same query"
 
 ### Local RAG knowledge base
 
-Place PDFs under `doc/pdf` and audio or video under `doc/media`. Parsed
-artifacts are written beside each source file. Set `DEEPFIND_RAG_DIR` when the
-knowledge-base files live outside this repository.
+Place PDFs under `assets/pdf` and RAG audio or video under `assets/media`.
+Downloaded video resources are stored under `assets/video`. Parsed artifacts
+are written beside each RAG source file. Set `DEEPFIND_RAG_DIR` when the
+knowledge-base root lives outside this repository.
 
 ```bash
 uv run deepfind rag ingest

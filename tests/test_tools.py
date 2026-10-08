@@ -201,7 +201,7 @@ class ToolsetTests(unittest.TestCase):
         response = {
             "query": "rates",
             "mode": "hybrid",
-            "results": [{"source": "doc/pdf/report.pdf", "page_start": 3}],
+            "results": [{"source": "pdf/report.pdf", "page_start": 3}],
         }
         with patch("deepfind.tools.search_rag", return_value=response) as search:
             result = toolset.rag_search(" rates ")
@@ -212,7 +212,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(result["data"], response)
         self.assertEqual(
             result["citations"],
-            ["rag://knowledge-base/doc/pdf/report.pdf?page_start=3"],
+            ["rag://knowledge-base/pdf/report.pdf?page_start=3"],
         )
 
     def test_rag_search_citation_includes_title_and_media_time_range(self) -> None:

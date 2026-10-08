@@ -10,7 +10,7 @@ from deepfind.video_resources import resolve_video_root, video_resource_paths
 class VideoResourceTests(unittest.TestCase):
     def test_resolve_video_root_uses_repo_relative_default(self) -> None:
         path = resolve_video_root(None)
-        self.assertEqual(path.name, "video")
+        self.assertEqual(path.parts[-2:], ("assets", "video"))
         self.assertTrue(path.is_absolute())
 
     def test_video_resource_paths_groups_all_asset_types_by_video_id(self) -> None:

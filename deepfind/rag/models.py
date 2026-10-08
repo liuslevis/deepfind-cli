@@ -21,8 +21,8 @@ Status = Literal[
 class SourceFile(BaseModel):
     """A discovered source file and its derived parsed directory."""
 
-    path: str  # POSIX path relative to repo root, e.g. doc/pdf/a/report.pdf
-    parsed_dir: str  # POSIX path relative to repo root, e.g. doc/pdf/a/report
+    path: str  # POSIX path relative to the RAG root, e.g. pdf/a/report.pdf
+    parsed_dir: str  # POSIX path relative to the RAG root, e.g. pdf/a/report
     source_type: SourceType
 
 

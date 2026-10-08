@@ -144,9 +144,9 @@ class Settings:
     ytdlp_extractor_args: str | None = "youtube:player_client=web;fetch_pot=always"
     ffmpeg_bin: str = "ffmpeg"
     asr_model: str = DEFAULT_ASR_MODEL
-    audio_dir: str = "video"
+    audio_dir: str = "assets/video"
     subprocess_timeout: int = 90
-    rag_dir: str = "."
+    rag_dir: str = "assets"
     coding_enabled: bool = False
     coding_runtime: str = "docker"
     coding_image: str = ""
@@ -375,12 +375,12 @@ class Settings:
             ),
             ffmpeg_bin=_env("FFMPEG_BIN", "ffmpeg") or "ffmpeg",
             asr_model=cls._resolve_asr_model(),
-            audio_dir=_env("DEEPFIND_VIDEO_DIR", "video") or "video",
+            audio_dir=_env("DEEPFIND_VIDEO_DIR", "assets/video") or "assets/video",
             subprocess_timeout=int(timeout or "90"),
             rag_dir=(
                 _env("DEEPFIND_RAG_DIR")
                 or _env("DEEPFIND_RAG_MCP_PROJECT_DIR")
-                or "."
+                or "assets"
             ),
             coding_enabled=coding_enabled,
             coding_runtime=coding_runtime,

@@ -21,7 +21,7 @@ class VideoResourcePaths:
 
 
 def resolve_video_root(video_dir: str | None) -> Path:
-    raw = (video_dir or "video").strip() or "video"
+    raw = (video_dir or "assets/video").strip() or "assets/video"
     path = Path(raw).expanduser()
     if not path.is_absolute():
         path = REPO_ROOT / path

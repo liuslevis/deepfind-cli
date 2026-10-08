@@ -12,5 +12,5 @@ def test_parsed_dir_removes_last_suffix(tmp_path: Path):
 def test_to_posix_rel_uses_forward_slashes():
     from deepfind.rag.config import REPO_ROOT
 
-    p = REPO_ROOT / "doc" / "pdf" / "x.pdf"
-    assert to_posix_rel(p, REPO_ROOT) == "doc/pdf/x.pdf"
+    p = REPO_ROOT / "assets" / "pdf" / "x.pdf"
+    assert to_posix_rel(p, REPO_ROOT / "assets") == "pdf/x.pdf"

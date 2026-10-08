@@ -383,7 +383,7 @@ class OrchestratorTests(unittest.TestCase):
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
         rag_citation = (
-            "rag://knowledge-base/doc/pdf/%E4%BB%8E%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5"
+            "rag://knowledge-base/pdf/%E4%BB%8E%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5"
             "%E7%9C%8B%E4%BA%A7%E4%B8%9A%E8%B6%8B%E5%8A%BF.pdf?page_start=2&page_end=3"
         )
         fake_reports = [
@@ -440,7 +440,7 @@ class OrchestratorTests(unittest.TestCase):
         settings = Settings(api_key="x")
         app = DeepFind(settings=settings)
         rag_citation = (
-            "rag://knowledge-base/doc/pdf/%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5.pdf"
+            "rag://knowledge-base/pdf/%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5.pdf"
             "?title=%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5&page_start=1"
         )
         fake_reports = [

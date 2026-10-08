@@ -140,14 +140,14 @@ class WebApiTests(unittest.TestCase):
     def test_rag_file_endpoint_downloads_document(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             project_dir = Path(temp_dir)
-            document = project_dir / "doc" / "pdf" / "腾讯财报.pdf"
+            document = project_dir / "pdf" / "腾讯财报.pdf"
             document.parent.mkdir(parents=True)
             document.write_bytes(b"pdf-content")
             service = DeepFindWebService(store=ChatStore(project_dir / "chats"))
             client = TestClient(build_app(service))
             settings = Settings(api_key="", rag_dir=str(project_dir))
             citation = (
-                "rag://knowledge-base/doc/pdf/"
+                "rag://knowledge-base/pdf/"
                 "%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5.pdf?page_start=1"
             )
 

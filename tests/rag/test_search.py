@@ -30,9 +30,9 @@ def test_path_traversal_rejected(service):
 
 def test_absolute_path_rejected(service):
     with pytest.raises(SearchError):
-        service.search("hello", path_prefix="/doc/pdf/x")
+        service.search("hello", path_prefix="/pdf/x")
 
 
-def test_path_prefix_must_be_under_doc(service):
+def test_path_prefix_must_be_under_rag_source_directories(service):
     with pytest.raises(SearchError):
         service.search("hello", path_prefix="other/dir")

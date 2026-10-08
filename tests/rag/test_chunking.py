@@ -9,7 +9,7 @@ def _pdf_content(body: str) -> str:
         tags=["china"],
         created="c",
         updated="u",
-        source="doc/pdf/report.pdf",
+        source="pdf/report.pdf",
         body=body,
     )
 
@@ -21,7 +21,7 @@ def _media_content(body: str) -> str:
         tags=["macro"],
         created="c",
         updated="u",
-        source="doc/media/lesson.mp4",
+        source="media/lesson.mp4",
         body=body,
     )
 
@@ -35,7 +35,7 @@ def test_pdf_chunks_carry_page_ranges():
     )
     chunks = chunk_content(
         _pdf_content(body),
-        source="doc/pdf/report.pdf",
+        source="pdf/report.pdf",
         source_type="pdf",
         source_sha256="abc",
     )
@@ -49,7 +49,7 @@ def test_media_chunks_carry_time_ranges():
     body = "<!-- time: 00:00:00-00:05:00 -->\n\n" + ("讲话内容。" * 200)
     chunks = chunk_content(
         _media_content(body),
-        source="doc/media/lesson.mp4",
+        source="media/lesson.mp4",
         source_type="video",
         source_sha256="xyz",
     )
@@ -62,13 +62,13 @@ def test_chunk_ids_stable_for_same_input():
     body = "<!-- page: 1 -->\n\n" + ("内容。" * 300)
     a = chunk_content(
         _pdf_content(body),
-        source="doc/pdf/report.pdf",
+        source="pdf/report.pdf",
         source_type="pdf",
         source_sha256="s1",
     )
     b = chunk_content(
         _pdf_content(body),
-        source="doc/pdf/report.pdf",
+        source="pdf/report.pdf",
         source_type="pdf",
         source_sha256="s1",
     )
@@ -79,13 +79,13 @@ def test_chunk_ids_change_with_sha():
     body = "<!-- page: 1 -->\n\n" + ("内容。" * 300)
     a = chunk_content(
         _pdf_content(body),
-        source="doc/pdf/report.pdf",
+        source="pdf/report.pdf",
         source_type="pdf",
         source_sha256="s1",
     )
     b = chunk_content(
         _pdf_content(body),
-        source="doc/pdf/report.pdf",
+        source="pdf/report.pdf",
         source_type="pdf",
         source_sha256="s2",
     )
@@ -96,7 +96,7 @@ def test_short_content_skipped():
     body = "<!-- page: 1 -->\n\ntiny"
     chunks = chunk_content(
         _pdf_content(body),
-        source="doc/pdf/report.pdf",
+        source="pdf/report.pdf",
         source_type="pdf",
         source_sha256="s",
     )

@@ -31,6 +31,8 @@ class ConfigTests(unittest.TestCase):
         ):
             settings = Settings.from_env(require_api_key=False)
         self.assertFalse(settings.coding_enabled)
+        self.assertEqual(settings.audio_dir, "assets/video")
+        self.assertEqual(settings.rag_dir, "assets")
         self.assertEqual(settings.coding_runtime, "docker")
         self.assertEqual(settings.coding_root, "sandbox")
         self.assertEqual(settings.coding_timeout, 120)

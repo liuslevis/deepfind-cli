@@ -177,7 +177,7 @@ class ResponseAgentTests(unittest.TestCase):
         tools = FakeTools()
         tools.output = (
             '{"ok":true,"tool":"rag_search","citations":'
-            '["rag://knowledge-base/doc/pdf/tencent.pdf?page_start=2&page_end=3"]}'
+            '["rag://knowledge-base/pdf/tencent.pdf?page_start=2&page_end=3"]}'
         )
         agent = ResponseAgent(settings=settings, tools=tools, max_iter=3)
 
@@ -185,7 +185,7 @@ class ResponseAgentTests(unittest.TestCase):
 
         self.assertEqual(
             result.citations,
-            ["rag://knowledge-base/doc/pdf/tencent.pdf?page_start=2&page_end=3"],
+            ["rag://knowledge-base/pdf/tencent.pdf?page_start=2&page_end=3"],
         )
 
     def test_filters_tools_when_tool_names_are_provided(self) -> None:

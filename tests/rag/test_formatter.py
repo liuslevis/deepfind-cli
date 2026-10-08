@@ -21,14 +21,14 @@ def _sample(source_type: str) -> str:
         tags=["china", "macro"],
         created="2026-01-01T00:00:00Z",
         updated="2026-01-02T00:00:00Z",
-        source="doc/pdf/example.pdf",
+        source="pdf/example.pdf",
         body=f"{marker}\n\nsome body text",
     )
 
 
 def test_render_and_validate_pdf():
     text = _sample("pdf")
-    validate_content(text, "pdf", expected_source="doc/pdf/example.pdf")
+    validate_content(text, "pdf", expected_source="pdf/example.pdf")
     assert (
         text.index("**Summary**") < text.index("**Tags**") < text.index("**Created**")
     )
@@ -41,7 +41,7 @@ def test_validate_requires_page_marker_for_pdf():
         tags=["a", "b"],
         created="c",
         updated="u",
-        source="doc/pdf/x.pdf",
+        source="pdf/x.pdf",
         body="no markers here",
     )
     with pytest.raises(FormatError):
@@ -55,7 +55,7 @@ def test_validate_requires_time_marker_for_media():
         tags=["a", "b"],
         created="c",
         updated="u",
-        source="doc/media/x.mp4",
+        source="media/x.mp4",
         body="<!-- page: 1 -->\nno time marker",
     )
     with pytest.raises(FormatError):
@@ -65,7 +65,7 @@ def test_validate_requires_time_marker_for_media():
 def test_source_mismatch_fails():
     text = _sample("pdf")
     with pytest.raises(FormatError):
-        validate_content(text, "pdf", expected_source="doc/pdf/other.pdf")
+        validate_content(text, "pdf", expected_source="pdf/other.pdf")
 
 
 def test_body_from_raw_converts_media_time_headers():
@@ -81,4 +81,4 @@ def test_parse_header_roundtrip():
     header = parse_header(text)
     assert header["title"] == "Example"
     assert header["tags"] == ["china", "macro"]
-    assert header["source"] == "doc/pdf/example.pdf"
+    assert header["source"] == "pdf/example.pdf"

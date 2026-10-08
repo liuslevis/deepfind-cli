@@ -48,7 +48,7 @@ class FormatterConfig:
 
 @dataclass(frozen=True)
 class Config:
-    root_dir: Path = REPO_ROOT
+    root_dir: Path = REPO_ROOT / "assets"
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_collection: str = "investment_kb"
 
@@ -66,7 +66,7 @@ class Config:
 
     @property
     def doc_root(self) -> Path:
-        return self.root_dir / "doc"
+        return self.root_dir
 
     @property
     def pdf_root(self) -> Path:
@@ -82,7 +82,7 @@ class Config:
 
 
 def _resolve_root(root_dir: Path | str | None) -> Path:
-    raw = root_dir or _env("DEEPFIND_RAG_DIR", default=".")
+    raw = root_dir or _env("DEEPFIND_RAG_DIR", default="assets")
     path = Path(raw).expanduser()
     if not path.is_absolute():
         path = REPO_ROOT / path

@@ -78,8 +78,8 @@ class SearchService:
         if path_prefix is not None:
             if path_prefix.startswith("/") or ".." in path_prefix.split("/"):
                 raise SearchError("path_prefix must be a relative path without '..'")
-            if not path_prefix.startswith(("doc/pdf/", "doc/media/")):
-                raise SearchError("path_prefix must be under doc/pdf/ or doc/media/")
+            if not path_prefix.startswith(("pdf/", "media/")):
+                raise SearchError("path_prefix must be under pdf/ or media/")
 
         if not self.client.collection_exists(self.collection):
             raise SearchError(f"Qdrant collection '{self.collection}' does not exist")

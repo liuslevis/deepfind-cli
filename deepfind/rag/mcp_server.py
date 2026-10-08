@@ -27,7 +27,7 @@ Args:
   limit: number of results, 1..20 (default 8).
   mode: "hybrid" | "dense" | "sparse".
   source_type: optional filter "pdf" | "video" | "audio".
-  path_prefix: optional relative path under doc/pdf/ or doc/media/ (no absolute paths, no '..').
+  path_prefix: optional relative path under pdf/ or media/ (no absolute paths, no '..').
   tags: optional list of tags to require.
 """
 

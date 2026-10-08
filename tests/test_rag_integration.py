@@ -18,8 +18,8 @@ def test_load_config_uses_explicit_knowledge_base_root() -> None:
         config = load_config(root)
 
     assert config.root_dir == root.resolve()
-    assert config.pdf_root == root.resolve() / "doc" / "pdf"
-    assert config.media_root == root.resolve() / "doc" / "media"
+    assert config.pdf_root == root.resolve() / "pdf"
+    assert config.media_root == root.resolve() / "media"
 
 
 def test_search_rag_calls_in_process_service() -> None:
