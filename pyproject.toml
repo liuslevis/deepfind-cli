@@ -22,6 +22,11 @@ dependencies = [
 
 [project.optional-dependencies]
 local-llm = []
+rag = [
+  "docling>=2.0",
+  "fastembed>=0.5",
+  "qdrant-client>=1.12",
+]
 browser = [
   "playwright>=1.42.0",
 ]
@@ -48,6 +53,7 @@ find-links = [
 
 [project.scripts]
 deepfind = "deepfind.cli:main"
+deepfind-rag = "deepfind.rag.cli:main"
 deepfind-web = "deepfind.web_api:main"
 
 [tool.setuptools.packages.find]

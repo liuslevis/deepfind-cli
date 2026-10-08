@@ -45,6 +45,14 @@ Install everything needed for local GPU mode, browser fetch, and Bilibili ASR in
 uv sync --extra media --extra browser --extra local-llm
 ```
 
+Install the local RAG knowledge base dependencies when you need PDF/media
+ingestion and hybrid retrieval:
+
+```bash
+uv sync --extra rag --extra media
+docker compose -f docker/rag/compose.yml up -d
+```
+
 On Windows and Linux, the `media` extra installs the CUDA 13.0 builds of PyTorch
 and torchaudio from the Aliyun mirror. Other Python packages also use the
 Aliyun PyPI mirror. Verify CUDA before starting a long transcription:
@@ -161,6 +169,11 @@ XHS_CLI_BIN=xhs
 BILI_BIN=bili
 ASR_MODEL=Qwen/Qwen3-ASR-1.7B
 DEEPFIND_VIDEO_DIR=video
+DEEPFIND_RAG_DIR=.
+QDRANT_URL=http://127.0.0.1:6333
+QDRANT_COLLECTION=investment_kb
+DENSE_MODEL=intfloat/multilingual-e5-large
+SPARSE_MODEL=Qdrant/bm25
 DEEPFIND_TOOL_TIMEOUT=90
 GOOGLE_NANO_BANANA_API_KEY=...
 GOOGLE_NANO_BANANA_MODEL=gemini-3.1-flash-image-preview
@@ -212,6 +225,22 @@ uv run -m deepfind.cli "Help me summarize video https://www.bilibili.com/video/B
 uv run -m deepfind.cli "same query" --num-agent 2 --quiet
 uv run -m deepfind.cli "same query" 
 ```
+
+### Local RAG knowledge base
+
+Place PDFs under `doc/pdf` and audio or video under `doc/media`. Parsed
+artifacts are written beside each source file. Set `DEEPFIND_RAG_DIR` when the
+knowledge-base files live outside this repository.
+
+```bash
+uv run deepfind rag ingest
+uv run deepfind rag sync --prune
+uv run deepfind rag search "利率和汇率的关系" --mode hybrid --limit 5
+uv run deepfind rag mcp
+```
+
+`rag_search` uses the same in-process search service. Search results keep their
+`rag://` citations, including PDF page ranges and media time ranges.
 
 Flags:
 

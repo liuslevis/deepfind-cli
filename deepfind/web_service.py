@@ -563,7 +563,7 @@ class DeepFindWebService:
             raise ValueError("RAG document path traversal not allowed")
 
         settings = Settings.from_env(require_api_key=False)
-        project_root = Path(settings.rag_mcp_project_dir).expanduser()
+        project_root = Path(settings.rag_dir).expanduser()
         if not project_root.is_absolute():
             project_root = self._repo_root / project_root
         project_root = project_root.resolve()

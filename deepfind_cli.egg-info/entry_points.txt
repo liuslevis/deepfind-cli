@@ -1,3 +1,4 @@
 [console_scripts]
 deepfind = deepfind.cli:main
+deepfind-rag = deepfind.rag.cli:main
 deepfind-web = deepfind.web_api:main

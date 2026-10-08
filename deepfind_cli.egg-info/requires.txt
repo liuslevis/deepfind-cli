@@ -17,9 +17,18 @@ playwright>=1.42.0
 accelerate>=0.20.0
 librosa>=0.10.0
 qwen-asr
-torch>=2.0.0
-torchaudio>=2.0.0
 transformers>=4.37.0
 
 [media:sys_platform == "darwin"]
 mlx-whisper>=0.4.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+[media:sys_platform == "win32" or sys_platform == "linux"]
+torch==2.11.0+cu130
+torchaudio==2.11.0+cu130
+
+[rag]
+docling>=2.0
+fastembed>=0.5
+qdrant-client>=1.12

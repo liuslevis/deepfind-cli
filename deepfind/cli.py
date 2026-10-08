@@ -141,6 +141,11 @@ def main(
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["rag"]:
+        from .rag.cli import main as rag_main
+
+        return rag_main(argv[1:], stdout=stdout, stderr=stderr)
     _configure_utf8_stdio(stdout, sys.stdout)
     _configure_utf8_stdio(stderr, sys.stderr)
     parser = build_parser()

@@ -145,7 +145,7 @@ class WebApiTests(unittest.TestCase):
             document.write_bytes(b"pdf-content")
             service = DeepFindWebService(store=ChatStore(project_dir / "chats"))
             client = TestClient(build_app(service))
-            settings = Settings(api_key="", rag_mcp_project_dir=str(project_dir))
+            settings = Settings(api_key="", rag_dir=str(project_dir))
             citation = (
                 "rag://knowledge-base/doc/pdf/"
                 "%E8%85%BE%E8%AE%AF%E8%B4%A2%E6%8A%A5.pdf?page_start=1"
@@ -164,7 +164,7 @@ class WebApiTests(unittest.TestCase):
             project_dir = Path(temp_dir)
             service = DeepFindWebService(store=ChatStore(project_dir / "chats"))
             client = TestClient(build_app(service))
-            settings = Settings(api_key="", rag_mcp_project_dir=str(project_dir))
+            settings = Settings(api_key="", rag_dir=str(project_dir))
 
             with patch("deepfind.web_service.Settings.from_env", return_value=settings):
                 response = client.get(

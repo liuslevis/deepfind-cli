@@ -33,7 +33,7 @@ from .config import Settings
 from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
 from .json_utils import dump_json, try_load_json
-from .rag_mcp import search_rag_mcp
+from .rag_search import search_rag
 from .transcript_summary import (
     BILI_TRANSCRIPT_SUMMARY_MODEL,
     TranscriptSummaryError,
@@ -1552,7 +1552,7 @@ class Toolset:
                 "error_code": "invalid_query",
                 "error": "query must not be empty",
             }
-        data = asyncio.run(search_rag_mcp(self.settings, query))
+        data = asyncio.run(search_rag(self.settings, query))
         return {
             "ok": True,
             "tool": "rag_search",

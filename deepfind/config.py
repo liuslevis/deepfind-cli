@@ -146,8 +146,7 @@ class Settings:
     asr_model: str = DEFAULT_ASR_MODEL
     audio_dir: str = "video"
     subprocess_timeout: int = 90
-    rag_mcp_command: str = "uv"
-    rag_mcp_project_dir: str = "../deepfind-rag"
+    rag_dir: str = "."
     coding_enabled: bool = False
     coding_runtime: str = "docker"
     coding_image: str = ""
@@ -378,10 +377,10 @@ class Settings:
             asr_model=cls._resolve_asr_model(),
             audio_dir=_env("DEEPFIND_VIDEO_DIR", "video") or "video",
             subprocess_timeout=int(timeout or "90"),
-            rag_mcp_command=_env("DEEPFIND_RAG_MCP_COMMAND", "uv") or "uv",
-            rag_mcp_project_dir=(
-                _env("DEEPFIND_RAG_MCP_PROJECT_DIR", "../deepfind-rag")
-                or "../deepfind-rag"
+            rag_dir=(
+                _env("DEEPFIND_RAG_DIR")
+                or _env("DEEPFIND_RAG_MCP_PROJECT_DIR")
+                or "."
             ),
             coding_enabled=coding_enabled,
             coding_runtime=coding_runtime,

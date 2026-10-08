@@ -203,7 +203,7 @@ class ToolsetTests(unittest.TestCase):
             "mode": "hybrid",
             "results": [{"source": "doc/pdf/report.pdf", "page_start": 3}],
         }
-        with patch("deepfind.tools.search_rag_mcp", return_value=response) as search:
+        with patch("deepfind.tools.search_rag", return_value=response) as search:
             result = toolset.rag_search(" rates ")
 
         search.assert_awaited_once_with(toolset.settings, "rates")
@@ -229,7 +229,7 @@ class ToolsetTests(unittest.TestCase):
                 }
             ],
         }
-        with patch("deepfind.tools.search_rag_mcp", return_value=response):
+        with patch("deepfind.tools.search_rag", return_value=response):
             result = toolset.rag_search("earnings call")
 
         self.assertEqual(
