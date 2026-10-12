@@ -132,7 +132,10 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
 
     @app.post("/api/chats", response_model=CreateChatResponse)
     def create_chat(payload: CreateChatRequest | None = None, _auth: None = Depends(require_auth)) -> CreateChatResponse:
-        chat = app.state.service.create_chat(title=payload.title if payload else None)
+        try:
+            chat = app.state.service.create_chat(title=payload.title if payload else None)
+        except WorkspaceError as exc:
+            raise _workspace_http_error(exc) from exc
         return CreateChatResponse(chat=chat)
 
     @app.get("/api/chats/{chat_id}", response_model=ChatDetailResponse)
@@ -149,6 +152,8 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
             app.state.service.delete_chat(chat_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=f"chat not found: {chat_id}") from exc
+        except WorkspaceError as exc:
+            raise _workspace_http_error(exc) from exc
         return Response(status_code=204)
 
     @app.get("/api/chats/{chat_id}/workspace")

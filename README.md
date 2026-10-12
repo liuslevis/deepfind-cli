@@ -321,6 +321,17 @@ npm run dev
 Open the Vite URL during development, or run `npm run build` so `deepfind-web` can
 serve `web/dist` directly.
 
+When you enable coding with `DEEPFIND_CODING_ENABLED=true` and configure
+`DEEPFIND_CODING_IMAGE`, each new web chat requires its own container workspace.
+Make sure your configured Docker/Podman runtime is running and the image is
+available before creating a chat. On Windows, start Docker Desktop with its
+Linux engine enabled.
+
+If the workspace cannot be created, `POST /api/chats` returns HTTP 503 with
+`detail.code` set to `workspace_unavailable` and a recovery message in
+`detail.message`. The failed chat is rolled back; after restoring the runtime
+or image, retry creating the chat.
+
 The production shell now includes a web manifest, touch icon, and iPhone Safari
 safe-area handling so it works cleanly in Safari and when added to the Home
 Screen.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import queue
 import re
@@ -34,6 +35,8 @@ MAX_WORKBOOK_BYTES = 100 * 1024 * 1024
 MAX_WORD_BYTES = 100 * 1024 * 1024
 MAX_SHEET_CELLS = 10_000
 PARSER_TIMEOUT = 30
+
+logger = logging.getLogger(__name__)
 
 _CHAT_ID_RE = re.compile(r"^chat_[a-zA-Z0-9_-]{1,64}$")
 _TERMINAL_ID_RE = re.compile(r"^term_[a-f0-9]{32}$")
@@ -744,10 +747,35 @@ class ChatContainerManager:
     ) -> subprocess.CompletedProcess[bytes]:
         try:
             result = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
-        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-            raise WorkspaceError(error_code, "The container workspace is unavailable", 503) from exc
+        except FileNotFoundError as exc:
+            raise WorkspaceError(
+                error_code,
+                f"The container runtime '{self.config.runtime}' was not found. "
+                "Install it and make sure it is available on PATH, then retry.",
+                503,
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise WorkspaceError(
+                error_code,
+                "The container runtime timed out. Check that Docker Desktop or the "
+                "configured container runtime is running, then retry.",
+                503,
+            ) from exc
         if result.returncode != 0:
-            raise WorkspaceError(error_code, "The container workspace is unavailable", 503)
+            logger.warning(
+                "Container runtime %s %s failed (exit %s): %s",
+                command[0],
+                command[1],
+                result.returncode,
+                result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+            raise WorkspaceError(
+                error_code,
+                "The container workspace is unavailable. Check that Docker Desktop or "
+                "the configured container runtime is running and the configured coding "
+                "image is available, then retry.",
+                503,
+            )
         return result
 
 

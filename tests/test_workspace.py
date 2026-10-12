@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import queue
+import subprocess
 import tempfile
 import threading
 import time
@@ -149,6 +150,88 @@ class WorkspaceTests(unittest.TestCase):
             service.delete_chat(chat.id)
         self.assertEqual(manager.created, [chat.id])
         self.assertEqual(manager.removed, [chat.id])
+
+    def test_chat_creation_returns_workspace_error_and_rolls_back(self) -> None:
+        manager = FakeWorkspaceManager()
+        error = WorkspaceError("workspace_unavailable", "Start Docker Desktop, then retry.", 503)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                workspace_manager=manager,
+            )
+            client = TestClient(build_app(service))
+            with patch.object(manager, "ensure", side_effect=error):
+                response = client.post("/api/chats", json={})
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(
+                response.json(),
+                {"detail": {"code": error.code, "message": error.message}},
+            )
+            self.assertEqual(service.list_chats(), [])
+            self.assertEqual(list(Path(temp_dir).glob("*.json")), [])
+
+            retried = client.post("/api/chats", json={})
+            self.assertEqual(retried.status_code, 200)
+            self.assertEqual(len(service.list_chats()), 1)
+            self.assertEqual(manager.created, [retried.json()["chat"]["id"]])
+
+    def test_chat_deletion_returns_workspace_error_and_preserves_chat(self) -> None:
+        manager = FakeWorkspaceManager()
+        error = WorkspaceError("workspace_cleanup_failed", "The chat workspace could not be removed", 500)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                workspace_manager=manager,
+            )
+            chat = service.create_chat()
+            client = TestClient(build_app(service))
+            with patch.object(manager, "remove", side_effect=error):
+                response = client.delete(f"/api/chats/{chat.id}")
+
+            self.assertEqual(response.status_code, error.status_code)
+            self.assertEqual(
+                response.json(),
+                {"detail": {"code": error.code, "message": error.message}},
+            )
+            self.assertEqual(service.get_chat(chat.id).id, chat.id)
+
+    def test_runtime_failures_include_recovery_guidance(self) -> None:
+        manager = ChatContainerManager(
+            WorkspaceConfig(
+                enabled=True,
+                runtime="docker",
+                image="test",
+                seccomp_profile=Path("deepfind/coding_seccomp.json"),
+            )
+        )
+        for failure, guidance in (
+            (FileNotFoundError("docker"), "PATH"),
+            (subprocess.TimeoutExpired("docker", 15), "timed out"),
+        ):
+            with self.subTest(failure=failure):
+                with patch("deepfind.workspace.subprocess.run", side_effect=failure):
+                    with self.assertRaises(WorkspaceError) as raised:
+                        manager.info()
+                self.assertEqual(raised.exception.code, "workspace_unavailable")
+                self.assertEqual(raised.exception.status_code, 503)
+                self.assertIn(guidance, raised.exception.message)
+
+        result = subprocess.CompletedProcess(
+            args=["docker", "version"],
+            returncode=1,
+            stdout=b"",
+            stderr=b"Cannot connect to the Docker daemon",
+        )
+        with patch("deepfind.workspace.subprocess.run", return_value=result):
+            with self.assertLogs("deepfind.workspace", level="WARNING") as logs:
+                with self.assertRaises(WorkspaceError) as raised:
+                    manager.info()
+        self.assertEqual(raised.exception.code, "workspace_unavailable")
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("Docker Desktop", raised.exception.message)
+        self.assertIn("configured coding image", raised.exception.message)
+        self.assertIn("Cannot connect to the Docker daemon", logs.output[0])
 
     def test_workspace_api_is_chat_scoped_and_read_only(self) -> None:
         manager = FakeWorkspaceManager()
