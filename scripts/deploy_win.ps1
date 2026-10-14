@@ -1,7 +1,8 @@
 param(
     [switch]$SeparateWindows,
     [switch]$SkipSetup,
-    [switch]$SkipXhsLogin
+    [switch]$SkipXhsLogin,
+    [switch]$OpenBrowser
 )
 
 $ErrorActionPreference = 'Stop'
@@ -202,15 +203,43 @@ if (-not $SeparateWindows -and (Test-CommandAvailable -Name 'wt')) {
         '-NoExit',
         '-Command', $frontendCommand
     )
-    return
+}
+else {
+    Start-Process -FilePath 'powershell.exe' -WorkingDirectory $repoRoot -ArgumentList @(
+        '-NoExit',
+        '-Command', $backendCommand
+    )
+
+    Start-Process -FilePath 'powershell.exe' -WorkingDirectory $webRoot -ArgumentList @(
+        '-NoExit',
+        '-Command', $frontendCommand
+    )
 }
 
-Start-Process -FilePath 'powershell.exe' -WorkingDirectory $repoRoot -ArgumentList @(
-    '-NoExit',
-    '-Command', $backendCommand
-)
+if ($OpenBrowser) {
+    $frontendReady = $false
+    for ($attempt = 0; $attempt -lt 60 -and -not $frontendReady; $attempt++) {
+        $client = [System.Net.Sockets.TcpClient]::new()
+        try {
+            $connectTask = $client.ConnectAsync('127.0.0.1', 5173)
+            if ($connectTask.Wait(500) -and $client.Connected) {
+                $frontendReady = $true
+            }
+        }
+        catch [System.AggregateException] {
+            # The frontend has not started listening yet.
+        }
+        finally {
+            $client.Dispose()
+        }
 
-Start-Process -FilePath 'powershell.exe' -WorkingDirectory $webRoot -ArgumentList @(
-    '-NoExit',
-    '-Command', $frontendCommand
-)
+        if (-not $frontendReady) {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+
+    if (-not $frontendReady) {
+        Write-Warning 'The frontend did not become available within 60 seconds; opening its URL anyway.'
+    }
+    Start-Process 'http://localhost:5173'
+}
