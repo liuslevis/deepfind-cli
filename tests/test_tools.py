@@ -112,6 +112,19 @@ def build_minimal_pdf(text: str) -> bytes:
 
 
 class ToolsetTests(unittest.TestCase):
+    def test_catalog_lists_configured_coding_without_probing_runtime(self) -> None:
+        settings = Settings(
+            api_key="x",
+            coding_enabled=True,
+            coding_image="example/coding@sha256:" + ("a" * 64),
+        )
+        with patch("deepfind.tools.get_coding_service") as get_coding_service:
+            names = [item["function"]["name"] for item in Toolset.catalog_specs(settings)]
+            get_coding_service.assert_not_called()
+        self.assertIn("coding", names)
+        self.assertIn("propose_terminal_command", names)
+        self.assertIn("web_search", names)
+
     def test_coding_tool_registers_only_after_successful_probe(self) -> None:
         service = SimpleNamespace(
             coding=lambda query, context=None: SimpleNamespace(

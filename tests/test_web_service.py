@@ -6,12 +6,13 @@ import unittest
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from deepfind.chat_store import ChatStore, repo_root
 from deepfind.config import Settings
 from deepfind.models import WorkerReport
-from deepfind.web_service import DeepFindWebService, mode_to_agent_count
+from deepfind.tools import Toolset
+from deepfind.web_service import DeepFindWebService, _tool_catalog, mode_to_agent_count
 from deepfind.web_progress import ToolObservation
 
 
@@ -91,6 +92,65 @@ class WebServiceTests(unittest.TestCase):
     def test_mode_mapping(self) -> None:
         self.assertEqual(mode_to_agent_count("fast"), 1)
         self.assertEqual(mode_to_agent_count("expert"), 4)
+
+    def test_default_web_tools_exclude_workspace_tools_but_allow_explicit_selection(self) -> None:
+        catalog = [
+            ("web_search", "Search", ("query",)),
+            ("coding", "Run Python", ("query",)),
+            ("propose_terminal_command", "Propose Bash", ("command",)),
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(store=ChatStore(Path(temp_dir)))
+            with patch("deepfind.web_service._tool_catalog", return_value=catalog):
+                self.assertEqual(service._validated_selected_tools(None), ["web_search"])
+                self.assertEqual(service._validated_selected_tools([]), [])
+                self.assertEqual(
+                    service._validated_selected_tools(["coding", "propose_terminal_command"]),
+                    ["coding", "propose_terminal_command"],
+                )
+
+    def test_chat_mode_with_coding_configured_does_not_touch_container_runtime(self) -> None:
+        seen: dict[str, Any] = {}
+        manager = Mock()
+        manager.config.enabled = True
+        settings = Settings(
+            api_key="x",
+            qwen_api_key="x",
+            coding_enabled=True,
+            coding_image="example/coding@sha256:" + ("a" * 64),
+        )
+
+        def app_factory(progress, *, settings, enabled_tools, chat_id, workspace_manager):
+            seen["tools"] = Toolset(
+                settings,
+                enabled_tools=enabled_tools,
+                chat_id=chat_id,
+                workspace_manager=workspace_manager,
+            )
+            return DirectChatApp(progress, seen)
+
+        _tool_catalog.cache_clear()
+        self.addCleanup(_tool_catalog.cache_clear)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("deepfind.web_service.Settings.from_env", return_value=settings):
+                with patch("deepfind.tools.get_coding_service") as get_coding_service:
+                    with patch("deepfind.tools.CodingService") as coding_service:
+                        service = DeepFindWebService(
+                            store=ChatStore(Path(temp_dir)),
+                            app_factory=app_factory,
+                            workspace_manager=manager,
+                        )
+                        chat = service.create_chat()
+                        options = {tool.name for tool in service.tool_options()}
+                        events = list(service.stream_message(chat.id, "hello", "fast", research_mode="chat"))
+                        get_coding_service.assert_not_called()
+                        coding_service.assert_not_called()
+        manager.ensure.assert_not_called()
+        manager.info.assert_not_called()
+        self.assertIn("coding", options)
+        self.assertNotIn("coding", seen["tools"].enabled_tools)
+        self.assertNotIn("propose_terminal_command", seen["tools"].enabled_tools)
+        self.assertEqual(events[-2].data["answer_markdown"], "Direct chat answer")
 
     def test_chat_mode_passes_selected_tools_to_app_factory(self) -> None:
         seen: dict[str, Any] = {}

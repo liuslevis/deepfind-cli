@@ -360,6 +360,7 @@ class ChatContainerManager:
         self.config = config
         self._terminals: dict[str, TerminalSession] = {}
         self._coding_locks: dict[str, threading.Lock] = {}
+        self._workspace_locks: dict[str, threading.Lock] = {}
         self._lock = threading.Lock()
 
     def info(self) -> RuntimeInfo:
@@ -378,6 +379,12 @@ class ChatContainerManager:
         )
 
     def ensure(self, chat_id: str) -> None:
+        with self._lock:
+            workspace_lock = self._workspace_locks.setdefault(chat_id, threading.Lock())
+        with workspace_lock:
+            self._ensure(chat_id)
+
+    def _ensure(self, chat_id: str) -> None:
         self.info()
         name = _container_name(chat_id)
         inspected = subprocess.run(
@@ -451,6 +458,7 @@ class ChatContainerManager:
             terminal_ids = [key for key, value in self._terminals.items() if value.chat_id == chat_id]
             terminals = [self._terminals.pop(key) for key in terminal_ids]
             self._coding_locks.pop(chat_id, None)
+            self._workspace_locks.pop(chat_id, None)
         for terminal in terminals:
             terminal.close()
         result = subprocess.run(

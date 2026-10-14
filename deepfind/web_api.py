@@ -160,6 +160,8 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
     def workspace_status(chat_id: str, _auth: None = Depends(require_auth)) -> dict:
         try:
             app.state.service.get_chat(chat_id)
+            if app.state.service.workspace_manager.config.enabled:
+                app.state.service.workspace_manager.ensure(chat_id)
             return app.state.service.workspace_manager.status(chat_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="chat not found") from exc

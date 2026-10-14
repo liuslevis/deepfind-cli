@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
@@ -972,7 +973,9 @@ class Toolset:
             "gen_slides": self.gen_slides,
             "propose_terminal_command": self.propose_terminal_command,
         }
-        if settings.coding_enabled:
+        if settings.coding_enabled and (
+            self.enabled_tools is None or "coding" in self.enabled_tools
+        ):
             try:
                 if chat_id is not None and workspace_manager is not None:
                     self._coding_service = CodingService(
@@ -994,6 +997,36 @@ class Toolset:
                 for name, function in self._functions.items()
                 if name in self.enabled_tools
             }
+
+    @classmethod
+    def catalog_specs(cls, settings: Settings) -> list[dict[str, Any]]:
+        specs = cls(replace(settings, coding_enabled=False)).specs()
+        if settings.coding_enabled and settings.coding_image:
+            specs.append(cls._coding_spec())
+        return specs
+
+    @classmethod
+    def _coding_spec(cls) -> dict[str, Any]:
+        return cls._function_spec(
+            "coding",
+            "Create and validate a solution in the current chat's isolated container "
+            "workspace. The container has no host credentials or network access.",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "maxLength": 20000,
+                    },
+                    "context": {
+                        "type": "string",
+                        "maxLength": 100000,
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        )
 
     def specs(self) -> list[dict[str, Any]]:
         specs = [
@@ -1431,28 +1464,7 @@ class Toolset:
             ),
         ]
         if self._coding_service is not None:
-            specs.append(
-                self._function_spec(
-                    "coding",
-                    "Create and validate a solution in the current chat's isolated container "
-                    "workspace. The container has no host credentials or network access.",
-                    {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "maxLength": 20000,
-                            },
-                            "context": {
-                                "type": "string",
-                                "maxLength": 100000,
-                            },
-                        },
-                        "required": ["query"],
-                        "additionalProperties": False,
-                    },
-                )
-            )
+            specs.append(self._coding_spec())
         specs.insert(
             0,
             self._function_spec(
@@ -1476,7 +1488,8 @@ class Toolset:
             ]
         return specs
 
-    def _function_spec(self, name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _function_spec(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
         return {
             "type": "function",
             "function": {

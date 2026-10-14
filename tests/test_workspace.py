@@ -139,7 +139,7 @@ class WorkspaceTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(WorkspaceError):
                 validate_relative_path(value)
 
-    def test_chat_lifecycle_creates_and_removes_workspace(self) -> None:
+    def test_chat_lifecycle_does_not_create_workspace_and_still_cleans_up(self) -> None:
         manager = FakeWorkspaceManager()
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(
@@ -148,10 +148,10 @@ class WorkspaceTests(unittest.TestCase):
             )
             chat = service.create_chat()
             service.delete_chat(chat.id)
-        self.assertEqual(manager.created, [chat.id])
+        self.assertEqual(manager.created, [])
         self.assertEqual(manager.removed, [chat.id])
 
-    def test_chat_creation_returns_workspace_error_and_rolls_back(self) -> None:
+    def test_chat_creation_does_not_require_workspace_runtime(self) -> None:
         manager = FakeWorkspaceManager()
         error = WorkspaceError("workspace_unavailable", "Start Docker Desktop, then retry.", 503)
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -160,21 +160,99 @@ class WorkspaceTests(unittest.TestCase):
                 workspace_manager=manager,
             )
             client = TestClient(build_app(service))
-            with patch.object(manager, "ensure", side_effect=error):
+            with patch.object(manager, "ensure", side_effect=error) as ensure:
                 response = client.post("/api/chats", json={})
+                ensure.assert_not_called()
 
-            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(service.list_chats()), 1)
+            self.assertEqual(manager.created, [])
+
+    def test_opening_workspace_creates_it_on_demand_and_preserves_chat_on_failure(self) -> None:
+        manager = FakeWorkspaceManager()
+        error = WorkspaceError("workspace_unavailable", "Start Docker Desktop, then retry.", 503)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                workspace_manager=manager,
+            )
+            client = TestClient(build_app(service))
+            chat_id = client.post("/api/chats", json={}).json()["chat"]["id"]
+            with patch.object(manager, "ensure", side_effect=error):
+                response = client.get(f"/api/chats/{chat_id}/workspace")
+
+            self.assertEqual(response.status_code, error.status_code)
             self.assertEqual(
                 response.json(),
                 {"detail": {"code": error.code, "message": error.message}},
             )
-            self.assertEqual(service.list_chats(), [])
-            self.assertEqual(list(Path(temp_dir).glob("*.json")), [])
+            self.assertEqual(service.get_chat(chat_id).id, chat_id)
 
-            retried = client.post("/api/chats", json={})
+            retried = client.get(f"/api/chats/{chat_id}/workspace")
             self.assertEqual(retried.status_code, 200)
             self.assertEqual(len(service.list_chats()), 1)
-            self.assertEqual(manager.created, [retried.json()["chat"]["id"]])
+            self.assertEqual(manager.created, [chat_id])
+
+    def test_unselected_coding_does_not_initialize_coding_service(self) -> None:
+        settings = Settings(api_key="", coding_enabled=True)
+        manager = FakeWorkspaceManager()
+        with patch("deepfind.tools.CodingService") as coding_service:
+            with patch("deepfind.tools.get_coding_service") as get_coding_service:
+                for chat_id in (None, "chat_example"):
+                    with self.subTest(chat_id=chat_id):
+                        tools = Toolset(
+                            settings,
+                            enabled_tools=["web_search"],
+                            chat_id=chat_id,
+                            workspace_manager=manager,
+                        )
+                        self.assertIsNone(tools._coding_service)
+                coding_service.assert_not_called()
+                get_coding_service.assert_not_called()
+        self.assertEqual(manager.created, [])
+
+    def test_concurrent_workspace_requests_create_only_one_container(self) -> None:
+        manager = ChatContainerManager(
+            WorkspaceConfig(
+                enabled=True,
+                runtime="docker",
+                image="example/coding@sha256:" + ("a" * 64),
+                seccomp_profile=Path(__file__).with_name("coding_seccomp.json"),
+            )
+        )
+        created = threading.Event()
+        start = threading.Barrier(2)
+        errors: queue.Queue[Exception] = queue.Queue()
+
+        def inspect(command, **kwargs):
+            state = b'[{"State":{"Running":true}}]' if created.is_set() else b"[]"
+            return subprocess.CompletedProcess(command, 0 if created.is_set() else 1, state, b"")
+
+        def run(command, **kwargs):
+            if command[1] == "create":
+                time.sleep(0.02)
+                created.set()
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+
+        def ensure():
+            try:
+                start.wait(timeout=2)
+                manager.ensure("chat_example")
+            except Exception as exc:
+                errors.put(exc)
+
+        with patch.object(manager, "info"):
+            with patch.object(manager, "_run", side_effect=run) as runtime:
+                with patch("deepfind.workspace.subprocess.run", side_effect=inspect):
+                    threads = [threading.Thread(target=ensure, daemon=True) for _ in range(2)]
+                    for thread in threads:
+                        thread.start()
+                    for thread in threads:
+                        thread.join(timeout=2)
+                    self.assertTrue(all(not thread.is_alive() for thread in threads))
+                    self.assertTrue(errors.empty(), list(errors.queue))
+                    creates = [call for call in runtime.call_args_list if call.args[0][1] == "create"]
+                    self.assertEqual(len(creates), 1)
 
     def test_chat_deletion_returns_workspace_error_and_preserves_chat(self) -> None:
         manager = FakeWorkspaceManager()

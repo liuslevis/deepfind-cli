@@ -322,15 +322,20 @@ Open the Vite URL during development, or run `npm run build` so `deepfind-web` c
 serve `web/dist` directly.
 
 When you enable coding with `DEEPFIND_CODING_ENABLED=true` and configure
-`DEEPFIND_CODING_IMAGE`, each new web chat requires its own container workspace.
-Make sure your configured Docker/Podman runtime is running and the image is
-available before creating a chat. On Windows, start Docker Desktop with its
-Linux engine enabled.
+`DEEPFIND_CODING_IMAGE`, you can use an isolated container workspace for each
+web chat. The workspace starts closed, and `coding` and
+`propose_terminal_command` are unselected by default. Creating a chat or sending
+a normal Chat-mode message does not initialize a workspace or probe the coding
+runtime. To use it, open **Workspace** or explicitly select **coding** in the
+tool menu and send a coding request. The container is created on demand.
 
-If the workspace cannot be created, `POST /api/chats` returns HTTP 503 with
+Before using the workspace, make sure your configured Docker/Podman runtime is
+running and the image is available. On Windows, start Docker Desktop with its
+Linux engine enabled. If the workspace cannot be created, the workspace API
+returns HTTP 503 with
 `detail.code` set to `workspace_unavailable` and a recovery message in
-`detail.message`. The failed chat is rolled back; after restoring the runtime
-or image, retry creating the chat.
+`detail.message`. Your chat is preserved; after restoring the runtime or image,
+reopen the workspace.
 
 The production shell now includes a web manifest, touch icon, and iPhone Safari
 safe-area handling so it works cleanly in Safari and when added to the Home

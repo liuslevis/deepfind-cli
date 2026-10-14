@@ -194,7 +194,7 @@ def _local_model_info(settings: Settings) -> LocalModelInfo:
 @lru_cache(maxsize=2)
 def _tool_catalog() -> tuple[tuple[str, str, tuple[str, ...]], ...]:
     catalog: list[tuple[str, str, tuple[str, ...]]] = []
-    for item in Toolset(Settings.from_env(require_api_key=False)).specs():
+    for item in Toolset.catalog_specs(Settings.from_env(require_api_key=False)):
         if not isinstance(item, dict):
             continue
         function_spec = item.get("function")
@@ -269,14 +269,7 @@ class DeepFindWebService:
         ]
 
     def create_chat(self, title: str | None = None) -> WebChatDetail:
-        chat = self.store.create_chat(title=title)
-        if self.workspace_manager.config.enabled:
-            try:
-                self.workspace_manager.ensure(chat.id)
-            except Exception:
-                self.store.delete_chat(chat.id)
-                raise
-        return chat
+        return self.store.create_chat(title=title)
 
     def get_chat(self, chat_id: str) -> WebChatDetail:
         return self.store.get_chat(chat_id)
@@ -627,9 +620,13 @@ class DeepFindWebService:
             return self.app_factory(progress, settings)
         return self.app_factory(progress)
 
-    def _validated_selected_tools(self, selected_tools: list[str] | None) -> list[str] | None:
+    def _validated_selected_tools(self, selected_tools: list[str] | None) -> list[str]:
         if selected_tools is None:
-            return None
+            return [
+                name
+                for name, _description, _parameters in _tool_catalog()
+                if name not in {"coding", "propose_terminal_command"}
+            ]
         available = {name for name, _description, _parameters in _tool_catalog()}
         normalized: list[str] = []
         seen: set[str] = set()

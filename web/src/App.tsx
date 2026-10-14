@@ -206,8 +206,13 @@ const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
     parameters: ["prompt", "slide_count", "template_name", "html_path"],
   },
 ];
-const FALLBACK_TOOL_NAMES = FALLBACK_TOOL_OPTIONS.map((tool) => tool.name);
-const DEFAULT_SELECTED_TOOLS = [...FALLBACK_TOOL_NAMES];
+function defaultSelectedTools(tools: ToolOption[]): string[] {
+  return tools
+    .filter((tool) => tool.name !== "coding" && tool.name !== "propose_terminal_command")
+    .map((tool) => tool.name);
+}
+
+const DEFAULT_SELECTED_TOOLS = defaultSelectedTools(FALLBACK_TOOL_OPTIONS);
 
 function toolLabel(name: string): string {
   const labels: Record<string, string> = {
@@ -1631,7 +1636,7 @@ export default function App() {
   const activeMessages = activeRuntime?.messages ?? [];
   const sending = activeRuntime?.pending ?? false;
   const selectedTools = selectedChatId
-    ? selectedToolsByChatId[selectedChatId] ?? toolOptions.map((tool) => tool.name)
+    ? selectedToolsByChatId[selectedChatId] ?? defaultSelectedTools(toolOptions)
     : draftSelectedTools;
   const enabledTools = selectedTools;
   const orderedToolOptions = [
@@ -1716,7 +1721,7 @@ export default function App() {
       setDraftSelectedTools((current) =>
         current.length === DEFAULT_SELECTED_TOOLS.length &&
         DEFAULT_SELECTED_TOOLS.every((name) => current.includes(name))
-          ? normalizedTools.map((tool) => tool.name)
+          ? defaultSelectedTools(normalizedTools)
           : current,
       );
     }
@@ -1955,6 +1960,7 @@ export default function App() {
         setCurrentChatFromSummary(chatId);
       }
       setSelectedChatId(chatId);
+      setWorkspaceVisible(false);
       storageSetItem(STORAGE_KEY, chatId);
       setSidebarOpen(false);
       focusComposer();
@@ -1973,7 +1979,8 @@ export default function App() {
       setCurrentChat(chat);
       ensureChatRuntime(chat.id, []);
       setSelectedChatId(chat.id);
-      setDraftSelectedTools(toolOptions.map((tool) => tool.name));
+      setWorkspaceVisible(false);
+      setDraftSelectedTools(defaultSelectedTools(toolOptions));
       setChats((current) => upsertSummary(current, summaryFromChat(chat)));
       storageSetItem(STORAGE_KEY, chat.id);
       setSidebarOpen(false);
@@ -2029,8 +2036,9 @@ export default function App() {
     };
     setCurrentChat(titledChat);
     setSelectedChatId(chat.id);
+    setWorkspaceVisible(false);
     setSelectedToolsByChatId((current) => ({ ...current, [chat.id]: draftSelectedTools }));
-    setDraftSelectedTools(toolOptions.map((tool) => tool.name));
+    setDraftSelectedTools(defaultSelectedTools(toolOptions));
     setChats((current) => upsertSummary(current, summaryFromChat(titledChat)));
     storageSetItem(STORAGE_KEY, chat.id);
     ensureChatRuntime(chat.id, []);
@@ -2044,7 +2052,7 @@ export default function App() {
     }
     setSelectedToolsByChatId((current) => ({
       ...current,
-      [selectedChatId]: updater(current[selectedChatId] ?? toolOptions.map((tool) => tool.name)),
+      [selectedChatId]: updater(current[selectedChatId] ?? defaultSelectedTools(toolOptions)),
     }));
   }
 
