@@ -162,9 +162,8 @@ else
   warn "Skipping Xiaohongshu login."
 fi
 
-# Start backend and frontend
-BACKEND_CMD="cd '$REPO_ROOT' && uv run --no-sync deepfind-web --reload"
-FRONTEND_CMD="cd '$WEB_ROOT' && npm run dev -- --host"
+# Start Electron; it manages the backend and Vite processes.
+DESKTOP_CMD="cd '$WEB_ROOT' && npm run desktop:dev"
 
 if [[ "$USE_TMUX" == "true" ]] && command_exists tmux; then
   SESSION_NAME="deepfind-dev"
@@ -178,18 +177,10 @@ if [[ "$USE_TMUX" == "true" ]] && command_exists tmux; then
     exit 1
   fi
 
-  info "Starting backend and frontend in tmux session: $SESSION_NAME"
+  info "Starting Electron in tmux session: $SESSION_NAME"
 
-  # Create new tmux session with backend in first pane
-  tmux new-session -d -s "$SESSION_NAME" -n "deepfind" -c "$REPO_ROOT"
-  tmux send-keys -t "$SESSION_NAME:0.0" "$BACKEND_CMD" C-m
-
-  # Split window vertically and start frontend
-  tmux split-window -v -t "$SESSION_NAME:0" -c "$WEB_ROOT"
-  tmux send-keys -t "$SESSION_NAME:0.1" "$FRONTEND_CMD" C-m
-
-  # Adjust pane sizes (backend gets 60%, frontend gets 40%)
-  tmux resize-pane -t "$SESSION_NAME:0.0" -y 60%
+  tmux new-session -d -s "$SESSION_NAME" -n "deepfind" -c "$WEB_ROOT"
+  tmux send-keys -t "$SESSION_NAME:0.0" "$DESKTOP_CMD" C-m
 
   success "Development environment started in tmux session: $SESSION_NAME"
   echo ""
@@ -206,38 +197,22 @@ if [[ "$USE_TMUX" == "true" ]] && command_exists tmux; then
   tmux attach -t "$SESSION_NAME"
 
 elif command_exists osascript; then
-  # Use AppleScript to open separate Terminal windows (macOS fallback)
-  info "Opening backend in new Terminal window..."
+  # Use AppleScript to open a Terminal window (macOS fallback)
+  info "Opening Electron in a new Terminal window..."
   osascript <<EOF
 tell application "Terminal"
-    do script "cd '$REPO_ROOT' && uv run deepfind-web --reload"
+    do script "cd '$WEB_ROOT' && npm run desktop:dev"
     activate
 end tell
 EOF
 
-  sleep 1
-
-  info "Opening frontend in new Terminal window..."
-  osascript <<EOF
-tell application "Terminal"
-    do script "cd '$WEB_ROOT' && npm run dev -- --host"
-    activate
-end tell
-EOF
-
-  success "Backend and frontend started in separate Terminal windows."
+  success "Electron started in a Terminal window."
 
 else
   # Fallback: print manual instructions
   warn "Neither tmux nor osascript is available."
   echo ""
-  echo "Please run the following commands in separate terminal windows:"
-  echo ""
-  echo "Terminal 1 (Backend):"
-  echo "  cd '$REPO_ROOT'"
-  echo "  uv run deepfind-web --reload"
-  echo ""
-  echo "Terminal 2 (Frontend):"
+  echo "Please run the following command:"
   echo "  cd '$WEB_ROOT'"
-  echo "  npm run dev -- --host"
+  echo "  npm run desktop:dev"
 fi

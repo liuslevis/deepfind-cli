@@ -185,34 +185,21 @@ if (-not $SkipXhsLogin) {
     Write-Host 'Skipping Xiaohongshu login.' -ForegroundColor Yellow
 }
 
-$backendCommand = "Set-Location -LiteralPath '$repoRoot'; uv run deepfind-web --reload"
-$frontendCommand = "Set-Location -LiteralPath '$webRoot'; npm run dev -- --host"
+$desktopCommand = "Set-Location -LiteralPath '$webRoot'; npm run desktop:dev"
 
 if (-not $SeparateWindows -and (Test-CommandAvailable -Name 'wt')) {
     Start-Process -FilePath 'wt.exe' -ArgumentList @(
         'new-tab',
-        '-d', $repoRoot,
-        'powershell.exe',
-        '-NoExit',
-        '-Command', $backendCommand,
-        ';',
-        'split-pane',
-        '-V',
         '-d', $webRoot,
         'powershell.exe',
         '-NoExit',
-        '-Command', $frontendCommand
+        '-Command', $desktopCommand
     )
 }
 else {
-    Start-Process -FilePath 'powershell.exe' -WorkingDirectory $repoRoot -ArgumentList @(
-        '-NoExit',
-        '-Command', $backendCommand
-    )
-
     Start-Process -FilePath 'powershell.exe' -WorkingDirectory $webRoot -ArgumentList @(
         '-NoExit',
-        '-Command', $frontendCommand
+        '-Command', $desktopCommand
     )
 }
 
