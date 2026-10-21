@@ -296,6 +296,11 @@ The Electron app starts and stops the Python backend automatically. Packaged
 builds keep application data and an optional `.env` file in the platform's
 DeepFind user-data directory.
 
+On Windows, the development launcher stages the Electron runtime under
+`%LOCALAPPDATA%\DeepFind\electron-dev` and grants that directory AppContainer
+read access. This avoids Chromium sandbox startup failures caused by restrictive
+ACLs on repository directories.
+
 Build an installer on the target operating system:
 
 ```bash

@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "desktop:dev": "concurrently --kill-others-on-fail \"npm:dev:desktop\" \"npm:desktop:dev:electron\"",
-    "desktop:dev:electron": "wait-on http://127.0.0.1:5173 && electron .",
+    "desktop:dev:electron": "wait-on http://127.0.0.1:5173 && node electron/launch-dev.mjs",
     "desktop:backend": "node electron/build-backend.mjs",
     "desktop:dist": "npm run build:desktop && npm run desktop:backend && electron-builder",
     "desktop:dist:win": "npm run build:desktop && npm run desktop:backend && electron-builder --win",

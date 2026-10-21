@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, shell } from "electron";
 
 const electronDir = path.dirname(fileURLToPath(import.meta.url));
-const repositoryRoot = path.resolve(electronDir, "..", "..");
+const repositoryRoot = process.env.DEEPFIND_REPOSITORY_ROOT
+  ? path.resolve(process.env.DEEPFIND_REPOSITORY_ROOT)
+  : path.resolve(electronDir, "..", "..");
 const rendererUrl = process.env.DEEPFIND_RENDERER_URL ?? (!app.isPackaged ? "http://127.0.0.1:5173" : undefined);
 const apiToken = randomBytes(32).toString("hex");
 
