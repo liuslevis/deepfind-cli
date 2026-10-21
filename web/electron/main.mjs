@@ -9,7 +9,7 @@ import { app, BrowserWindow, dialog, shell } from "electron";
 
 const electronDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(electronDir, "..", "..");
-const rendererUrl = process.env.DEEPFIND_RENDERER_URL;
+const rendererUrl = process.env.DEEPFIND_RENDERER_URL ?? (!app.isPackaged ? "http://127.0.0.1:5173" : undefined);
 const apiToken = randomBytes(32).toString("hex");
 
 let backendProcess;
