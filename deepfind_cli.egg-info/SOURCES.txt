@@ -6,10 +6,6 @@ deepfind/bili_transcribe.py
 deepfind/browser_fetch.py
 deepfind/chat_store.py
 deepfind/cli.py
-deepfind/coding.py
-deepfind/coding_runner.py
-deepfind/coding_runtime.py
-deepfind/coding_seccomp.json
 deepfind/config.py
 deepfind/gen_img.py
 deepfind/gen_slides.py
@@ -30,8 +26,6 @@ deepfind/web_fetch.py
 deepfind/web_models.py
 deepfind/web_progress.py
 deepfind/web_service.py
-deepfind/workspace.py
-deepfind/workspace_terminal_bridge.py
 deepfind/xhs_transcribe.py
 deepfind/youtube_audio_transcribe.py
 deepfind/youtube_transcribe.py
@@ -61,8 +55,6 @@ tests/test_asr_mlx.py
 tests/test_bili_transcribe.py
 tests/test_chat_store.py
 tests/test_cli.py
-tests/test_coding.py
-tests/test_coding_image.py
 tests/test_config.py
 tests/test_gen_img.py
 tests/test_gen_slides.py
@@ -78,6 +70,5 @@ tests/test_tools.py
 tests/test_video_resources.py
 tests/test_web_api.py
 tests/test_web_service.py
-tests/test_workspace.py
 tests/test_xhs_transcribe.py
 tests/test_youtube_transcribe.py

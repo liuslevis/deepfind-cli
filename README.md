@@ -181,42 +181,6 @@ DEEPFIND_IMAGE_DIR=tmp
 DEEPFIND_IMAGE_SIZE=2K
 ```
 
-### Isolated Python coding tool
-
-The `coding` tool is disabled by default. Build its minimal Python image from a
-digest-pinned base image, push or tag it in a registry that records a
-`RepoDigest`, then configure that immutable digest:
-
-```bash
-docker build \
-  --build-arg BASE_IMAGE=python@sha256:<python-image-digest> \
-  -f docker/coding/Dockerfile \
-  -t <registry>/deepfind-coding:local .
-docker push <registry>/deepfind-coding:local
-docker image inspect <registry>/deepfind-coding:local \
-  --format '{{index .RepoDigests 0}}'
-```
-
-For a local-only build that has no registry `RepoDigest`, you can use its
-immutable image ID from `docker image inspect --format '{{.Id}}'`.
-
-```bash
-DEEPFIND_CODING_ENABLED=true
-DEEPFIND_CODING_RUNTIME=docker
-DEEPFIND_CODING_IMAGE=<registry>/deepfind-coding@sha256:<digest>
-DEEPFIND_CODING_ROOT=sandbox
-DEEPFIND_CODING_TIMEOUT=120
-DEEPFIND_CODING_MAX_CONCURRENT=4
-DEEPFIND_CODING_NETWORK=false
-DEEPFIND_CODING_RETENTION=0
-```
-
-At startup, DeepFind verifies the runtime, image digest, non-root user,
-read-only root filesystem, seccomp, dropped capabilities, and
-`no-new-privileges`. If any check fails, `coding` is not registered. The host
-model creates a constrained Python file/command plan; only that plan enters the
-network-disabled container, so API keys are never exposed to generated code.
-
 ## Run
 
 ```bash
@@ -320,22 +284,6 @@ npm run dev
 
 Open the Vite URL during development, or run `npm run build` so `deepfind-web` can
 serve `web/dist` directly.
-
-When you enable coding with `DEEPFIND_CODING_ENABLED=true` and configure
-`DEEPFIND_CODING_IMAGE`, you can use an isolated container workspace for each
-web chat. The workspace starts closed, and `coding` and
-`propose_terminal_command` are unselected by default. Creating a chat or sending
-a normal Chat-mode message does not initialize a workspace or probe the coding
-runtime. To use it, open **Workspace** or explicitly select **coding** in the
-tool menu and send a coding request. The container is created on demand.
-
-Before using the workspace, make sure your configured Docker/Podman runtime is
-running and the image is available. On Windows, start Docker Desktop with its
-Linux engine enabled. If the workspace cannot be created, the workspace API
-returns HTTP 503 with
-`detail.code` set to `workspace_unavailable` and a recovery message in
-`detail.message`. Your chat is preserved; after restoring the runtime or image,
-reopen the workspace.
 
 The production shell now includes a web manifest, touch icon, and iPhone Safari
 safe-area handling so it works cleanly in Safari and when added to the Home

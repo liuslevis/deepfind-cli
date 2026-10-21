@@ -13,7 +13,7 @@ class ChatStoreTests(unittest.TestCase):
     def test_create_save_load_and_delete_chat(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ChatStore(Path(temp_dir))
-            chat = store.create_chat("Workspace")
+            chat = store.create_chat("Research")
             message = WebMessage(
                 id="msg_1",
                 role="user",
@@ -27,7 +27,7 @@ class ChatStoreTests(unittest.TestCase):
             store.save_chat(updated)
 
             reloaded = ChatStore(Path(temp_dir)).get_chat(chat.id)
-            self.assertEqual(reloaded.title, "Workspace")
+            self.assertEqual(reloaded.title, "Research")
             self.assertEqual(reloaded.messages[0].content, "hello world")
 
             summaries = store.list_chats()

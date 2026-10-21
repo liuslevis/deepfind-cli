@@ -102,148 +102,6 @@ describe("App", () => {
     vi.restoreAllMocks();
   });
 
-  it("mounts the workspace only after the workspace button is clicked", async () => {
-    localStorage.setItem("deepfind.web.selected-chat", "chat_1");
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const method = (init?.method ?? "GET").toUpperCase();
-
-      if (url === "/api/health" && method === "GET") {
-        return jsonResponse({ status: "ok", requires_token: false });
-      }
-      if (url === "/api/chats" && method === "GET") {
-        return jsonResponse({
-          tools: [
-            { name: "web_search", description: "Search the web.", parameters: ["query"] },
-            { name: "coding", description: "Run Python.", parameters: ["query"] },
-            { name: "propose_terminal_command", description: "Propose Bash.", parameters: ["command"] },
-          ],
-          chats: [{
-            id: "chat_1",
-            title: "Workspace test",
-            created_at: "2026-03-22T00:00:00Z",
-            updated_at: "2026-03-22T00:00:00Z",
-            preview: "",
-          }],
-        });
-      }
-      if (url === "/api/chats/chat_1" && method === "GET") {
-        return jsonResponse({
-          chat: {
-            id: "chat_1",
-            title: "Workspace test",
-            created_at: "2026-03-22T00:00:00Z",
-            updated_at: "2026-03-22T00:00:00Z",
-            messages: [],
-          },
-        });
-      }
-      if (url === "/api/chats/chat_1/workspace" && method === "GET") {
-        return jsonResponse({ available: false, status: "missing", chat_id: "chat_1" });
-      }
-      if (url === "/api/chats" && method === "POST") {
-        return jsonResponse({
-          chat: {
-            id: "chat_new",
-            title: "New chat",
-            created_at: "2026-03-22T00:00:00Z",
-            updated_at: "2026-03-22T00:00:00Z",
-            messages: [],
-          },
-        });
-      }
-      throw new Error(`Unhandled request: ${method} ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<App />);
-
-    const workspaceButton = await screen.findByRole("button", { name: "Workspace" });
-    expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalledWith("/api/chats/chat_1/workspace", expect.anything());
-    await userEvent.click(screen.getByRole("button", { name: "Tools" }));
-    const dialog = screen.getByRole("dialog", { name: "Select tools" });
-    expect(within(dialog).getByRole("checkbox", { name: /coding/i })).not.toBeChecked();
-    expect(within(dialog).getByRole("checkbox", { name: "Propose Terminal Command" })).not.toBeChecked();
-    await userEvent.click(screen.getByRole("button", { name: "Tools" }));
-
-    await userEvent.click(workspaceButton);
-
-    expect(await screen.findByLabelText("Chat workspace")).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/chats/chat_1/workspace", expect.anything()));
-
-    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
-    await waitFor(() => expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument());
-    await userEvent.click(screen.getByRole("button", { name: "Tools" }));
-    const newChatDialog = screen.getByRole("dialog", { name: "Select tools" });
-    expect(within(newChatDialog).getByRole("checkbox", { name: /coding/i })).not.toBeChecked();
-    expect(within(newChatDialog).getByRole("checkbox", { name: "Propose Terminal Command" })).not.toBeChecked();
-  });
-
-  it("mounts the workspace when the coding tool starts", async () => {
-    const stream = createControlledStreamResponse();
-    let chatsRequestCount = 0;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const method = (init?.method ?? "GET").toUpperCase();
-
-      if (url === "/api/health" && method === "GET") {
-        return jsonResponse({ status: "ok", requires_token: false });
-      }
-      if (url === "/api/chats" && method === "GET") {
-        chatsRequestCount += 1;
-        return jsonResponse({
-          tools: [{ name: "coding", description: "Run Python.", parameters: ["query"] }],
-          chats: chatsRequestCount === 1 ? [] : [{
-            id: "chat_coding",
-            title: "Coding task",
-            created_at: "2026-03-22T00:00:00Z",
-            updated_at: "2026-03-22T00:01:00Z",
-            preview: "",
-          }],
-        });
-      }
-      if (url === "/api/chats" && method === "POST") {
-        return jsonResponse({
-          chat: {
-            id: "chat_coding",
-            title: "New chat",
-            created_at: "2026-03-22T00:00:00Z",
-            updated_at: "2026-03-22T00:00:00Z",
-            messages: [],
-          },
-        });
-      }
-      if (url === "/api/chats/chat_coding/messages/stream" && method === "POST") {
-        return stream.response;
-      }
-      if (url === "/api/chats/chat_coding/workspace" && method === "GET") {
-        return jsonResponse({ available: false, status: "missing", chat_id: "chat_coding" });
-      }
-      throw new Error(`Unhandled request: ${method} ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<App />);
-
-    expect(await screen.findByRole("button", { name: "Workspace" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Tools" })).toHaveTextContent("Tools 0"));
-    await userEvent.click(screen.getByRole("button", { name: "Tools" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: /coding/i }));
-    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Update the project");
-    await userEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    stream.push({
-      type: "tool_call",
-      data: { name: "lead", tool_name: "coding", arguments: { query: "Update the project" } },
-    });
-
-    expect(await screen.findByLabelText("Chat workspace")).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/chats/chat_coding/workspace", expect.anything()));
-    stream.close();
-  });
-
   it("shows slash command autocomplete and resolves / to /list-tool on submit", async () => {
     let capturedBody = "";
     let chatsRequestCount = 0;
@@ -384,7 +242,7 @@ describe("App", () => {
     expect(JSON.parse(capturedBody)).toMatchObject({ mode: "expert" });
   });
 
-  it("uses direct Chat mode without workspace tools or workspace initialization", async () => {
+  it("uses direct Chat mode with the selected tools", async () => {
     let capturedBody = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -403,8 +261,6 @@ describe("App", () => {
               description: "Search the local knowledge base.",
               parameters: ["query"],
             },
-            { name: "coding", description: "Run Python.", parameters: ["query"] },
-            { name: "propose_terminal_command", description: "Propose Bash.", parameters: ["command"] },
           ],
         });
       }
@@ -467,8 +323,6 @@ describe("App", () => {
       research_mode: "chat",
       selected_tools: ["web_search", "rag_search"],
     });
-    expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/workspace"))).toBe(false);
   });
 
   it("selects multiple tools and sends the per-turn tool allowlist", async () => {

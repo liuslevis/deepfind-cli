@@ -25,8 +25,6 @@ DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
 DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_LOCAL_MODEL = "qwen3.5:9B"  # Change this to upgrade (e.g., "qwen3.6:27B")
 DEFAULT_LOCAL_API_KEY = "ollama"
-DEFAULT_CODING_TIMEOUT = 120
-DEFAULT_CODING_MAX_CONCURRENT = 4
 
 
 class SettingsError(RuntimeError):
@@ -147,14 +145,6 @@ class Settings:
     audio_dir: str = "assets/video"
     subprocess_timeout: int = 90
     rag_dir: str = "assets"
-    coding_enabled: bool = False
-    coding_runtime: str = "docker"
-    coding_image: str = ""
-    coding_root: str = "sandbox"
-    coding_timeout: int = DEFAULT_CODING_TIMEOUT
-    coding_max_concurrent: int = DEFAULT_CODING_MAX_CONCURRENT
-    coding_network: bool = False
-    coding_retention: int = 0
 
     @classmethod
     def _resolve_asr_model(cls) -> str:
@@ -292,24 +282,6 @@ class Settings:
                 "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, DEEPSEEK_API_KEY, or use local GPU mode."
             )
         timeout = _env("DEEPFIND_TOOL_TIMEOUT", "90")
-        coding_enabled = _env_bool("DEEPFIND_CODING_ENABLED")
-        coding_runtime = (_env("DEEPFIND_CODING_RUNTIME", "docker") or "docker").lower()
-        if coding_runtime not in {"docker", "podman"}:
-            raise SettingsError("DEEPFIND_CODING_RUNTIME must be docker or podman")
-        coding_image = _env("DEEPFIND_CODING_IMAGE", "") or ""
-        if (
-            coding_enabled
-            and "@sha256:" not in coding_image
-            and not coding_image.startswith("sha256:")
-        ):
-            raise SettingsError(
-                "DEEPFIND_CODING_IMAGE must use an immutable repo digest or image ID when coding is enabled"
-            )
-        coding_network = _env_bool("DEEPFIND_CODING_NETWORK")
-        if coding_network:
-            raise SettingsError(
-                "DEEPFIND_CODING_NETWORK=true is not supported by the Phase 1 sandbox"
-            )
         return cls(
             api_key=api_key,
             model=model,
@@ -381,24 +353,6 @@ class Settings:
                 _env("DEEPFIND_RAG_DIR")
                 or _env("DEEPFIND_RAG_MCP_PROJECT_DIR")
                 or "assets"
-            ),
-            coding_enabled=coding_enabled,
-            coding_runtime=coding_runtime,
-            coding_image=coding_image,
-            coding_root=_env("DEEPFIND_CODING_ROOT", "sandbox") or "sandbox",
-            coding_timeout=_env_positive_int(
-                "DEEPFIND_CODING_TIMEOUT",
-                DEFAULT_CODING_TIMEOUT,
-            ),
-            coding_max_concurrent=_env_positive_int(
-                "DEEPFIND_CODING_MAX_CONCURRENT",
-                DEFAULT_CODING_MAX_CONCURRENT,
-            ),
-            coding_network=coding_network,
-            coding_retention=_env_positive_int(
-                "DEEPFIND_CODING_RETENTION",
-                0,
-                allow_zero=True,
             ),
         )
 

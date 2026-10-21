@@ -57,6 +57,3 @@ deepfind-web = "deepfind.web_api:main"
 
 [tool.setuptools.packages.find]
 include = ["deepfind*"]
-
-[tool.setuptools.package-data]
-deepfind = ["coding_seccomp.json"]

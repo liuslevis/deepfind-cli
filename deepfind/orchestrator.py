@@ -15,7 +15,6 @@ from .llm import ResponseAgent
 from .models import ChatMessage, WorkerReport
 from .progress import ConsoleProgress
 from .tools import Toolset
-from .workspace import ChatContainerManager
 
 PLAN_PROMPT = (
     "You are the lead planner for an ongoing research chat. Use the prior conversation for context when needed, "
@@ -364,33 +363,6 @@ def _query_requests_image(query: str) -> bool:
 def _query_requests_slides(query: str) -> bool:
     lowered = query.lower()
     return any(token in lowered for token in ("slides", "slide deck", "\u5e7b\u706f", "\u5e7b\u706f\u7247"))
-
-
-_CODING_INTENT_RE = re.compile(
-    r"\b(?:python|pandas|numpy|dataframe|code|coding|program|programming|script|function|algorithm|calculate|compute"
-    r"|file processing|process(?:ing)? (?:a |the )?files?|read(?:ing)? (?:a |the )?files?"
-    r"|writ(?:e|ing) (?:a |the )?files?|modif(?:y|ying) (?:a |the )?files?"
-    r"|convert(?:ing)? (?:a |the )?files?)\b",
-    re.IGNORECASE,
-)
-_CODING_INTENT_MARKERS = (
-    "\u5199\u4ee3\u7801",
-    "\u7f16\u7a0b",
-    "\u811a\u672c",
-    "\u51fd\u6570",
-    "\u7b97\u6cd5",
-    "\u8ba1\u7b97",
-    "\u6570\u636e\u6846",
-    "\u5904\u7406\u6587\u4ef6",
-    "\u8bfb\u53d6\u6587\u4ef6",
-    "\u751f\u6210\u6587\u4ef6",
-    "\u4fee\u6539\u6587\u4ef6",
-    "\u8f6c\u6362\u6587\u4ef6",
-)
-
-
-def _query_requests_coding(query: str) -> bool:
-    return bool(_CODING_INTENT_RE.search(query)) or any(marker in query for marker in _CODING_INTENT_MARKERS)
 
 
 def _lead_tool_names(query: str) -> list[str]:
@@ -777,15 +749,11 @@ class DeepFind:
         progress: ConsoleProgress | None = None,
         *,
         enabled_tools: Sequence[str] | None = None,
-        chat_id: str | None = None,
-        workspace_manager: ChatContainerManager | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.tools = Toolset(
             self.settings,
             enabled_tools=enabled_tools,
-            chat_id=chat_id,
-            workspace_manager=workspace_manager,
         )
         self.progress = progress
 
@@ -1111,11 +1079,7 @@ class DeepFind:
             str(spec.get("function", {}).get("name", ""))
             for spec in self.tools.specs()
         ]
-        return [
-            name
-            for name in names
-            if name and (name != "coding" or _query_requests_coding(query))
-        ]
+        return [name for name in names if name]
 
 
 @dataclass
