@@ -538,7 +538,7 @@ describe("App", () => {
         });
       }
       if (url === "/api/chats/chat_error/messages/stream") {
-        return new Response("Set MIMO_API_KEY or XIAOMI_API_KEY, or switch to another model.", {
+        return new Response("Set DEEPSEEK_API_KEY, or switch to another model.", {
           status: 400,
           headers: {
             "Content-Type": "text/plain",
@@ -556,16 +556,16 @@ describe("App", () => {
     render(<App />);
 
     const modelButton = await screen.findByRole("button", { name: "Model" });
-    await userEvent.click(modelButton);
-    expect(modelButton).toHaveTextContent("Mimo");
+    for (let index = 0; index < 4; index += 1) {
+      await userEvent.click(modelButton);
+    }
+    expect(modelButton).toHaveTextContent("DeepSeek");
 
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "你是什么模型");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    const errorElements = await screen.findAllByText(
-      "Set MIMO_API_KEY or XIAOMI_API_KEY, or switch to another model.",
-    );
-    expect(errorElements.length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByText("Set DEEPSEEK_API_KEY, or switch to another model.")).toBeInTheDocument();
+    expect(screen.queryByText("The run ended before a final answer was produced.")).not.toBeInTheDocument();
   });
 
   it("restores the selected chat from local storage", async () => {

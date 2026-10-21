@@ -2150,14 +2150,11 @@ export default function App() {
                       ...message,
                       pending: false,
                       error: text,
-                      content: message.content || "The run ended before a final answer was produced.",
+                      content: message.content,
                     }
                   : message,
               ),
             }));
-            if (selectedChatIdRef.current === chat.id) {
-              setPageError(text);
-            }
           }
         },
         { signal: controller.signal },
@@ -2181,7 +2178,6 @@ export default function App() {
         return;
       }
       const message = error instanceof Error ? error.message : "Failed to send message";
-      setPageError(message);
       if (activeChat) {
         updateChatRuntime(activeChat.id, (runtime) => ({
           ...runtime,
@@ -2194,11 +2190,13 @@ export default function App() {
                   ...runtimeMessage,
                   pending: false,
                   error: message,
-                  content: runtimeMessage.content || "The run ended before a final answer was produced.",
+                  content: runtimeMessage.content,
                 }
               : runtimeMessage,
           ),
         }));
+      } else {
+        setPageError(message);
       }
     } finally {
       if (activeChat) {
