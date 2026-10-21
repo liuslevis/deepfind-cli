@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from deepfind.chat_store import ChatStore
 from deepfind.config import Settings
 from deepfind.models import WorkerReport
-from deepfind.web_api import build_app
+from deepfind.web_api import _web_dist_dir, build_app
 from deepfind.web_service import DeepFindWebService
 
 
@@ -39,6 +39,11 @@ class FakeApp:
 
 
 class WebApiTests(unittest.TestCase):
+    def test_web_dist_dir_uses_configured_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict("os.environ", {"DEEPFIND_WEB_DIST_DIR": temp_dir}):
+                self.assertEqual(_web_dist_dir(), Path(temp_dir).resolve())
+
     def test_default_app_creates_service(self) -> None:
         with patch("deepfind.web_api.DeepFindWebService") as service_class:
             service = service_class.return_value

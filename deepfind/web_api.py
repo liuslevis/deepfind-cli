@@ -33,6 +33,13 @@ _load_dotenv()
 logger = logging.getLogger("uvicorn.error")
 
 
+def _web_dist_dir() -> Path:
+    configured_dir = (os.environ.get("DEEPFIND_WEB_DIST_DIR") or "").strip()
+    if configured_dir:
+        return Path(configured_dir).expanduser().resolve()
+    return repo_root() / "web" / "dist"
+
+
 def _configured_token() -> str:
     return (os.environ.get("DEEPFIND_WEB_TOKEN") or "").strip()
 
@@ -188,7 +195,7 @@ def build_app(service: DeepFindWebService | None = None) -> FastAPI:
             content_disposition_type="attachment",
         )
 
-    dist_dir = repo_root() / "web" / "dist"
+    dist_dir = _web_dist_dir()
     if dist_dir.exists():
         app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="web")
     else:

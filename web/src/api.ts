@@ -10,6 +10,10 @@ import type {
 const TOKEN_KEY = "deepfind_auth_token";
 
 export function getAuthToken(): string | null {
+  const desktopToken = window.deepfindDesktop?.apiToken;
+  if (desktopToken) {
+    return desktopToken;
+  }
   try {
     return localStorage.getItem(TOKEN_KEY);
   } catch {
