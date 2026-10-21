@@ -2,6 +2,7 @@ param(
     [switch]$SeparateWindows,
     [switch]$SkipSetup,
     [switch]$SkipXhsLogin,
+    [switch]$HideDesktopConsole,
     [switch]$OpenBrowser
 )
 
@@ -187,7 +188,13 @@ if (-not $SkipXhsLogin) {
 
 $desktopCommand = "Set-Location -LiteralPath '$webRoot'; npm run desktop:dev"
 
-if (-not $SeparateWindows -and (Test-CommandAvailable -Name 'wt')) {
+if ($HideDesktopConsole) {
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -WorkingDirectory $webRoot -ArgumentList @(
+        '-NoProfile',
+        '-Command', $desktopCommand
+    )
+}
+elseif (-not $SeparateWindows -and (Test-CommandAvailable -Name 'wt')) {
     Start-Process -FilePath 'wt.exe' -ArgumentList @(
         'new-tab',
         '-d', $webRoot,

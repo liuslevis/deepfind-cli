@@ -19,6 +19,17 @@ let mainWindow;
 let backendOrigin;
 let quitting = false;
 
+function ignoreBrokenPipe(stream) {
+  stream.on("error", (error) => {
+    if (error.code !== "EPIPE") {
+      throw error;
+    }
+  });
+}
+
+ignoreBrokenPipe(process.stdout);
+ignoreBrokenPipe(process.stderr);
+
 function reservePort(preferredPort) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
