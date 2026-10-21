@@ -70,7 +70,7 @@ function startBackend(port) {
   mkdirSync(userData, { recursive: true });
   const env = {
     ...process.env,
-    DEEPFIND_ENV_FILE: path.join(userData, ".env"),
+    DEEPFIND_ENV_FILE: path.join(app.isPackaged ? userData : repositoryRoot, ".env"),
     DEEPFIND_PROJECT_DIR: app.isPackaged ? userData : repositoryRoot,
     DEEPFIND_WEB_DIST_DIR: app.isPackaged
       ? path.join(process.resourcesPath, "web-dist")
