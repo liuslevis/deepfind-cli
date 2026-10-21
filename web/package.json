@@ -3,11 +3,19 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build",
+    "build:desktop": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --target=esnext --minify=terser",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "desktop:dev": "concurrently --kill-others-on-fail \"npm:dev\" \"npm:desktop:dev:electron\"",
+    "desktop:dev:electron": "wait-on http://127.0.0.1:5173 && cross-env DEEPFIND_RENDERER_URL=http://127.0.0.1:5173 electron .",
+    "desktop:backend": "node electron/build-backend.mjs",
+    "desktop:dist": "npm run build:desktop && npm run desktop:backend && electron-builder",
+    "desktop:dist:win": "npm run build:desktop && npm run desktop:backend && electron-builder --win",
+    "desktop:dist:mac": "npm run build:desktop && npm run desktop:backend && electron-builder --mac"
   },
   "dependencies": {
     "mermaid": "^11.13.0",
@@ -23,9 +31,56 @@
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react-swc": "^3.8.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^38.4.0",
+    "electron-builder": "^26.0.12",
     "jsdom": "^26.0.0",
+    "terser": "^5.51.2",
     "typescript": "^5.8.2",
     "vite": "^6.2.1",
-    "vitest": "^3.0.8"
+    "vitest": "^3.0.8",
+    "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "io.github.liuslevis.deepfind",
+    "productName": "DeepFind",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": "web-dist"
+      },
+      {
+        "from": "backend-dist/${os}-${arch}/deepfind-backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/icon-512.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "public/icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
   }
 }

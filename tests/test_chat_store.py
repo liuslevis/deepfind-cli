@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from deepfind.chat_store import ChatStore
+from deepfind.chat_store import ChatStore, repo_root
 from deepfind.web_models import WebMessage
 
 
 class ChatStoreTests(unittest.TestCase):
+    def test_repo_root_uses_configured_project_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(os.environ, {"DEEPFIND_PROJECT_DIR": temp_dir}):
+                self.assertEqual(repo_root(), Path(temp_dir).resolve())
+
     def test_create_save_load_and_delete_chat(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ChatStore(Path(temp_dir))

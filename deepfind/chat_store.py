@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,9 @@ _CHAT_ID_RE = re.compile(r"^chat_[a-zA-Z0-9_-]{1,64}$")
 
 
 def repo_root() -> Path:
+    configured_root = (os.environ.get("DEEPFIND_PROJECT_DIR") or "").strip()
+    if configured_root:
+        return Path(configured_root).expanduser().resolve()
     return Path(__file__).resolve().parent.parent
 
 

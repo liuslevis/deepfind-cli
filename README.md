@@ -285,6 +285,28 @@ npm run dev
 Open the Vite URL during development, or run `npm run build` so `deepfind-web` can
 serve `web/dist` directly.
 
+Desktop development:
+
+```bash
+cd web
+npm run desktop:dev
+```
+
+The Electron app starts and stops the Python backend automatically. Packaged
+builds keep application data and an optional `.env` file in the platform's
+DeepFind user-data directory.
+
+Build an installer on the target operating system:
+
+```bash
+cd web
+npm run desktop:dist:win
+npm run desktop:dist:mac
+```
+
+The Windows installer must be built on Windows, and the macOS DMG/ZIP must be
+built on macOS. Backend packaging uses the Python `desktop` extra and PyInstaller.
+
 The production shell now includes a web manifest, touch icon, and iPhone Safari
 safe-area handling so it works cleanly in Safari and when added to the Home
 Screen.
