@@ -5,7 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 
 const electronDir = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = process.env.DEEPFIND_REPOSITORY_ROOT
@@ -18,6 +18,12 @@ let backendProcess;
 let mainWindow;
 let backendOrigin;
 let quitting = false;
+let applicationMenu;
+let menuBarVisible = true;
+
+const ZOOM_STEP = 0.5;
+const MIN_ZOOM_LEVEL = -5;
+const MAX_ZOOM_LEVEL = 5;
 
 function ignoreBrokenPipe(stream) {
   stream.on("error", (error) => {
@@ -126,6 +132,40 @@ function isSafeExternalUrl(url) {
   }
 }
 
+function toggleMenuBar(window) {
+  if (process.platform === "darwin") {
+    // macOS always shows the menu bar, so swap out the application menu instead.
+    applicationMenu ??= Menu.getApplicationMenu();
+    menuBarVisible = !menuBarVisible;
+    Menu.setApplicationMenu(menuBarVisible ? applicationMenu : Menu.buildFromTemplate([]));
+    return;
+  }
+
+  window.setMenuBarVisibility(!window.isMenuBarVisible());
+}
+
+function registerMenuBarShortcut(window) {
+  window.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key !== "F12") {
+      return;
+    }
+    event.preventDefault();
+    if (input.isAutoRepeat || input.control || input.alt || input.meta || input.shift) {
+      return;
+    }
+    toggleMenuBar(window);
+  });
+}
+
+ipcMain.on("deepfind:zoom", (event, direction) => {
+  if ((direction !== "in" && direction !== "out") || event.sender.isDestroyed()) {
+    return;
+  }
+  const current = event.sender.getZoomLevel();
+  const next = direction === "in" ? current + ZOOM_STEP : current - ZOOM_STEP;
+  event.sender.setZoomLevel(Math.min(MAX_ZOOM_LEVEL, Math.max(MIN_ZOOM_LEVEL, next)));
+});
+
 async function createWindow() {
   if (!backendProcess || backendProcess.exitCode !== null || !backendOrigin) {
     const port = await reservePort(rendererUrl ? 8000 : undefined);
@@ -149,6 +189,13 @@ async function createWindow() {
       sandbox: true,
     },
   });
+
+  // Each new window starts with the menu bar showing again.
+  menuBarVisible = true;
+  if (process.platform === "darwin" && applicationMenu) {
+    Menu.setApplicationMenu(applicationMenu);
+  }
+  registerMenuBarShortcut(mainWindow);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) {

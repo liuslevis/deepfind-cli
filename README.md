@@ -108,8 +108,8 @@ cp .env.example .env
 Minimal `.env`:
 
 ```bash
-QWEN_API_KEY=...
-QWEN_MODEL_NAME=qwen3-max
+DEEPSEEK_API_KEY=...
+DEEPSEEK_MODEL_NAME=deepseek-v4-flash
 ```
 
 Optional Xiaomi MiMo remote model:
@@ -136,13 +136,13 @@ GLM_MODEL_NAME=glm-5.2
 GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 ```
 
-Optional DeepSeek remote model (Responses API):
+Optional Qwen remote model:
 
 ```bash
-DEEPSEEK_API_KEY=...
-DEEPSEEK_MODEL_NAME=deepseek-v4-flash
-DEEPSEEK_SUB_MODEL_NAME=deepseek-v4-flash
-DEEPSEEK_BASE_URL=https://api.deepseek.com
+QWEN_API_KEY=...
+QWEN_MODEL_NAME=qwen3-max
+QWEN_SUB_MODEL_NAME=qwen3-max
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
 Local Ollama GPU mode:
@@ -294,7 +294,8 @@ npm run desktop:dev
 
 The Electron app starts and stops the Python backend automatically. Packaged
 builds keep application data and an optional `.env` file in the platform's
-DeepFind user-data directory.
+DeepFind user-data directory. Press `F12` to show or hide the application menu
+bar, and `-` / `=` to zoom out and in (except while typing in a text field).
 
 On Windows, the development launcher stages the Electron runtime under
 `%LOCALAPPDATA%\DeepFind\electron-dev` and grants that directory AppContainer

@@ -205,3 +205,16 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.sub_model, DEFAULT_DEEPSEEK_MODEL)
         self.assertEqual(settings.base_url, DEFAULT_DEEPSEEK_BASE_URL)
         self.assertEqual(settings.api_mode, "responses")
+
+    def test_from_env_prefers_deepseek_when_multiple_remote_keys_are_set(self) -> None:
+        env = {
+            "DEEPFIND_ENV_FILE": "/tmp/deepfind-missing.env",
+            "QWEN_API_KEY": "sk-qwen",
+            "DEEPSEEK_API_KEY": "sk-deepseek",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.api_key, "sk-deepseek")
+        self.assertEqual(settings.model, DEFAULT_DEEPSEEK_MODEL)
+        self.assertEqual(settings.base_url, DEFAULT_DEEPSEEK_BASE_URL)
+        self.assertEqual(settings.api_mode, "responses")

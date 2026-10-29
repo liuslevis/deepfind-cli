@@ -241,16 +241,16 @@ class Settings:
             or DEFAULT_DEEPSEEK_BASE_URL
         )
         api_mode = CHAT_COMPLETIONS_API
-        remote_target = "qwen"
-        if not qwen_api_key:
-            if glm_api_key:
+        remote_target = "deepseek"
+        if not deepseek_api_key:
+            if qwen_api_key:
+                remote_target = "qwen"
+            elif glm_api_key:
                 remote_target = "glm"
             elif minimax_api_key:
                 remote_target = "minimax"
             elif mimo_api_key:
                 remote_target = "mimo"
-            elif deepseek_api_key:
-                remote_target = "deepseek"
         if remote_target == "qwen":
             api_key = qwen_api_key
             model = qwen_model

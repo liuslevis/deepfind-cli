@@ -67,7 +67,7 @@ const SLASH_COMMANDS: SlashCommandOption[] = [
     description: "List all available tools and their descriptions.",
   },
 ];
-const DEFAULT_MODEL_TARGET: ModelTarget = "qwen";
+const DEFAULT_MODEL_TARGET: ModelTarget = "deepseek";
 const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax", "glm", "deepseek"] as const;
 const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
   {
@@ -326,6 +326,16 @@ function isStandalonePwa(): boolean {
   }
 
   return typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
 }
 
 function modeLabel(mode: ChatMode | null): string {
@@ -1861,6 +1871,39 @@ export default function App() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    const desktop = window.deepfindDesktop;
+    if (!desktop) {
+      return;
+    }
+    const zoom = desktop.zoom;
+    if (typeof zoom !== "function") {
+      return;
+    }
+
+    function handleZoomKey(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.isComposing) {
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      if (event.key !== "-" && event.key !== "=") {
+        return;
+      }
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      zoom(event.key === "=" ? "in" : "out");
+    }
+
+    window.addEventListener("keydown", handleZoomKey);
+    return () => {
+      window.removeEventListener("keydown", handleZoomKey);
+    };
+  }, []);
 
   async function handleOpenChat(chatId: string) {
     setLoading(true);

@@ -556,9 +556,6 @@ describe("App", () => {
     render(<App />);
 
     const modelButton = await screen.findByRole("button", { name: "Model" });
-    for (let index = 0; index < 4; index += 1) {
-      await userEvent.click(modelButton);
-    }
     expect(modelButton).toHaveTextContent("DeepSeek");
 
     await userEvent.type(screen.getByLabelText("Ask DeepFind"), "你是什么模型");
