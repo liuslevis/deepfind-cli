@@ -12,3 +12,15 @@ web/*.tsbuildinfo
 slide
 assets
 sandbox/
+
+# Local Vite dependency cache
+.vite/
+
+# Electron / desktop packaging build output
+web/.electron-build/
+web/backend-dist/
+web/release/
+
+# Third-party template library, cloned separately:
+# git clone https://github.com/zarazhangrui/beautiful-html-templates
+beautiful-html-templates/
