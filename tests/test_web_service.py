@@ -88,6 +88,21 @@ class DirectChatApp:
 
 
 class WebServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        settings = Settings(
+            api_key="deepseek-key",
+            deepseek_api_key="deepseek-key",
+            deepseek_model="deepseek-v4-flash",
+            deepseek_sub_model="deepseek-v4-flash",
+            deepseek_base_url="https://api.deepseek.com",
+        )
+        settings_patch = patch(
+            "deepfind.web_service.Settings.from_env",
+            return_value=settings,
+        )
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
+
     def test_mode_mapping(self) -> None:
         self.assertEqual(mode_to_agent_count("fast"), 1)
         self.assertEqual(mode_to_agent_count("expert"), 4)

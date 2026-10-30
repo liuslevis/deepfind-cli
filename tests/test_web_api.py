@@ -39,6 +39,21 @@ class FakeApp:
 
 
 class WebApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        settings = Settings(
+            api_key="deepseek-key",
+            deepseek_api_key="deepseek-key",
+            deepseek_model="deepseek-v4-flash",
+            deepseek_sub_model="deepseek-v4-flash",
+            deepseek_base_url="https://api.deepseek.com",
+        )
+        settings_patch = patch(
+            "deepfind.web_service.Settings.from_env",
+            return_value=settings,
+        )
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
+
     def test_web_dist_dir_uses_configured_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.dict("os.environ", {"DEEPFIND_WEB_DIST_DIR": temp_dir}):
