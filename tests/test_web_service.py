@@ -454,6 +454,36 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(seen["settings"].base_url, "https://api.deepseek.com")
         self.assertEqual(seen["settings"].api_mode, "responses")
 
+    def test_stream_message_defaults_to_deepseek_target(self) -> None:
+        seen: dict[str, Any] = {}
+        base_settings = Settings(
+            api_key="deepseek-key",
+            deepseek_api_key="deepseek-key",
+            deepseek_model="deepseek-v4-flash",
+            deepseek_sub_model="deepseek-v4-flash",
+            deepseek_base_url="https://api.deepseek.com",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = DeepFindWebService(
+                store=ChatStore(Path(temp_dir)),
+                app_factory=lambda progress, settings: CapturingApp(
+                    progress,
+                    settings=settings,
+                    seen=seen,
+                ),
+            )
+            chat = service.create_chat()
+            with patch("deepfind.web_service.Settings.from_env", return_value=base_settings):
+                events = list(service.stream_message(chat.id, "hello", "fast"))
+            saved_chat = service.get_chat(chat.id)
+
+        self.assertEqual(events[-2].type, "answer_final")
+        self.assertEqual(seen["settings"].api_key, "deepseek-key")
+        self.assertEqual(seen["settings"].model, "deepseek-v4-flash")
+        self.assertEqual(seen["settings"].api_mode, "responses")
+        self.assertEqual(saved_chat.messages[0].model_target, "deepseek")
+
     def test_stream_message_list_tool_returns_catalog_without_research_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = DeepFindWebService(store=ChatStore(Path(temp_dir)))

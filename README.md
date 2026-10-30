@@ -105,11 +105,23 @@ The CLI auto-loads `.env` from the repo root.
 cp .env.example .env
 ```
 
-Minimal `.env`:
+Minimal `.env` (DeepSeek is the default remote model):
+
+```bash
+DEEPSEEK_API_KEY=...
+DEEPSEEK_MODEL_NAME=deepseek-v4-flash
+DEEPSEEK_SUB_MODEL_NAME=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+```
+
+Qwen (DashScope) is still supported. When `DEEPSEEK_API_KEY` is missing, the
+default remote model falls back to the first configured provider in this order:
+Qwen, GLM, MiniMax, MiMo.
 
 ```bash
 QWEN_API_KEY=...
 QWEN_MODEL_NAME=qwen3-max
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
 Optional Xiaomi MiMo remote model:
@@ -134,15 +146,6 @@ Optional GLM remote model:
 GLM_API_KEY=...
 GLM_MODEL_NAME=glm-5.2
 GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-```
-
-Optional DeepSeek remote model (Responses API):
-
-```bash
-DEEPSEEK_API_KEY=...
-DEEPSEEK_MODEL_NAME=deepseek-v4-flash
-DEEPSEEK_SUB_MODEL_NAME=deepseek-v4-flash
-DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```
 
 Local Ollama GPU mode:
@@ -266,8 +269,8 @@ Generate 3 HTML slides from that summary and save them under tmp/
 The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
 live run activity, an iPhone-friendly mobile drawer, and a mode switch for
 `1 Agent` and `4 Agents`. The composer also includes a single
-model button that rotates between `Qwen`, `Mimo`, `Minimax`, `GLM`, and the local `GPU` model
-when a compatible NVIDIA GPU is available.
+model button that rotates between `DeepSeek`, `Qwen`, `Mimo`, `Minimax`, `GLM`, and the local `GPU` model
+when a compatible NVIDIA GPU is available. `DeepSeek` is selected by default.
 
 Backend:
 ```bash
@@ -292,9 +295,17 @@ cd web
 npm run desktop:dev
 ```
 
-The Electron app starts and stops the Python backend automatically. Packaged
-builds keep application data and an optional `.env` file in the platform's
-DeepFind user-data directory.
+The Electron app starts and stops the Python backend automatically. Development
+builds read the repository `.env`; packaged builds keep application data and an
+optional `.env` file in the platform's DeepFind user-data directory
+(`%APPDATA%\DeepFind\.env` on Windows, `~/Library/Application Support/DeepFind/.env`
+on macOS). The backend also falls back to the working directory, its parents, and
+the repository root when `DEEPFIND_ENV_FILE` points at a file that does not exist
+yet, so a missing user-data `.env` no longer hides the repository config.
+
+If a remote model reports that its API key is missing, check that the `.env`
+file the app loads defines it, for example
+`DEEPSEEK_API_KEY=...` for the DeepSeek model.
 
 On Windows, the development launcher stages the Electron runtime under
 `%LOCALAPPDATA%\DeepFind\electron-dev` and grants that directory AppContainer

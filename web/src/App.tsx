@@ -67,8 +67,8 @@ const SLASH_COMMANDS: SlashCommandOption[] = [
     description: "List all available tools and their descriptions.",
   },
 ];
-const DEFAULT_MODEL_TARGET: ModelTarget = "qwen";
-const REMOTE_MODEL_TARGETS = ["qwen", "mimo", "minimax", "glm", "deepseek"] as const;
+const DEFAULT_MODEL_TARGET: ModelTarget = "deepseek";
+const REMOTE_MODEL_TARGETS = ["deepseek", "qwen", "mimo", "minimax", "glm"] as const;
 const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
   {
     name: "rag_search",

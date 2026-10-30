@@ -70,4 +70,4 @@ class ChatStoreTests(unittest.TestCase):
 
             chat = ChatStore(root).get_chat("chat_legacy")
 
-        self.assertEqual(chat.messages[0].model_target, "qwen")
+        self.assertEqual(chat.messages[0].model_target, "deepseek")

@@ -483,6 +483,9 @@ describe("App", () => {
     await waitFor(() => expect(modelButton).toHaveTextContent("GPU"));
 
     await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("DeepSeek");
+
+    await userEvent.click(modelButton);
     expect(modelButton).toHaveTextContent("Qwen");
 
     await userEvent.click(modelButton);
@@ -493,6 +496,9 @@ describe("App", () => {
 
     await userEvent.click(modelButton);
     expect(modelButton).toHaveTextContent("GLM");
+
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("GPU");
 
     await userEvent.click(modelButton);
     expect(modelButton).toHaveTextContent("DeepSeek");
@@ -556,6 +562,8 @@ describe("App", () => {
     render(<App />);
 
     const modelButton = await screen.findByRole("button", { name: "Model" });
+    await userEvent.click(modelButton);
+    expect(modelButton).toHaveTextContent("Qwen");
     await userEvent.click(modelButton);
     expect(modelButton).toHaveTextContent("Mimo");
 

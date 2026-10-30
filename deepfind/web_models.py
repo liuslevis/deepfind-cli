@@ -9,14 +9,15 @@ ResearchMode = Literal["deep_research", "research", "chat"]
 MessageRole = Literal["user", "assistant"]
 ArtifactKind = Literal["image", "slides", "file"]
 ModelTarget = Literal["qwen", "mimo", "minimax", "glm", "deepseek", "gpu"]
+DEFAULT_MODEL_TARGET: ModelTarget = "deepseek"
 
 
 def normalize_model_target(value: Any) -> ModelTarget:
     if value is None:
-        return "qwen"
+        return DEFAULT_MODEL_TARGET
     normalized = str(value).strip().lower()
     if not normalized or normalized == "cloud":
-        return "qwen"
+        return DEFAULT_MODEL_TARGET
     if normalized in {"qwen", "mimo", "minimax", "glm", "deepseek", "gpu"}:
         return normalized
     raise ValueError(f"unsupported model target: {value}")
@@ -75,7 +76,7 @@ class WebMessage(BaseModel):
     artifacts: list[ArtifactLink] = Field(default_factory=list)
     key_points: list[KeyPoint] = Field(default_factory=list)
     citations: list[CitationLink] = Field(default_factory=list)
-    model_target: ModelTarget = "qwen"
+    model_target: ModelTarget = DEFAULT_MODEL_TARGET
     model_label: str = ""
 
     @field_validator("model_target", mode="before")
@@ -108,7 +109,7 @@ class TurnResult(BaseModel):
     citations: list[CitationLink] = Field(default_factory=list)
     mode: ChatMode
     research_mode: ResearchMode = "research"
-    model_target: ModelTarget = "qwen"
+    model_target: ModelTarget = DEFAULT_MODEL_TARGET
     model_label: str = ""
 
     @field_validator("model_target", mode="before")
@@ -144,7 +145,7 @@ class CreateChatRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str = Field(..., max_length=20000)
     mode: ChatMode
-    model_target: ModelTarget = "qwen"
+    model_target: ModelTarget = DEFAULT_MODEL_TARGET
     deep_mode: bool = False
     research_mode: ResearchMode | None = None
     selected_tools: list[str] | None = None

@@ -64,13 +64,24 @@ function packagedBackend() {
   return { command: executable, args: [] };
 }
 
+function backendEnvFile(userData) {
+  const userEnvFile = path.join(userData, ".env");
+  if (app.isPackaged) {
+    return userEnvFile;
+  }
+  // Development runs from the checkout, so its .env is the source of truth.
+  // Packaged builds only ship the backend binary and use the user-data .env.
+  const repositoryEnvFile = path.join(repositoryRoot, ".env");
+  return existsSync(repositoryEnvFile) ? repositoryEnvFile : userEnvFile;
+}
+
 function startBackend(port) {
   const backend = app.isPackaged ? packagedBackend() : developmentPython();
   const userData = app.getPath("userData");
   mkdirSync(userData, { recursive: true });
   const env = {
     ...process.env,
-    DEEPFIND_ENV_FILE: path.join(userData, ".env"),
+    DEEPFIND_ENV_FILE: backendEnvFile(userData),
     DEEPFIND_PROJECT_DIR: app.isPackaged ? userData : repositoryRoot,
     DEEPFIND_WEB_DIST_DIR: app.isPackaged
       ? path.join(process.resourcesPath, "web-dist")

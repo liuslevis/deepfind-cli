@@ -21,6 +21,7 @@ from .web_models import (
     ArtifactLink,
     CitationLink,
     ChatMode,
+    DEFAULT_MODEL_TARGET,
     KeyPoint,
     LocalModelInfo,
     ModelTarget,
@@ -270,7 +271,7 @@ class DeepFindWebService:
         chat_id: str,
         content: str,
         mode: ChatMode,
-        model_target: ModelTarget = "qwen",
+        model_target: ModelTarget = DEFAULT_MODEL_TARGET,
         *,
         deep_mode: bool = False,
         research_mode: ResearchMode | None = None,
@@ -449,7 +450,7 @@ class DeepFindWebService:
         mode: ChatMode,
         research_mode: ResearchMode = "research",
         envelope: dict[str, object] | None = None,
-        model_target: ModelTarget = "qwen",
+        model_target: ModelTarget = DEFAULT_MODEL_TARGET,
         model_label: str = "",
     ) -> TurnResult:
         urls: list[str] = []

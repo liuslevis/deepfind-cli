@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from deepfind.config import DEFAULT_DEEPSEEK_MODEL
 from deepfind.gen_slides import (
     DEFAULT_TEMPLATE_NAME,
     SlideGenerationError,
@@ -116,7 +117,7 @@ class GenSlidesTests(unittest.TestCase):
             self.assertEqual(result["slide_count"], 2)
             self.assertEqual(result["template_name"], "monochrome")
             calls = fake_client.chat.completions.calls
-            self.assertEqual(calls[0]["model"], "qwen3-max")
+            self.assertEqual(calls[0]["model"], DEFAULT_DEEPSEEK_MODEL)
 
     def test_generate_slides_with_custom_template(self) -> None:
         fake_client = FakeClient(SAMPLE_SLIDES_HTML)

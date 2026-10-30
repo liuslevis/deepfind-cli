@@ -12,8 +12,8 @@ from .gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
 from .llm_transport import CHAT_COMPLETIONS_API, RESPONSES_API
 
 
-DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DEFAULT_MODEL = "qwen3-max"
+DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_QWEN_MODEL = "qwen3-max"
 DEFAULT_MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
 DEFAULT_MIMO_MODEL = "mimo-v2.5-pro"
 DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1"
@@ -25,6 +25,12 @@ DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
 DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_LOCAL_MODEL = "qwen3.5:9B"  # Change this to upgrade (e.g., "qwen3.6:27B")
 DEFAULT_LOCAL_API_KEY = "ollama"
+
+# DeepSeek is the product default remote model. Qwen and the other providers
+# stay available as explicit targets and as fallbacks when DEEPSEEK_API_KEY is
+# not configured.
+DEFAULT_BASE_URL = DEFAULT_DEEPSEEK_BASE_URL
+DEFAULT_MODEL = DEFAULT_DEEPSEEK_MODEL
 
 
 class SettingsError(RuntimeError):
@@ -76,21 +82,72 @@ def _env_positive_int(name: str, default: int, *, allow_zero: bool = False) -> i
     return value
 
 
-def _load_dotenv() -> None:
-    env_file = _clean_env_value(os.getenv("DEEPFIND_ENV_FILE")) or ".env"
-    path = Path(env_file)
-    if not path.exists():
+def _env_file_candidates() -> list[Path]:
+    """Return the ``.env`` files to try, highest priority first.
+
+    ``DEEPFIND_ENV_FILE`` is the preferred location, but a missing file there no
+    longer disables configuration: the loader keeps searching the working
+    directory, ``DEEPFIND_PROJECT_DIR``, the working directory's parents, and the
+    repository root. That keeps the CLI and the web backend working regardless of
+    where they are started from, and lets the desktop shell fall back to the
+    repository ``.env`` when the app's user-data directory has none yet.
+    """
+    candidates: list[Path] = []
+    seen: set[str] = set()
+
+    def add(path: Path) -> None:
+        try:
+            resolved = path.expanduser().resolve()
+        except OSError:
+            return
+        key = str(resolved)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(resolved)
+
+    explicit = _clean_env_value(os.getenv("DEEPFIND_ENV_FILE"))
+    if explicit:
+        add(Path(explicit))
+
+    cwd = Path.cwd()
+    add(cwd / ".env")
+
+    project_dir = _clean_env_value(os.getenv("DEEPFIND_PROJECT_DIR"))
+    if project_dir:
+        add(Path(project_dir) / ".env")
+
+    for parent in cwd.parents:
+        add(parent / ".env")
+
+    add(Path(__file__).resolve().parent.parent / ".env")
+    return candidates
+
+
+def _apply_env_file(path: Path) -> None:
+    try:
+        content = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
         return
 
-    for line in path.read_text().splitlines():
+    for line in content.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, raw_value = line.split("=", 1)
         key = key.strip()
         value = _clean_env_value(raw_value)
-        if key and value is not None and key not in os.environ:
+        # Empty or blank values count as unset so a stray `KEY=` in the shell
+        # cannot shadow a real value from .env.
+        if key and value is not None and _clean_env_value(os.environ.get(key)) is None:
             os.environ[key] = value
+
+
+def _load_dotenv() -> None:
+    for path in _env_file_candidates():
+        if path.is_file():
+            _apply_env_file(path)
+            return
 
 
 @dataclass(frozen=True)
@@ -101,9 +158,9 @@ class Settings:
     base_url: str = DEFAULT_BASE_URL
     api_mode: str = CHAT_COMPLETIONS_API
     qwen_api_key: str = ""
-    qwen_model: str = DEFAULT_MODEL
-    qwen_sub_model: str = DEFAULT_MODEL
-    qwen_base_url: str = DEFAULT_BASE_URL
+    qwen_model: str = DEFAULT_QWEN_MODEL
+    qwen_sub_model: str = DEFAULT_QWEN_MODEL
+    qwen_base_url: str = DEFAULT_QWEN_BASE_URL
     mimo_api_key: str = ""
     mimo_model: str = DEFAULT_MIMO_MODEL
     mimo_base_url: str = DEFAULT_MIMO_BASE_URL
@@ -179,15 +236,17 @@ class Settings:
         qwen_api_key = _env("QWEN_API_KEY") or _env("DASHSCOPE_API_KEY") or ""
         qwen_model = (
             _env("QWEN_MODEL")
-            or _env("QWEN_MODEL_NAME", DEFAULT_MODEL)
-            or DEFAULT_MODEL
+            or _env("QWEN_MODEL_NAME", DEFAULT_QWEN_MODEL)
+            or DEFAULT_QWEN_MODEL
         )
         qwen_sub_model = (
             _env("QWEN_SUB_MODEL")
             or _env("QWEN_SUB_MODEL_NAME", qwen_model)
             or qwen_model
         )
-        qwen_base_url = _env("QWEN_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL
+        qwen_base_url = (
+            _env("QWEN_BASE_URL", DEFAULT_QWEN_BASE_URL) or DEFAULT_QWEN_BASE_URL
+        )
         mimo_api_key = _env("MIMO_API_KEY") or _env("XIAOMI_API_KEY") or ""
         mimo_model = (
             _env("MIMO_MODEL")
@@ -241,17 +300,28 @@ class Settings:
             or DEFAULT_DEEPSEEK_BASE_URL
         )
         api_mode = CHAT_COMPLETIONS_API
-        remote_target = "qwen"
-        if not qwen_api_key:
-            if glm_api_key:
-                remote_target = "glm"
-            elif minimax_api_key:
-                remote_target = "minimax"
-            elif mimo_api_key:
-                remote_target = "mimo"
-            elif deepseek_api_key:
-                remote_target = "deepseek"
-        if remote_target == "qwen":
+        # DeepSeek is the default remote target. When its key is missing, fall
+        # back to the other configured providers so existing .env files keep
+        # working without changes.
+        if deepseek_api_key:
+            remote_target = "deepseek"
+        elif qwen_api_key:
+            remote_target = "qwen"
+        elif glm_api_key:
+            remote_target = "glm"
+        elif minimax_api_key:
+            remote_target = "minimax"
+        elif mimo_api_key:
+            remote_target = "mimo"
+        else:
+            remote_target = "deepseek"
+        if remote_target == "deepseek":
+            api_key = deepseek_api_key
+            model = deepseek_model
+            sub_model = deepseek_sub_model
+            base_url = deepseek_base_url
+            api_mode = RESPONSES_API
+        elif remote_target == "qwen":
             api_key = qwen_api_key
             model = qwen_model
             sub_model = qwen_sub_model
@@ -266,20 +336,14 @@ class Settings:
             model = glm_model
             sub_model = glm_model
             base_url = glm_base_url
-        elif remote_target == "mimo":
+        else:
             api_key = mimo_api_key
             model = mimo_model
             sub_model = mimo_model
             base_url = mimo_base_url
-        else:
-            api_key = deepseek_api_key
-            model = deepseek_model
-            sub_model = deepseek_sub_model
-            base_url = deepseek_base_url
-            api_mode = RESPONSES_API
         if require_api_key and not api_key:
             raise SettingsError(
-                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, DEEPSEEK_API_KEY, or use local GPU mode."
+                "Set DEEPSEEK_API_KEY, QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, or use local GPU mode."
             )
         timeout = _env("DEEPFIND_TOOL_TIMEOUT", "90")
         return cls(
@@ -362,7 +426,7 @@ class Settings:
     def ensure_remote_ready(self) -> "Settings":
         if not self.api_key:
             raise SettingsError(
-                "Set QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, DEEPSEEK_API_KEY, or switch to GPU mode."
+                "Set DEEPSEEK_API_KEY, QWEN_API_KEY, DASHSCOPE_API_KEY, MIMO_API_KEY, XIAOMI_API_KEY, MINIMAX_API_KEY, GLM_API_KEY, or switch to GPU mode."
             )
         return self
 

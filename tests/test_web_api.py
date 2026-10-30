@@ -117,7 +117,7 @@ class WebApiTests(unittest.TestCase):
             self.assertEqual(streamed.status_code, 200)
             self.assertIn("event: answer_final", streamed.text)
             after = client.get(f"/api/chats/{chat_id}")
-            self.assertEqual(after.json()["chat"]["messages"][0]["model_target"], "qwen")
+            self.assertEqual(after.json()["chat"]["messages"][0]["model_target"], "deepseek")
 
     def test_stream_endpoint_returns_plain_error_when_mimo_is_not_configured(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
