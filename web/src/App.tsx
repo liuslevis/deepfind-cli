@@ -1616,8 +1616,6 @@ export default function App() {
     setLocalModel(normalized);
     if (!normalized?.available) {
       setModelTarget((current) => (current === "gpu" ? DEFAULT_MODEL_TARGET : current));
-    } else {
-      setModelTarget((current) => (current === DEFAULT_MODEL_TARGET ? "gpu" : current));
     }
   }
 

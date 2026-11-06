@@ -404,7 +404,7 @@ describe("App", () => {
     });
   });
 
-  it("cycles the model button through remote providers and GPU and sends the selected target", async () => {
+  it("defaults to DeepSeek while keeping GPU available in the model cycle", async () => {
     let capturedBody = "";
     let chatsRequestCount = 0;
     const localModel = {
@@ -480,10 +480,7 @@ describe("App", () => {
     render(<App />);
 
     const modelButton = await screen.findByRole("button", { name: "Model" });
-    await waitFor(() => expect(modelButton).toHaveTextContent("GPU"));
-
-    await userEvent.click(modelButton);
-    expect(modelButton).toHaveTextContent("DeepSeek");
+    await waitFor(() => expect(modelButton).toHaveTextContent("DeepSeek"));
 
     await userEvent.click(modelButton);
     expect(modelButton).toHaveTextContent("Qwen");
