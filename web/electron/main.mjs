@@ -12,6 +12,9 @@ const repositoryRoot = process.env.DEEPFIND_REPOSITORY_ROOT
   ? path.resolve(process.env.DEEPFIND_REPOSITORY_ROOT)
   : path.resolve(electronDir, "..", "..");
 const rendererUrl = process.env.DEEPFIND_RENDERER_URL ?? (!app.isPackaged ? "http://127.0.0.1:5173" : undefined);
+const windowIcon = process.env.DEEPFIND_WINDOW_ICON
+  ? path.resolve(process.env.DEEPFIND_WINDOW_ICON)
+  : undefined;
 const apiToken = randomBytes(32).toString("hex");
 
 let backendProcess;
@@ -152,6 +155,7 @@ async function createWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: "#0b0f14",
+    ...(windowIcon && existsSync(windowIcon) ? { icon: windowIcon } : {}),
     webPreferences: {
       preload: path.join(electronDir, "preload.cjs"),
       additionalArguments: [`--deepfind-api-token=${apiToken}`],

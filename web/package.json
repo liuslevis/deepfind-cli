@@ -67,7 +67,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/icon-512.png"
+      "icon": "public/icon.ico"
     },
     "mac": {
       "target": [
@@ -75,7 +75,7 @@
         "zip"
       ],
       "category": "public.app-category.productivity",
-      "icon": "public/icon-512.png"
+      "icon": "public/icon.icns"
     },
     "nsis": {
       "oneClick": false,

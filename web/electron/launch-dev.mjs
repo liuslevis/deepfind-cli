@@ -17,6 +17,7 @@ function stageWindowsRuntime() {
   const runtimeDir = path.join(stageRoot, `runtime-${version}`);
   const appDir = path.join(stageRoot, "app");
   const stagedExecutable = path.join(runtimeDir, "electron.exe");
+  const stagedIcon = path.join(appDir, "icon.ico");
 
   mkdirSync(stageRoot, { recursive: true });
   if (!existsSync(stagedExecutable)) {
@@ -26,6 +27,7 @@ function stageWindowsRuntime() {
   mkdirSync(appDir, { recursive: true });
   cpSync(path.join(electronDir, "main.mjs"), path.join(appDir, "main.mjs"));
   cpSync(path.join(electronDir, "preload.cjs"), path.join(appDir, "preload.cjs"));
+  cpSync(path.join(webDir, "public", "icon.ico"), stagedIcon);
   writeFileSync(
     path.join(appDir, "package.json"),
     JSON.stringify(
@@ -50,17 +52,22 @@ function stageWindowsRuntime() {
     throw new Error(`Failed to grant Electron AppContainer access to ${stageRoot}.`);
   }
 
-  return { executable: stagedExecutable, appDir };
+  return { executable: stagedExecutable, appDir, icon: stagedIcon };
 }
 
 const runtime = process.platform === "win32"
   ? stageWindowsRuntime()
-  : { executable: electronPath, appDir: webDir };
+  : {
+      executable: electronPath,
+      appDir: webDir,
+      icon: path.join(webDir, "public", "icon.png"),
+    };
 const child = spawn(runtime.executable, [runtime.appDir], {
   env: {
     ...process.env,
     DEEPFIND_RENDERER_URL: "http://127.0.0.1:5173",
     DEEPFIND_REPOSITORY_ROOT: repositoryRoot,
+    DEEPFIND_WINDOW_ICON: runtime.icon,
   },
   stdio: "inherit",
 });
