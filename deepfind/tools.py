@@ -1399,7 +1399,8 @@ class Toolset:
                 "send_kindle",
                 "Email local files to the configured Kindle address (KINDLE_EMAIL) over SMTP. "
                 "Use this when the user asks to send a document, PDF, or EPUB to their Kindle. "
-                "Supported formats: pdf, epub, docx, doc, txt, rtf, htm, html, png, jpg, mobi, azw.",
+                "Supported formats: pdf, epub, docx, doc, txt, md, rtf, htm, html, png, jpg, mobi, azw. "
+                "txt and md files are automatically rendered to a Kindle-sized PDF before sending.",
                 {
                     "type": "object",
                     "properties": {

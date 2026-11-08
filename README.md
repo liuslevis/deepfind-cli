@@ -420,8 +420,15 @@ video/
 ## Send to Kindle
 
 `send_kindle(file_paths, subject, body, to)` emails local documents to your Kindle address over SMTP.
-Supported formats: `pdf`, `epub`, `docx`, `doc`, `txt`, `rtf`, `htm`, `html`, `png`, `jpg`, `mobi`, `azw`
+Supported formats: `pdf`, `epub`, `docx`, `doc`, `txt`, `md`, `rtf`, `htm`, `html`, `png`, `jpg`, `mobi`, `azw`
 (50 MB total). Set `subject` to `convert` to ask Amazon to convert the document.
+
+`.txt`, `.md`, and `.markdown` files are rendered to PDF before sending. Pages match the Kindle
+gen 8 screen (600x800 px at 167 ppi, i.e. 258.7x344.9 pt) with 10 pt margins and a 9 pt body font,
+so text fills the display without zooming. Markdown headings, lists, tables, quotes, code blocks,
+and inline emphasis are preserved, and CJK text uses a system Unicode font (falling back to
+reportlab's `STSong-Light`). The generated PDF lives in a temp directory and is removed after sending;
+the source file is left untouched.
 
 Configure in `.env`:
 

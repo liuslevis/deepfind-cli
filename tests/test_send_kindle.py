@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from deepfind import send_kindle as send_kindle_module
 from deepfind.send_kindle import (
     KindleSendError,
     MissingKindleConfigError,
@@ -55,6 +56,54 @@ class SendKindleTests(unittest.TestCase):
 
         client.starttls.assert_called_once()
         self.assertEqual(client.send_message.call_args.args[0]["Subject"], "convert")
+
+    def test_markdown_converted_to_pdf(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc = Path(tmpdir) / "notes.md"
+            doc.write_text("# 标题\n\n正文 **bold**\n", encoding="utf-8")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                data = _send([str(doc)])
+
+        message = client.send_message.call_args.args[0]
+        attachments = list(message.iter_attachments())
+        self.assertEqual([part.get_filename() for part in attachments], ["notes.pdf"])
+        self.assertTrue(attachments[0].get_payload(decode=True).startswith(b"%PDF"))
+        self.assertEqual(data["sources"], [str(doc)])
+        self.assertEqual(data["converted"], [{"source": str(doc), "pdf": "notes.pdf"}])
+
+    def test_text_converted_to_pdf(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc = Path(tmpdir) / "note.txt"
+            doc.write_text("hello kindle", encoding="utf-8")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                _send([str(doc)])
+
+        message = client.send_message.call_args.args[0]
+        self.assertEqual(
+            [part.get_filename() for part in message.iter_attachments()], ["note.pdf"]
+        )
+
+    def test_conversion_workdir_cleaned_up(self) -> None:
+        captured: list[Path] = []
+        real_convert = send_kindle_module.convert_for_kindle
+
+        def spy(path: Path, output_dir: Path) -> Path:
+            captured.append(Path(output_dir))
+            return real_convert(path, output_dir)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc = Path(tmpdir) / "note.md"
+            doc.write_text("text", encoding="utf-8")
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL"):
+                with patch("deepfind.send_kindle.convert_for_kindle", side_effect=spy):
+                    _send([str(doc)])
+
+        self.assertTrue(captured)
+        self.assertFalse(captured[0].exists())
 
     def test_missing_config_raises(self) -> None:
         with self.assertRaises(MissingKindleConfigError) as ctx:
