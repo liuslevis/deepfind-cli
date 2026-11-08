@@ -39,6 +39,7 @@ from .transcript_summary import (
     BILI_TRANSCRIPT_SUMMARY_MODEL,
     TranscriptSummaryError,
     summarize_transcript_for_query,
+    summarize_transcript_to_markdown,
 )
 from .video_resources import video_resource_paths
 from .web_fetch import (
@@ -646,6 +647,25 @@ def _bili_video_url(bvid: str) -> str:
     return f"https://www.bilibili.com/video/{bvid}"
 
 
+def _markdown_document_rejection(document: str) -> str:
+    """Return a reason when the text is not a usable Markdown summary document.
+
+    Reasoning models sometimes emit raw chain-of-thought instead of the answer,
+    which must never be written to disk or emailed.
+    """
+
+    text = (document or "").strip()
+    if not text:
+        return "empty output"
+    if not text.startswith("#"):
+        return "does not start with a Markdown heading"
+    if "\n##" not in text:
+        return "has no level-2 section headings"
+    if len(text) < 200:
+        return "too short to be a summary document"
+    return ""
+
+
 def _bili_number(value: Any) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -965,6 +985,7 @@ class Toolset:
             "bili_get_user_videos": self.bili_get_user_videos,
             "bili_transcribe": self.bili_transcribe,
             "bili_transcribe_full": self.bili_transcribe_full,
+            "bili_summary": self.bili_summary,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
             "send_kindle": self.send_kindle,
@@ -1348,6 +1369,34 @@ class Toolset:
                     "type": "object",
                     "properties": {
                         "bili_id": {"type": "string"},
+                    },
+                    "required": ["bili_id"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "bili_summary",
+                "Transcribe a Bilibili video by URL or BVID, write a Markdown summary document to "
+                "assets/video/bili/<BVID>/text/summary.md, and return its absolute path in data.summary_path. "
+                "Use this whenever the user asks to summarize a Bilibili video, and especially before send_kindle: "
+                "pass data.summary_path straight into send_kindle.file_paths. "
+                "Never guess a summary file path, because the file only exists after this tool runs.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "bili_id": {"type": "string"},
+                        "title": {
+                            "type": "string",
+                            "description": "Optional document title, e.g. the Kindle email subject.",
+                        },
+                        "focus": {
+                            "type": "string",
+                            "description": "Optional focus for the summary. Defaults to a general summary of the whole video.",
+                        },
+                        "refresh": {
+                            "type": "boolean",
+                            "description": "Regenerate the summary even when summary.md already exists.",
+                        },
                     },
                     "required": ["bili_id"],
                     "additionalProperties": False,
@@ -3048,6 +3097,96 @@ class Toolset:
                 "bili_id": data["bili_id"],
                 "transcript_path": data["transcript_path"],
                 "transcript": data["transcript"],
+            },
+        }
+
+    def bili_summary(
+        self,
+        bili_id: str,
+        title: str | None = None,
+        focus: str | None = None,
+        refresh: bool = False,
+    ) -> dict[str, Any]:
+        normalized_title = (title or "").strip()
+        normalized_focus = (focus or "").strip()
+        try:
+            resolved_id = parse_bili_id(bili_id)
+            video_root = resolve_audio_root(self.settings.audio_dir)
+            resources = video_resource_paths(video_root, "bili", resolved_id, create=True)
+            summary_path = resources.text / "summary.md"
+
+            if not refresh and summary_path.is_file():
+                cached_summary = summary_path.read_text(encoding="utf-8").strip()
+                if cached_summary and not _markdown_document_rejection(cached_summary):
+                    return {
+                        "ok": True,
+                        "tool": "bili_summary",
+                        "data": {
+                            "bili_id": resolved_id,
+                            "title": normalized_title,
+                            "focus": normalized_focus,
+                            "summary_path": str(summary_path),
+                            "transcript_path": str(resources.transcript),
+                            "summary": cached_summary,
+                            "summary_chars": len(cached_summary),
+                            "cached": True,
+                        },
+                    }
+
+            data = self._transcribe_bili_audio_data(resolved_id)
+            summary, chunk_count = summarize_transcript_to_markdown(
+                self.settings.new_client(),
+                transcript=data["transcript"],
+                title=normalized_title,
+                focus=normalized_focus,
+                source_url=_bili_video_url(resolved_id),
+                model=self.settings.model,
+                api_mode=self.settings.api_mode,
+            )
+            rejection = _markdown_document_rejection(summary)
+            if rejection:
+                return {
+                    "ok": False,
+                    "tool": "bili_summary",
+                    "error_code": "summary_rejected",
+                    "error": (
+                        f"generated summary is not a Markdown document ({rejection}); "
+                        "nothing was written. Retry with refresh=true."
+                    ),
+                }
+            summary_path.write_text(summary, encoding="utf-8")
+        except (
+            InvalidBiliIdError,
+            MissingDependencyError,
+            BiliDownloadError,
+            TranscriptionError,
+            TranscriptSummaryError,
+            BiliTranscribeError,
+        ) as exc:
+            return self._bili_transcribe_error("bili_summary", exc)
+        except OSError as exc:
+            return {
+                "ok": False,
+                "tool": "bili_summary",
+                "error_code": "write_failed",
+                "error": str(exc) or "failed to write summary.md",
+            }
+
+        return {
+            "ok": True,
+            "tool": "bili_summary",
+            "data": {
+                "bili_id": data["bili_id"],
+                "title": normalized_title,
+                "focus": normalized_focus,
+                "summary_model": self.settings.model,
+                "summary_path": str(summary_path),
+                "transcript_path": data["transcript_path"],
+                "transcript_chars": len(data["transcript"]),
+                "chunk_count": chunk_count,
+                "summary": summary,
+                "summary_chars": len(summary),
+                "cached": False,
             },
         }
 

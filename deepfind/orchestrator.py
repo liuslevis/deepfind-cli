@@ -41,7 +41,9 @@ WORKER_PROMPT = (
     "Prefer boss_detail before messaging because it may already reveal the company. If the task needs Bilibili "
     "creator discovery or channel uploads, use bili_search or bili_get_user_videos. If the task mentions Bilibili "
     "video/audio, call bili_transcribe with the URL or BVID plus a short query that captures the user's research "
-    "goal; use bili_transcribe_full only when you truly need the raw transcript. For rag_search evidence, include the "
+    "goal; use bili_transcribe_full only when you truly need the raw transcript, and use bili_summary when the user "
+    "wants a saved summary document (for example before send_kindle), passing its data.summary_path into "
+    "send_kindle.file_paths. For rag_search evidence, include the "
     "source path and PDF page range or media time range in the claim text, and copy the exact rag:// URI returned in "
     "rag_search.citations into claim.citations. If the latest user request "
     "asks for an image, do not call gen_img unless the assigned task explicitly asks you to produce the final image "
@@ -97,7 +99,12 @@ CHAT_PROMPT = (
     "You are a direct chat assistant. Answer the latest user message naturally and promptly in the user's language. "
     "Use the conversation history when it is relevant. Use the available tools when they help answer the request, "
     "especially when current or external verification is needed. Do not delegate work, mention agents, or describe "
-    "a lead/sub-agent workflow. Give a concise, useful answer and accurately reflect what the tools returned."
+    "a lead/sub-agent workflow. Give a concise, useful answer and accurately reflect what the tools returned. "
+    "You cannot write arbitrary local files: only attach paths that a tool returned. To email a Bilibili video "
+    "summary, call bili_summary first and pass the returned data.summary_path into send_kindle.file_paths; "
+    "never guess an attachment path. "
+    "When a tool already returns a finished document (such as bili_summary's data.summary), reproduce that "
+    "Markdown in full instead of condensing it, and add at most a one-line note about where the file was saved."
 )
 
 _TRACKING_QUERY_KEYS = frozenset(
@@ -901,7 +908,7 @@ class DeepFind:
             use_tools=bool(tool_names),
             history=_history_messages(transcript),
             tool_names=tool_names,
-            max_tokens=4000,
+            max_tokens=_DEFAULT_MAX_TOKENS,
         )
         return result.text.strip()
 

@@ -184,6 +184,11 @@ const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
     parameters: ["bili_id"],
   },
   {
+    name: "bili_summary",
+    description: "Summarize a Bilibili video into assets/video/bili/<BVID>/text/summary.md.",
+    parameters: ["bili_id", "title", "focus", "refresh"],
+  },
+  {
     name: "youtube_transcribe",
     description: "Transcribe YouTube audio and summarize it for a query.",
     parameters: ["url", "query"],
@@ -245,6 +250,7 @@ function toolLabel(name: string): string {
     bili_get_user_videos: "Bilibili User Videos",
     bili_transcribe: "Bilibili Transcribe",
     bili_transcribe_full: "Bilibili Full Transcript",
+    bili_summary: "Bilibili Summary Doc",
     youtube_transcribe: "YouTube Transcribe",
     youtube_transcribe_full: "YouTube Full Transcript",
     gen_img: "Generate Image",

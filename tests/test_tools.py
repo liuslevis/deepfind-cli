@@ -134,6 +134,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertIn("bili_get_user_videos", names)
         self.assertIn("bili_transcribe", names)
         self.assertIn("bili_transcribe_full", names)
+        self.assertIn("bili_summary", names)
         self.assertNotIn("youtube_transcribe", names)
         self.assertNotIn("youtube_transcribe_full", names)
         self.assertIn("xhs_read_cmt", names)
@@ -1708,6 +1709,93 @@ class ToolsetTests(unittest.TestCase):
             audio_dir=toolset.settings.audio_dir,
             timeout=toolset.settings.subprocess_timeout,
         )
+
+    def test_bili_summary_writes_summary_markdown(self) -> None:
+        document = "# 1106 彭博观察\n\n## 摘要\n" + "市场回顾与要点。" * 40 + "\n\n## 结论\n以上。"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", model="configured-bili-model", audio_dir=tmpdir))
+            fake_client = FakeOpenAIClient(
+                [message_response("chunk notes"), message_response(document)]
+            )
+            with patch(
+                "deepfind.tools.transcribe_bili_audio",
+                return_value={
+                    "bili_id": "BV1cgPSzeEj5",
+                    "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                    "transcript": "line one\nline two",
+                },
+            ):
+                with patch.object(Settings, "new_client", return_value=fake_client):
+                    result = toolset.bili_summary(
+                        "https://www.bilibili.com/video/BV1cgPSzeEj5",
+                        title="1106 彭博观察",
+                    )
+            summary_path = Path(result["data"]["summary_path"])
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["tool"], "bili_summary")
+            self.assertEqual(summary_path.name, "summary.md")
+            self.assertEqual(summary_path.parent.name, "text")
+            self.assertEqual(summary_path.parent.parent.name, "BV1cgPSzeEj5")
+            self.assertTrue(summary_path.is_absolute())
+            self.assertTrue(summary_path.is_file())
+            self.assertEqual(summary_path.read_text(encoding="utf-8"), result["data"]["summary"])
+            self.assertFalse(result["data"]["cached"])
+
+    def test_bili_summary_reuses_existing_summary_file(self) -> None:
+        document = "# doc\n\n## 摘要\n" + "正文内容。" * 60 + "\n\n## 结论\n完。"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            first_client = FakeOpenAIClient(
+                [message_response("chunk notes"), message_response(document)]
+            )
+            with patch(
+                "deepfind.tools.transcribe_bili_audio",
+                return_value={
+                    "bili_id": "BV1cgPSzeEj5",
+                    "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                    "transcript": "line one",
+                },
+            ):
+                with patch.object(Settings, "new_client", return_value=first_client):
+                    first = toolset.bili_summary("BV1cgPSzeEj5")
+            with patch("deepfind.tools.transcribe_bili_audio") as second_transcribe_mock:
+                second = toolset.bili_summary("https://www.bilibili.com/video/BV1cgPSzeEj5")
+        self.assertTrue(second["ok"])
+        self.assertTrue(second["data"]["cached"])
+        self.assertEqual(second["data"]["summary"], first["data"]["summary"])
+        self.assertEqual(second["data"]["summary_path"], first["data"]["summary_path"])
+        second_transcribe_mock.assert_not_called()
+
+    def test_bili_summary_rejects_reasoning_leak_without_writing_file(self) -> None:
+        leaked = "We need produce final Chinese Markdown document only. " * 10
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            fake_client = FakeOpenAIClient(
+                [message_response("chunk notes"), message_response(leaked)]
+            )
+            with patch(
+                "deepfind.tools.transcribe_bili_audio",
+                return_value={
+                    "bili_id": "BV1cgPSzeEj5",
+                    "transcript_path": "/tmp/audio/transcripts/BV1cgPSzeEj5.txt",
+                    "transcript": "line one",
+                },
+            ):
+                with patch.object(Settings, "new_client", return_value=fake_client):
+                    result = toolset.bili_summary("BV1cgPSzeEj5")
+            written = list(Path(tmpdir).rglob("summary.md"))
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "summary_rejected")
+        self.assertEqual(written, [])
+
+    def test_bili_summary_download_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toolset = Toolset(Settings(api_key="x", audio_dir=tmpdir))
+            with patch("deepfind.tools.transcribe_bili_audio", side_effect=BiliDownloadError("failed")):
+                result = toolset.bili_summary("BV1cgPSzeEj5")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["tool"], "bili_summary")
+        self.assertEqual(result["error_code"], "download_failed")
 
     def test_bili_transcribe_invalid_bili_id_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

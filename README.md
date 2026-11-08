@@ -396,6 +396,10 @@ curl http://127.0.0.1:8000/api/health
 `bili_transcribe(bili_id, query)` accepts a Bilibili video URL or `BV...` ID, runs download + ASR if needed,
 then returns a query-focused summary. Use `bili_transcribe_full(bili_id)` when you need the full transcript.
 
+`bili_summary(bili_id, title, focus, refresh)` transcribes the video, writes a standalone Markdown document to
+`assets/video/bili/<BVID>/text/summary.md`, and returns its absolute path as `data.summary_path`. Pass that path
+to `send_kindle` to email the summary. The existing `summary.md` is reused unless you set `refresh: true`.
+
 Setup:
 
 ```bash
@@ -415,6 +419,7 @@ video/
       video/
       text/
         transcript.txt
+        summary.md
 ```
 
 ## Send to Kindle
