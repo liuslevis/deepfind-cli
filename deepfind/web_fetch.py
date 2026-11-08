@@ -21,6 +21,9 @@ except ImportError:  # pragma: no cover - covered indirectly when dependency is 
 
 WEB_FETCH_MODEL = "qwen-plus"
 WEB_FETCH_MAX_MARKDOWN_CHARS = 12_000
+# Reasoning models spend part of this budget on hidden thinking tokens, so the
+# ceiling must stay well above the size of the visible summary.
+WEB_FETCH_SUMMARY_MAX_TOKENS = 8_000
 _DEFAULT_USER_AGENT = "deepfind-cli/0.1 (+https://github.com/openai/codex)"
 _HTMLISH_MARKERS = ("text/html", "application/xhtml+xml")
 _MARKDOWNISH_MARKERS = ("text/markdown", "text/x-markdown")
@@ -387,7 +390,7 @@ def summarize_web_document(
             model=model,
             instructions=system_prompt,
             user_input=user_prompt,
-            max_output_tokens=500,
+            max_output_tokens=WEB_FETCH_SUMMARY_MAX_TOKENS,
         )
     except Exception as exc:  # pragma: no cover - API failures are mocked in tests
         raise WebSummaryError(str(exc) or "summary generation failed") from exc

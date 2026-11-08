@@ -6,6 +6,8 @@ BILI_TRANSCRIPT_SUMMARY_MODEL = "qwen-plus"
 BILI_TRANSCRIPT_SUMMARY_CHUNK_CHARS = 12_000
 # Reasoning models spend part of this budget on hidden thinking tokens, so the
 # ceilings must stay well above the size of the visible answer.
+QUERY_CHUNK_SUMMARY_MAX_TOKENS = 8_000
+QUERY_MERGE_SUMMARY_MAX_TOKENS = 16_000
 DOCUMENT_CHUNK_NOTES_MAX_TOKENS = 8_000
 DOCUMENT_COMPOSE_MAX_TOKENS = 32_000
 
@@ -228,7 +230,7 @@ def _summarize_chunk(
         model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_tokens=900,
+        max_tokens=QUERY_CHUNK_SUMMARY_MAX_TOKENS,
         api_mode=api_mode,
     )
     if summary:
@@ -268,7 +270,7 @@ def _merge_chunk_summaries(
         model=model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_tokens=1_200,
+        max_tokens=QUERY_MERGE_SUMMARY_MAX_TOKENS,
         api_mode=api_mode,
     )
     if summary:

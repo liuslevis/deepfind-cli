@@ -231,7 +231,7 @@ def generate_slides(
             model=model,
             instructions=system_prompt,
             user_input=user_prompt,
-            max_output_tokens=max(4000, slide_count * 800),
+            max_output_tokens=max(16_000, slide_count * 2_000),
             timeout=max(timeout, 1),
         )
     except Exception as exc:
