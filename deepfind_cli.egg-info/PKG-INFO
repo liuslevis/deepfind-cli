@@ -11,6 +11,7 @@ Requires-Dist: markdownify>=1.1.0
 Requires-Dist: mcp>=1.2
 Requires-Dist: openai>=2.15.0
 Requires-Dist: pypdf>=5.4.0
+Requires-Dist: reportlab>=4.0.0
 Requires-Dist: uvicorn>=0.35.0
 Requires-Dist: websockets>=15.0
 Provides-Extra: local-llm
@@ -140,11 +141,23 @@ The CLI auto-loads `.env` from the repo root.
 cp .env.example .env
 ```
 
-Minimal `.env`:
+Minimal `.env` (DeepSeek is the default remote model):
+
+```bash
+DEEPSEEK_API_KEY=...
+DEEPSEEK_MODEL_NAME=deepseek-v4-flash
+DEEPSEEK_SUB_MODEL_NAME=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+```
+
+Qwen (DashScope) is still supported. When `DEEPSEEK_API_KEY` is missing, the
+default remote model falls back to the first configured provider in this order:
+Qwen, GLM, MiniMax, MiMo.
 
 ```bash
 QWEN_API_KEY=...
 QWEN_MODEL_NAME=qwen3-max
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
 Optional Xiaomi MiMo remote model:
@@ -169,15 +182,6 @@ Optional GLM remote model:
 GLM_API_KEY=...
 GLM_MODEL_NAME=glm-5.2
 GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-```
-
-Optional DeepSeek remote model (Responses API):
-
-```bash
-DEEPSEEK_API_KEY=...
-DEEPSEEK_MODEL_NAME=deepseek-v4-flash
-DEEPSEEK_SUB_MODEL_NAME=deepseek-v4-flash
-DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```
 
 Local Ollama GPU mode:
@@ -301,8 +305,8 @@ Generate 3 HTML slides from that summary and save them under tmp/
 The repo also includes a local web chat UI under [`web/`](./web) with saved chats,
 live run activity, an iPhone-friendly mobile drawer, and a mode switch for
 `1 Agent` and `4 Agents`. The composer also includes a single
-model button that rotates between `Qwen`, `Mimo`, `Minimax`, `GLM`, and the local `GPU` model
-when a compatible NVIDIA GPU is available.
+model button that rotates between `DeepSeek`, `Qwen`, `Mimo`, `Minimax`, `GLM`, and the local `GPU` model
+when a compatible NVIDIA GPU is available. `DeepSeek` is selected by default.
 
 Backend:
 ```bash
@@ -327,9 +331,17 @@ cd web
 npm run desktop:dev
 ```
 
-The Electron app starts and stops the Python backend automatically. Packaged
-builds keep application data and an optional `.env` file in the platform's
-DeepFind user-data directory.
+The Electron app starts and stops the Python backend automatically. Development
+builds read the repository `.env`; packaged builds keep application data and an
+optional `.env` file in the platform's DeepFind user-data directory
+(`%APPDATA%\DeepFind\.env` on Windows, `~/Library/Application Support/DeepFind/.env`
+on macOS). The backend also falls back to the working directory, its parents, and
+the repository root when `DEEPFIND_ENV_FILE` points at a file that does not exist
+yet, so a missing user-data `.env` no longer hides the repository config.
+
+If a remote model reports that its API key is missing, check that the `.env`
+file the app loads defines it, for example
+`DEEPSEEK_API_KEY=...` for the DeepSeek model.
 
 On Windows, the development launcher stages the Electron runtime under
 `%LOCALAPPDATA%\DeepFind\electron-dev` and grants that directory AppContainer
@@ -420,6 +432,10 @@ curl http://127.0.0.1:8000/api/health
 `bili_transcribe(bili_id, query)` accepts a Bilibili video URL or `BV...` ID, runs download + ASR if needed,
 then returns a query-focused summary. Use `bili_transcribe_full(bili_id)` when you need the full transcript.
 
+`bili_summary(bili_id, title, focus, refresh)` transcribes the video, writes a standalone Markdown document to
+`assets/video/bili/<BVID>/text/summary.md`, and returns its absolute path as `data.summary_path`. Pass that path
+to `send_kindle` to email the summary. The existing `summary.md` is reused unless you set `refresh: true`.
+
 Setup:
 
 ```bash
@@ -439,7 +455,37 @@ video/
       video/
       text/
         transcript.txt
+        summary.md
 ```
+
+## Send to Kindle
+
+`send_kindle(file_paths, subject, body, to)` emails local documents to your Kindle address over SMTP.
+Supported formats: `pdf`, `epub`, `docx`, `doc`, `txt`, `md`, `rtf`, `htm`, `html`, `png`, `jpg`, `mobi`, `azw`
+(50 MB total). Set `subject` to `convert` to ask Amazon to convert the document.
+
+`.txt`, `.md`, and `.markdown` files are rendered to PDF before sending. Pages match the Kindle
+gen 8 screen (600x800 px at 167 ppi, i.e. 258.7x344.9 pt) with 10 pt margins and a 9 pt body font,
+so text fills the display without zooming. Markdown headings, lists, tables, quotes, code blocks,
+and inline emphasis are preserved, and CJK text uses a system Unicode font (falling back to
+reportlab's `STSong-Light`). The generated PDF lives in a temp directory and is removed after sending;
+the source file is left untouched.
+
+Configure in `.env`:
+
+```bash
+KINDLE_EMAIL=your_address@kindle.com
+SMTP_HOST=smtp.qq.com
+SMTP_PORT=465
+SMTP_SSL=true
+SMTP_USER=your_email@qq.com
+SMTP_PASSWORD=your_smtp_authorization_code
+# SMTP_FROM=your_email@qq.com   # optional, defaults to SMTP_USER
+```
+
+For QQ Mail, `SMTP_PASSWORD` is the IMAP/SMTP authorization code, not your login password.
+Add `SMTP_USER` (or `SMTP_FROM`) to Amazon's **Approved Personal Document E-mail List**, otherwise
+Amazon drops the message silently.
 
 ## Test
 

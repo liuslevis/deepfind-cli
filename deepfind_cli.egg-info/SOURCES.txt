@@ -10,6 +10,7 @@ deepfind/config.py
 deepfind/gen_img.py
 deepfind/gen_slides.py
 deepfind/json_utils.py
+deepfind/kindle_pdf.py
 deepfind/llm.py
 deepfind/llm_transport.py
 deepfind/local_runtime.py
@@ -18,10 +19,12 @@ deepfind/orchestrator.py
 deepfind/output.py
 deepfind/progress.py
 deepfind/rag_search.py
+deepfind/send_kindle.py
 deepfind/tools.py
 deepfind/transcript_summary.py
 deepfind/video_resources.py
 deepfind/web_api.py
+deepfind/web_cli.py
 deepfind/web_fetch.py
 deepfind/web_models.py
 deepfind/web_progress.py
@@ -58,6 +61,7 @@ tests/test_cli.py
 tests/test_config.py
 tests/test_gen_img.py
 tests/test_gen_slides.py
+tests/test_kindle_pdf.py
 tests/test_llm.py
 tests/test_llm_transport.py
 tests/test_local_runtime.py
@@ -66,9 +70,12 @@ tests/test_output.py
 tests/test_progress.py
 tests/test_rag_integration.py
 tests/test_security.py
+tests/test_send_kindle.py
 tests/test_tools.py
 tests/test_video_resources.py
 tests/test_web_api.py
+tests/test_web_cli.py
+tests/test_web_models.py
 tests/test_web_service.py
 tests/test_xhs_transcribe.py
 tests/test_youtube_transcribe.py
