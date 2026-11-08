@@ -325,6 +325,95 @@ describe("App", () => {
     });
   });
 
+  it("does not select image or social/job tools by default", async () => {
+    let capturedBody = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/chats" && method === "GET") {
+        return jsonResponse({
+          chats: [],
+          tools: [
+            {
+              name: "web_search",
+              description: "Search the web.",
+              parameters: ["engine", "query", "limit"],
+            },
+            {
+              name: "gen_img",
+              description: "Generate an image.",
+              parameters: ["prompt"],
+            },
+            {
+              name: "gen_slides",
+              description: "Generate an HTML slide deck.",
+              parameters: ["prompt", "slide_count", "template_name", "html_path"],
+            },
+            {
+              name: "zhihu_search",
+              description: "Search Zhihu.",
+              parameters: ["query", "limit"],
+            },
+            {
+              name: "xhs_search",
+              description: "Search Xiaohongshu notes.",
+              parameters: ["query", "page", "sort", "note_type"],
+            },
+            {
+              name: "boss_search",
+              description: "Search BOSS Zhipin job postings.",
+              parameters: ["query"],
+            },
+          ],
+        });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_1",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_1/messages/stream") {
+        capturedBody = String(init?.body ?? "");
+        return streamResponse([
+          {
+            type: "answer_final",
+            data: {
+              answer_markdown: "Direct answer",
+              sources: [],
+              artifacts: [],
+              mode: "fast",
+            },
+          },
+          { type: "done", data: { chat_id: "chat_1" } },
+        ]);
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const toolsButton = await screen.findByRole("button", { name: "Tools" });
+    await waitFor(() => expect(toolsButton).toHaveTextContent("Tools 1"));
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Say hello");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(capturedBody).not.toBe(""));
+    expect(JSON.parse(capturedBody)).toMatchObject({
+      selected_tools: ["web_search"],
+    });
+  });
+
   it("selects multiple tools and sends the per-turn tool allowlist", async () => {
     let capturedBody = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -210,7 +210,18 @@ const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
   },
 ];
 function defaultSelectedTools(tools: ToolOption[]): string[] {
-  return tools.map((tool) => tool.name);
+  return tools
+    .filter((tool) => {
+      const name = tool.name;
+      if (name === "gen_img" || name === "gen_slides" || name === "zhihu_search") {
+        return false;
+      }
+      if (name.startsWith("xhs_") || name.startsWith("boss_")) {
+        return false;
+      }
+      return true;
+    })
+    .map((tool) => tool.name);
 }
 
 const DEFAULT_SELECTED_TOOLS = defaultSelectedTools(FALLBACK_TOOL_OPTIONS);
