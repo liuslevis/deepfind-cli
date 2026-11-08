@@ -91,9 +91,9 @@ class SendKindleTests(unittest.TestCase):
         captured: list[Path] = []
         real_convert = send_kindle_module.convert_for_kindle
 
-        def spy(path: Path, output_dir: Path) -> Path:
+        def spy(path: Path, output_dir: Path, *, title: str | None = None) -> Path:
             captured.append(Path(output_dir))
-            return real_convert(path, output_dir)
+            return real_convert(path, output_dir, title=title)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             doc = Path(tmpdir) / "note.md"
@@ -104,6 +104,26 @@ class SendKindleTests(unittest.TestCase):
 
         self.assertTrue(captured)
         self.assertFalse(captured[0].exists())
+
+    def test_subject_used_as_pdf_metadata_title(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc = Path(tmpdir) / "note.md"
+            doc.write_text("# hello", encoding="utf-8")
+            captured: dict[str, str | None] = {}
+
+            def fake_convert(source: Path, output_path: Path, *, title: str | None = None) -> Path:
+                captured["title"] = title
+                output_path.write_bytes(b"%PDF-1.4 fake")
+                return output_path
+
+            client = MagicMock()
+            with patch("deepfind.send_kindle.convert_to_pdf", side_effect=fake_convert):
+                with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                    smtp_ssl.return_value.__enter__.return_value = client
+                    _send([str(doc)], subject="My Kindle Title")
+
+        self.assertEqual(captured["title"], "My Kindle Title")
+        self.assertEqual(client.send_message.call_args.args[0]["Subject"], "My Kindle Title")
 
     def test_missing_config_raises(self) -> None:
         with self.assertRaises(MissingKindleConfigError) as ctx:

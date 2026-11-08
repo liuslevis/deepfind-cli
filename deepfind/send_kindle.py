@@ -81,14 +81,14 @@ def _unique_path(directory: Path, stem: str, suffix: str) -> Path:
     return candidate
 
 
-def convert_for_kindle(path: Path, output_dir: Path) -> Path:
+def convert_for_kindle(path: Path, output_dir: Path, *, title: str | None = None) -> Path:
     """Convert txt/markdown sources to a Kindle-sized PDF; pass others through."""
 
     if path.suffix.lower() not in CONVERTIBLE_EXTENSIONS:
         return path
     target = _unique_path(output_dir, path.stem, ".pdf")
     try:
-        return convert_to_pdf(path, target)
+        return convert_to_pdf(path, target, title=title)
     except PdfConversionError as exc:
         raise KindleSendError(str(exc)) from exc
 
@@ -142,12 +142,15 @@ def send_to_kindle(
         raise KindleSendError("Provide at least one file to send.")
     sources = [resolve_attachment(item) for item in file_paths]
 
+    normalized_subject = (subject or "").strip()
+
     workdir: Path | None = None
     if any(path.suffix.lower() in CONVERTIBLE_EXTENSIONS for path in sources):
         workdir = Path(tempfile.mkdtemp(prefix="deepfind-kindle-"))
     try:
         attachments = [
-            convert_for_kindle(path, workdir) if workdir else path for path in sources
+            convert_for_kindle(path, workdir, title=normalized_subject) if workdir else path
+            for path in sources
         ]
         return _deliver(
             attachments=attachments,

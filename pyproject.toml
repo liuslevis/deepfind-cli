@@ -58,6 +58,7 @@ find-links = [
 [project.scripts]
 deepfind = "deepfind.cli:main"
 deepfind-web = "deepfind.web_api:main"
+deepfind-chat = "deepfind.web_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["deepfind*"]
