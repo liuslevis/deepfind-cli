@@ -203,6 +203,11 @@ const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
     description: "Generate or edit an HTML slide deck.",
     parameters: ["prompt", "slide_count", "template_name", "html_path"],
   },
+  {
+    name: "send_kindle",
+    description: "Email local files to the configured Kindle address over SMTP.",
+    parameters: ["file_paths", "subject", "body", "to"],
+  },
 ];
 function defaultSelectedTools(tools: ToolOption[]): string[] {
   return tools.map((tool) => tool.name);
@@ -233,6 +238,7 @@ function toolLabel(name: string): string {
     youtube_transcribe_full: "YouTube Full Transcript",
     gen_img: "Generate Image",
     gen_slides: "Generate Slides",
+    send_kindle: "Send to Kindle",
   };
   return labels[name] ?? name.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
 }

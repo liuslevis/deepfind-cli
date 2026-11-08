@@ -417,6 +417,28 @@ video/
         transcript.txt
 ```
 
+## Send to Kindle
+
+`send_kindle(file_paths, subject, body, to)` emails local documents to your Kindle address over SMTP.
+Supported formats: `pdf`, `epub`, `docx`, `doc`, `txt`, `rtf`, `htm`, `html`, `png`, `jpg`, `mobi`, `azw`
+(50 MB total). Set `subject` to `convert` to ask Amazon to convert the document.
+
+Configure in `.env`:
+
+```bash
+KINDLE_EMAIL=your_address@kindle.com
+SMTP_HOST=smtp.qq.com
+SMTP_PORT=465
+SMTP_SSL=true
+SMTP_USER=your_email@qq.com
+SMTP_PASSWORD=your_smtp_authorization_code
+# SMTP_FROM=your_email@qq.com   # optional, defaults to SMTP_USER
+```
+
+For QQ Mail, `SMTP_PASSWORD` is the IMAP/SMTP authorization code, not your login password.
+Add `SMTP_USER` (or `SMTP_FROM`) to Amazon's **Approved Personal Document E-mail List**, otherwise
+Amazon drops the message silently.
+
 ## Test
 
 ```bash

@@ -10,6 +10,7 @@ from openai import OpenAI
 from .asr import DEFAULT_ASR_MODEL
 from .gen_img import DEFAULT_IMAGE_DIR, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_SIZE
 from .llm_transport import CHAT_COMPLETIONS_API, RESPONSES_API
+from .send_kindle import DEFAULT_SMTP_HOST, DEFAULT_SMTP_PORT
 
 
 DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -202,6 +203,13 @@ class Settings:
     audio_dir: str = "assets/video"
     subprocess_timeout: int = 90
     rag_dir: str = "assets"
+    smtp_host: str = DEFAULT_SMTP_HOST
+    smtp_port: int = DEFAULT_SMTP_PORT
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_ssl: bool = True
+    kindle_email: str = ""
 
     @classmethod
     def _resolve_asr_model(cls) -> str:
@@ -418,6 +426,13 @@ class Settings:
                 or _env("DEEPFIND_RAG_MCP_PROJECT_DIR")
                 or "assets"
             ),
+            smtp_host=_env("SMTP_HOST", DEFAULT_SMTP_HOST) or DEFAULT_SMTP_HOST,
+            smtp_port=int(_env("SMTP_PORT") or DEFAULT_SMTP_PORT),
+            smtp_user=_env("SMTP_USER", "") or "",
+            smtp_password=_env("SMTP_PASSWORD", "") or "",
+            smtp_from=_env("SMTP_FROM", "") or "",
+            smtp_ssl=_env_bool("SMTP_SSL", True),
+            kindle_email=_env("KINDLE_EMAIL", "") or "",
         )
 
     def new_client(self) -> OpenAI:

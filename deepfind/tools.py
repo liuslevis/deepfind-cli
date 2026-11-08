@@ -30,6 +30,11 @@ from .gen_slides import SlideGenerationError, generate_slides
 from .gen_img import ImageGenerationError, MissingImageApiKeyError, generate_image
 from .json_utils import dump_json, try_load_json
 from .rag_search import search_rag
+from .send_kindle import (
+    KindleSendError,
+    MissingKindleConfigError,
+    send_to_kindle,
+)
 from .transcript_summary import (
     BILI_TRANSCRIPT_SUMMARY_MODEL,
     TranscriptSummaryError,
@@ -962,6 +967,7 @@ class Toolset:
             "bili_transcribe_full": self.bili_transcribe_full,
             "gen_img": self.gen_img,
             "gen_slides": self.gen_slides,
+            "send_kindle": self.send_kindle,
         }
         if self.enabled_tools is not None:
             self._functions = {
@@ -1386,6 +1392,34 @@ class Toolset:
                         },
                     },
                     "required": ["prompt"],
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_spec(
+                "send_kindle",
+                "Email local files to the configured Kindle address (KINDLE_EMAIL) over SMTP. "
+                "Use this when the user asks to send a document, PDF, or EPUB to their Kindle. "
+                "Supported formats: pdf, epub, docx, doc, txt, rtf, htm, html, png, jpg, mobi, azw.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "file_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Local file paths to attach. Relative paths resolve from the repository root.",
+                            "minItems": 1,
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Email subject. Defaults to the first attachment name. Use 'convert' to request Kindle format conversion.",
+                        },
+                        "body": {"type": "string"},
+                        "to": {
+                            "type": "string",
+                            "description": "Override the destination address. Defaults to KINDLE_EMAIL.",
+                        },
+                    },
+                    "required": ["file_paths"],
                     "additionalProperties": False,
                 },
             ),
@@ -3162,6 +3196,49 @@ class Toolset:
         return {
             "ok": True,
             "tool": "gen_slides",
+            "data": data,
+        }
+
+    def send_kindle(
+        self,
+        file_paths: Sequence[str] | str,
+        subject: str | None = None,
+        body: str | None = None,
+        to: str | None = None,
+    ) -> dict[str, Any]:
+        paths = [file_paths] if isinstance(file_paths, str) else list(file_paths)
+        try:
+            data = send_to_kindle(
+                paths,
+                host=self.settings.smtp_host,
+                port=self.settings.smtp_port,
+                username=self.settings.smtp_user,
+                password=self.settings.smtp_password,
+                sender=self.settings.smtp_from,
+                recipient=(to or "").strip() or self.settings.kindle_email,
+                use_ssl=self.settings.smtp_ssl,
+                subject=subject,
+                body=body,
+                timeout=self.settings.subprocess_timeout,
+            )
+        except MissingKindleConfigError as exc:
+            return {
+                "ok": False,
+                "tool": "send_kindle",
+                "error_code": "missing_config",
+                "error": str(exc),
+            }
+        except KindleSendError as exc:
+            return {
+                "ok": False,
+                "tool": "send_kindle",
+                "error_code": "send_failed",
+                "error": str(exc),
+            }
+
+        return {
+            "ok": True,
+            "tool": "send_kindle",
             "data": data,
         }
 

@@ -18,6 +18,7 @@ from deepfind.bili_transcribe import (
 )
 from deepfind.config import Settings
 from deepfind.gen_slides import SlideGenerationError
+from deepfind.send_kindle import KindleSendError, MissingKindleConfigError
 from deepfind.gen_img import ImageGenerationError, MissingImageApiKeyError
 from deepfind.json_utils import dump_json
 from deepfind.tools import Toolset
@@ -141,6 +142,7 @@ class ToolsetTests(unittest.TestCase):
         self.assertEqual(names.count("xhs_transcribe_full"), 1)
         self.assertIn("gen_img", names)
         self.assertIn("gen_slides", names)
+        self.assertIn("send_kindle", names)
         self.assertIn("rag_search", names)
 
     def test_enabled_tools_filters_specs_and_calls(self) -> None:
@@ -2117,3 +2119,48 @@ class ToolsetTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["tool"], "gen_slides")
         self.assertEqual(result["error_code"], "generation_failed")
+
+    def test_send_kindle_passes_settings_and_accepts_single_path(self) -> None:
+        toolset = Toolset(
+            Settings(
+                api_key="x",
+                smtp_host="smtp.qq.com",
+                smtp_port=465,
+                smtp_user="me@qq.com",
+                smtp_password="code",
+                kindle_email="me@free.kindle.com",
+            )
+        )
+        with patch("deepfind.tools.send_to_kindle", return_value={"to": "me@free.kindle.com"}) as sender:
+            result = toolset.send_kindle("tmp/report.pdf")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tool"], "send_kindle")
+        args, kwargs = sender.call_args
+        self.assertEqual(args[0], ["tmp/report.pdf"])
+        self.assertEqual(kwargs["recipient"], "me@free.kindle.com")
+        self.assertEqual(kwargs["username"], "me@qq.com")
+        self.assertEqual(kwargs["password"], "code")
+
+    def test_send_kindle_override_recipient(self) -> None:
+        toolset = Toolset(Settings(api_key="x", kindle_email="default@free.kindle.com"))
+        with patch("deepfind.tools.send_to_kindle", return_value={}) as sender:
+            toolset.send_kindle(["a.pdf"], to="other@free.kindle.com")
+        self.assertEqual(sender.call_args.kwargs["recipient"], "other@free.kindle.com")
+
+    def test_send_kindle_missing_config_error(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch(
+            "deepfind.tools.send_to_kindle",
+            side_effect=MissingKindleConfigError("Set KINDLE_EMAIL in .env to use send_kindle."),
+        ):
+            result = toolset.send_kindle(["a.pdf"])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "missing_config")
+
+    def test_send_kindle_send_failure(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        with patch("deepfind.tools.send_to_kindle", side_effect=KindleSendError("SMTP send failed: boom")):
+            result = toolset.send_kindle(["a.pdf"])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "send_failed")
