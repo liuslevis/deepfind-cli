@@ -1449,7 +1449,10 @@ class Toolset:
                 "Email local files to the configured Kindle address (KINDLE_EMAIL) over SMTP. "
                 "Use this when the user asks to send a document, PDF, or EPUB to their Kindle. "
                 "Supported formats: pdf, epub, docx, doc, txt, md, rtf, htm, html, png, jpg, mobi, azw. "
-                "txt and md files are automatically rendered to a Kindle-sized PDF before sending.",
+                "txt and md files are automatically rendered to a Kindle-sized PDF before sending. "
+                "When the user gives a title for the document, pass it as 'title': the attachment is "
+                "sent as '<title>.<ext>' (or '<title>.pdf' for txt/md), with illegal filename "
+                "characters removed.",
                 {
                     "type": "object",
                     "properties": {
@@ -1459,9 +1462,13 @@ class Toolset:
                             "description": "Local file paths to attach. Relative paths resolve from the repository root.",
                             "minItems": 1,
                         },
+                        "title": {
+                            "type": "string",
+                            "description": "Document title. When set, attachments are sent as '<title>.<ext>' (or '<title>.pdf' for txt/md); illegal filename characters are stripped. The source files are not renamed on disk.",
+                        },
                         "subject": {
                             "type": "string",
-                            "description": "Email subject. Defaults to the first attachment name. Use 'convert' to request Kindle format conversion.",
+                            "description": "Email subject. Defaults to the title, else the first attachment name. Use 'convert' to request Kindle format conversion.",
                         },
                         "body": {"type": "string"},
                         "to": {
@@ -3345,8 +3352,13 @@ class Toolset:
         subject: str | None = None,
         body: str | None = None,
         to: str | None = None,
+        title: str | None = None,
     ) -> dict[str, Any]:
         paths = [file_paths] if isinstance(file_paths, str) else list(file_paths)
+        normalized_title = (title or "").strip() or None
+        # A title names the attachment; without an explicit subject it also
+        # becomes the email subject.
+        normalized_subject = (subject or "").strip() or normalized_title
         try:
             data = send_to_kindle(
                 paths,
@@ -3357,9 +3369,10 @@ class Toolset:
                 sender=self.settings.smtp_from,
                 recipient=(to or "").strip() or self.settings.kindle_email,
                 use_ssl=self.settings.smtp_ssl,
-                subject=subject,
+                subject=normalized_subject,
                 body=body,
                 timeout=self.settings.subprocess_timeout,
+                title=normalized_title,
             )
         except MissingKindleConfigError as exc:
             return {

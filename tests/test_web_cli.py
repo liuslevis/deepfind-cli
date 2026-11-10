@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import unittest
+from contextlib import nullcontext
 from unittest.mock import patch
 
 from deepfind import web_cli
@@ -15,6 +16,7 @@ from deepfind.web_cli import (
     main,
     resolve_base_url,
     resolve_token,
+    stream_message,
 )
 
 
@@ -52,6 +54,20 @@ class SseParsingTests(unittest.TestCase):
         raw = b'event: done\r\ndata: {"data": {"ok": true}}\r\n\r\n'
         events = list(iter_sse_events([raw]))
         self.assertEqual(events[0]["data"], {"ok": True})
+
+    def test_stream_message_rejects_truncated_stream(self) -> None:
+        response = nullcontext(
+            [b'event: answer_delta\ndata: {"data": {"delta": "partial"}}\n\n']
+        )
+        with patch("deepfind.web_cli._request", return_value=response):
+            with self.assertRaisesRegex(WebClientError, "ended before completion"):
+                stream_message("http://localhost", "chat_1", "query", token="")
+
+    def test_stream_message_requires_assistant_message(self) -> None:
+        response = nullcontext([b'event: done\ndata: {"data": {"chat_id": "chat_1"}}\n\n'])
+        with patch("deepfind.web_cli._request", return_value=response):
+            with self.assertRaisesRegex(WebClientError, "without an assistant message"):
+                stream_message("http://localhost", "chat_1", "query", token="")
 
 
 class ResolutionTests(unittest.TestCase):

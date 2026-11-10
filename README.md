@@ -424,9 +424,15 @@ video/
 
 ## Send to Kindle
 
-`send_kindle(file_paths, subject, body, to)` emails local documents to your Kindle address over SMTP.
+`send_kindle(file_paths, title, subject, body, to)` emails local documents to your Kindle address over SMTP.
 Supported formats: `pdf`, `epub`, `docx`, `doc`, `txt`, `md`, `rtf`, `htm`, `html`, `png`, `jpg`, `mobi`, `azw`
 (50 MB total). Set `subject` to `convert` to ask Amazon to convert the document.
+
+Set `title` to control the name your Kindle shows: attachments are sent as `<title>.<ext>`
+(`<title>.pdf` for `.txt`/`.md`/`.markdown`), with filename-illegal characters (`<>:"/\|?*`,
+control characters, trailing dots/spaces, Windows reserved names such as `CON`) removed.
+The renamed copy is staged in a temp directory, so files on disk are never renamed or moved.
+When `subject` is omitted, `title` is used as the email subject.
 
 `.txt`, `.md`, and `.markdown` files are rendered to PDF before sending. Pages match the Kindle
 gen 8 screen (600x800 px at 167 ppi, i.e. 258.7x344.9 pt) with 10 pt margins and a 9 pt body font,

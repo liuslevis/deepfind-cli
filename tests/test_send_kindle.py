@@ -7,6 +7,8 @@ from deepfind import send_kindle as send_kindle_module
 from deepfind.send_kindle import (
     KindleSendError,
     MissingKindleConfigError,
+    attachment_filename,
+    sanitize_filename_stem,
     send_to_kindle,
 )
 
@@ -158,6 +160,161 @@ class SendKindleTests(unittest.TestCase):
                 with self.assertRaises(KindleSendError) as ctx:
                     _send([str(pdf)])
         self.assertIn("SMTP send failed", str(ctx.exception))
+
+
+class SanitizeFilenameTests(unittest.TestCase):
+    def test_strips_illegal_characters(self) -> None:
+        self.assertEqual(
+            sanitize_filename_stem('a<b>c:d"e/f\\g|h?i*j'),
+            "abcdefghij",
+        )
+
+    def test_strips_control_characters_and_collapses_whitespace(self) -> None:
+        self.assertEqual(sanitize_filename_stem("Hello\t\n  World\x00"), "Hello World")
+
+    def test_full_width_separators_folded_and_removed(self) -> None:
+        self.assertEqual(sanitize_filename_stem("标题：季度／报告"), "标题季度报告")
+
+    def test_keeps_cjk_and_spaces(self) -> None:
+        self.assertEqual(sanitize_filename_stem("  2025 年度报告  "), "2025 年度报告")
+
+    def test_trailing_dots_and_spaces_trimmed(self) -> None:
+        self.assertEqual(sanitize_filename_stem("report... "), "report")
+
+    def test_all_illegal_title_returns_empty(self) -> None:
+        self.assertEqual(sanitize_filename_stem('<>:"/\\|?*'), "")
+        self.assertEqual(sanitize_filename_stem(""), "")
+        self.assertEqual(sanitize_filename_stem(None), "")
+
+    def test_windows_reserved_names_escaped(self) -> None:
+        self.assertEqual(sanitize_filename_stem("CON"), "CON_")
+        self.assertEqual(sanitize_filename_stem("com1"), "com1_")
+
+    def test_long_title_truncated(self) -> None:
+        stem = sanitize_filename_stem("x" * 400)
+        self.assertEqual(len(stem), send_kindle_module.MAX_FILENAME_STEM_LENGTH)
+
+    def test_attachment_filename_keeps_extension(self) -> None:
+        self.assertEqual(
+            attachment_filename(Path("a/b/report.docx"), "My Report"), "My Report.docx"
+        )
+        self.assertEqual(attachment_filename(Path("a/b/report.docx"), ""), "report.docx")
+        self.assertEqual(attachment_filename(Path("a/b/REPORT.PDF"), "T"), "T.pdf")
+
+
+class TitleRenameTests(unittest.TestCase):
+    def test_title_renames_existing_pdf(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf = Path(tmpdir) / "report.pdf"
+            pdf.write_bytes(b"%PDF-1.4 original")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                data = _send([str(pdf)], title="My Kindle Title")
+
+            message = client.send_message.call_args.args[0]
+            attachments = list(message.iter_attachments())
+            self.assertEqual(
+                [part.get_filename() for part in attachments],
+                ["My Kindle Title.pdf"],
+            )
+            self.assertTrue(attachments[0].get_payload(decode=True).startswith(b"%PDF"))
+            self.assertEqual(data["filenames"], ["My Kindle Title.pdf"])
+            self.assertTrue(pdf.exists())
+            self.assertEqual(pdf.read_bytes(), b"%PDF-1.4 original")
+
+    def test_title_keeps_original_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc = Path(tmpdir) / "draft.docx"
+            doc.write_bytes(b"PK fake")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                _send([str(doc)], title="Quarterly Notes")
+
+        message = client.send_message.call_args.args[0]
+        self.assertEqual(
+            [part.get_filename() for part in message.iter_attachments()],
+            ["Quarterly Notes.docx"],
+        )
+
+    def test_title_used_for_converted_pdf_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc = Path(tmpdir) / "notes.md"
+            doc.write_text("# 标题\n\n正文", encoding="utf-8")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                data = _send([str(doc)], title="季度:报告/总结")
+
+        message = client.send_message.call_args.args[0]
+        self.assertEqual(
+            [part.get_filename() for part in message.iter_attachments()],
+            ["季度报告总结.pdf"],
+        )
+        self.assertEqual(data["converted"], [{"source": str(doc), "pdf": "季度报告总结.pdf"}])
+
+    def test_multiple_files_share_title_without_collision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first = Path(tmpdir) / "one.pdf"
+            second = Path(tmpdir) / "two.pdf"
+            first.write_bytes(b"%PDF one")
+            second.write_bytes(b"%PDF two")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                _send([str(first), str(second)], title="Same Title")
+
+        message = client.send_message.call_args.args[0]
+        self.assertEqual(
+            [part.get_filename() for part in message.iter_attachments()],
+            ["Same Title.pdf", "Same Title-1.pdf"],
+        )
+
+    def test_title_with_only_illegal_chars_falls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf = Path(tmpdir) / "report.pdf"
+            pdf.write_bytes(b"%PDF-1.4")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                _send([str(pdf)], title='*/\\:?*')
+
+        message = client.send_message.call_args.args[0]
+        self.assertEqual(
+            [part.get_filename() for part in message.iter_attachments()],
+            ["kindle-document.pdf"],
+        )
+
+    def test_title_becomes_default_property_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "report.md"
+            source.write_text("# Report", encoding="utf-8")
+            converted = Path(tmpdir) / "converted.pdf"
+            converted.write_bytes(b"%PDF-1.4")
+            with patch(
+                "deepfind.send_kindle.convert_for_kindle",
+                return_value=converted,
+            ) as converter:
+                with patch("deepfind.send_kindle.smtplib.SMTP_SSL"):
+                    _send([str(source)], title="Doc Title")
+        converter.assert_called_once()
+        self.assertEqual(converter.call_args.kwargs["title"], "Doc Title")
+
+    def test_no_title_keeps_original_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf = Path(tmpdir) / "report.pdf"
+            pdf.write_bytes(b"%PDF-1.4")
+            client = MagicMock()
+            with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                smtp_ssl.return_value.__enter__.return_value = client
+                data = _send([str(pdf)])
+        self.assertEqual(
+            [part.get_filename() for part in client.send_message.call_args.args[0].iter_attachments()],
+            ["report.pdf"],
+        )
+        self.assertEqual(data["attachments"], [str(pdf)])
+        self.assertEqual(data["converted"], [])
 
 
 if __name__ == "__main__":

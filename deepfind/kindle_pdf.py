@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import html
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -126,6 +128,20 @@ def _read_text(path: Path) -> str:
         except UnicodeDecodeError:
             continue
     return data.decode("utf-8", errors="replace")
+
+
+def _starts_with_heading(text: str) -> bool:
+    """Return True when the first meaningful line is a markdown heading.
+
+    Used to avoid printing a separate title above a document whose own first
+    line is already a ``# Heading`` of equal intent.
+    """
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        return bool(_HEADING_RE.match(stripped))
+    return False
 
 
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
@@ -433,6 +449,28 @@ def _plain_flowables(text: str, styles) -> list:
 def convert_to_pdf(source: Path, output_path: Path, *, title: str | None = None) -> Path:
     """Render a .txt/.md file to a Kindle-sized PDF at output_path."""
 
+    try:
+        return _convert_to_pdf(source, output_path, title=title)
+    except PdfConversionError as exc:
+        if isinstance(exc.__cause__, PermissionError):
+            # Some sandboxes deny writes inside the process temp directory, so a
+            # document that builds fine elsewhere never lands. Render into a
+            # sibling directory next to the source instead of failing the send.
+            fallback_dir = Path(tempfile.mkdtemp(prefix=".deepfind-kindle-", dir=source.parent))
+            try:
+                rendered = _convert_to_pdf(source, fallback_dir / output_path.name, title=title)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(rendered, output_path)
+                rendered.unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001 - the original error explains the failure
+                raise exc from exc.__cause__
+            finally:
+                shutil.rmtree(fallback_dir, ignore_errors=True)
+            return output_path
+        raise
+
+
+def _convert_to_pdf(source: Path, output_path: Path, *, title: str | None = None) -> Path:
     (
         _ParagraphStyle,
         SimpleDocTemplate,
@@ -446,14 +484,21 @@ def convert_to_pdf(source: Path, output_path: Path, *, title: str | None = None)
     styles = _build_styles()
     document_title = (title or "").strip() or source.stem
 
-    flowables = [Paragraph(_plain_markup(title), styles["title"])]
+    flowables: list = []
+    # Only inject a heading when the document does not already open with one.
+    # Markdown summaries typically start with `# Title`, and prefixing another
+    # title would render the same heading twice on page one.
+    inject_title = bool(document_title) and not _starts_with_heading(text)
+    if inject_title:
+        flowables.append(Paragraph(_plain_markup(document_title), styles["title"]))
     if source.suffix.lower() in _MARKDOWN_EXTENSIONS:
-        flowables.extend(_markdown_flowables(text, styles))
+        body = _markdown_flowables(text, styles)
     else:
-        flowables.extend(_plain_flowables(text, styles))
+        body = _plain_flowables(text, styles)
 
-    if len(flowables) == 1:
-        flowables.append(Paragraph("(empty document)", styles["body"]))
+    if not body:
+        body = [Paragraph("(empty document)", styles["body"])]
+    flowables.extend(body)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     document = SimpleDocTemplate(

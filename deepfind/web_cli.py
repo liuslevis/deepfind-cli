@@ -199,6 +199,7 @@ def stream_message(
     }
     url = f"{base_url}/api/chats/{chat_id}/messages/stream"
     done_data: dict = {}
+    saw_done = False
     # Research turns can run for many minutes; disable the read timeout.
     with _request(
         "POST",
@@ -212,11 +213,16 @@ def stream_message(
             if on_event is not None:
                 on_event(event)
             if event["type"] == "done":
+                saw_done = True
                 done_data = event.get("data") or {}
             elif event["type"] == "error":
                 detail = event.get("data") or {}
                 message = detail.get("message") or detail.get("error") or "the backend reported an error"
                 raise WebClientError(str(message))
+    if not saw_done:
+        raise WebClientError("the backend stream ended before completion")
+    if not done_data.get("assistant_message_id"):
+        raise WebClientError("the backend completed without an assistant message")
     return done_data
 
 

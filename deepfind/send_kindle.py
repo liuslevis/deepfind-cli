@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import mimetypes
+import re
 import shutil
 import smtplib
 import ssl
 import tempfile
+import unicodedata
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Sequence
@@ -41,6 +43,21 @@ SUPPORTED_EXTENSIONS = {
 }
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Characters that are illegal in Windows filenames (also used by Amazon's
+# file-name rules) plus ASCII control characters.
+_ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
+# Filenames that Windows refuses regardless of extension.
+_WINDOWS_RESERVED_STEMS = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
+MAX_FILENAME_STEM_LENGTH = 100
+_FALLBACK_FILENAME_STEM = "kindle-document"
 
 
 class KindleSendError(RuntimeError):
@@ -81,26 +98,80 @@ def _unique_path(directory: Path, stem: str, suffix: str) -> Path:
     return candidate
 
 
+def sanitize_filename_stem(title: str) -> str:
+    """Turn an arbitrary title into a filename-safe stem.
+
+    Drops characters that are illegal in Windows filenames or rejected by
+    Send to Kindle (``<>:"/\\|?*``, ASCII control characters), collapses
+    whitespace, and avoids Windows-reserved device names. Returns an empty
+    string when nothing usable is left.
+    """
+
+    # NFKC folds lookalike separators (e.g. full-width ``／``) onto ASCII so
+    # they are removed by the same rule.
+    text = unicodedata.normalize("NFKC", title or "")
+    text = _ILLEGAL_FILENAME_CHARS.sub("", text)
+    text = " ".join(text.split())
+    # Windows silently strips trailing dots/spaces, and names made only of
+    # dots ("." / "..") are not usable.
+    text = text.strip(". ")
+    if not text:
+        return ""
+    if len(text) > MAX_FILENAME_STEM_LENGTH:
+        text = text[:MAX_FILENAME_STEM_LENGTH].strip(". ")
+    if not text:
+        return ""
+    # "CON", "NUL", "COM1", ... (also with an extension) are reserved on Windows.
+    if text.split(".")[0].strip().lower() in _WINDOWS_RESERVED_STEMS:
+        text = f"{text}_"
+    return text
+
+
+def attachment_filename(path: Path, title: str | None) -> str:
+    """Filename to advertise in the email for an attachment."""
+
+    stem = sanitize_filename_stem(title or "")
+    if not stem:
+        return path.name
+    return f"{stem}{path.suffix.lower() or '.pdf'}"
+
+
+def rename_for_title(path: Path, output_dir: Path, *, title: str | None) -> Path:
+    """Copy path into output_dir named after the title, keeping its extension."""
+
+    if not (title or "").strip():
+        return path
+    stem = sanitize_filename_stem(title) or _FALLBACK_FILENAME_STEM
+    target = _unique_path(output_dir, stem, path.suffix.lower())
+    try:
+        shutil.copyfile(path, target)
+    except OSError as exc:
+        raise KindleSendError(f"Could not stage attachment {path.name}: {exc}") from exc
+    return target
+
+
 def convert_for_kindle(path: Path, output_dir: Path, *, title: str | None = None) -> Path:
     """Convert txt/markdown sources to a Kindle-sized PDF; pass others through."""
 
     if path.suffix.lower() not in CONVERTIBLE_EXTENSIONS:
         return path
-    target = _unique_path(output_dir, path.stem, ".pdf")
+    stem = sanitize_filename_stem(title or "") or path.stem
+    target = _unique_path(output_dir, stem, ".pdf")
     try:
         return convert_to_pdf(path, target, title=title)
     except PdfConversionError as exc:
         raise KindleSendError(str(exc)) from exc
 
 
-def _attach(message: EmailMessage, path: Path) -> None:
-    mime_type, _ = mimetypes.guess_type(path.name)
+def _attach(message: EmailMessage, path: Path, filename: str | None = None) -> None:
+    name = filename or path.name
+    mime_type, _ = mimetypes.guess_type(name)
     maintype, _, subtype = (mime_type or "application/octet-stream").partition("/")
     message.add_attachment(
         path.read_bytes(),
         maintype=maintype,
         subtype=subtype or "octet-stream",
-        filename=path.name,
+        filename=name,
     )
 
 
@@ -116,6 +187,7 @@ def send_to_kindle(
     use_ssl: bool = True,
     subject: str | None = None,
     body: str | None = None,
+    title: str | None = None,
     timeout: int = DEFAULT_SMTP_TIMEOUT,
 ) -> dict[str, object]:
     smtp_host = (host or "").strip() or DEFAULT_SMTP_HOST
@@ -142,16 +214,30 @@ def send_to_kindle(
         raise KindleSendError("Provide at least one file to send.")
     sources = [resolve_attachment(item) for item in file_paths]
 
-    normalized_subject = (subject or "").strip()
+    # The document title names the attachment; the email subject stays as given.
+    normalized_title = (title or "").strip()
+    # Without an explicit title, the subject still names converted PDFs.
+    document_title = normalized_title or (subject or "").strip()
 
-    workdir: Path | None = None
-    if any(path.suffix.lower() in CONVERTIBLE_EXTENSIONS for path in sources):
-        workdir = Path(tempfile.mkdtemp(prefix="deepfind-kindle-"))
+    needs_workdir = bool(normalized_title) or any(
+        path.suffix.lower() in CONVERTIBLE_EXTENSIONS for path in sources
+    )
+    workdir: Path | None = (
+        Path(tempfile.mkdtemp(prefix="deepfind-kindle-")) if needs_workdir else None
+    )
     try:
-        attachments = [
-            convert_for_kindle(path, workdir, title=normalized_subject) if workdir else path
-            for path in sources
-        ]
+        attachments = []
+        for path in sources:
+            if path.suffix.lower() in CONVERTIBLE_EXTENSIONS:
+                attachments.append(
+                    convert_for_kindle(path, workdir, title=document_title)
+                )
+            elif normalized_title:
+                attachments.append(
+                    rename_for_title(path, workdir, title=normalized_title)
+                )
+            else:
+                attachments.append(path)
         return _deliver(
             attachments=attachments,
             sources=sources,
@@ -195,7 +281,11 @@ def _deliver(
     message = EmailMessage()
     message["From"] = from_address
     message["To"] = to_address
-    message["Subject"] = (subject or "").strip() or attachments[0].stem
+    message["Subject"] = (
+        (subject or "").strip()
+        or sanitize_filename_stem(attachments[0].stem)
+        or attachments[0].stem
+    )
     message.set_content((body or "").strip() or "Sent by DeepFind.")
     for path in attachments:
         _attach(message, path)
@@ -232,11 +322,14 @@ def _deliver(
         "smtp_port": smtp_port,
         "use_ssl": use_ssl,
         "attachments": [str(path) for path in attachments],
+        "filenames": [path.name for path in attachments],
         "sources": [str(path) for path in sources],
+        # Report conversions before renaming, so a renamed pass-through file is
+        # not misreported as a PDF conversion.
         "converted": [
-            {"source": str(source), "pdf": attachment.name}
-            for source, attachment in zip(sources, attachments)
-            if source != attachment
+            {"source": str(source), "pdf": path.with_suffix(".pdf").name}
+            for source, path in zip(sources, attachments)
+            if source.suffix.lower() in CONVERTIBLE_EXTENSIONS
         ],
         "total_bytes": total_bytes,
     }
@@ -250,7 +343,10 @@ __all__ = [
     "MAX_ATTACHMENT_BYTES",
     "MissingKindleConfigError",
     "SUPPORTED_EXTENSIONS",
+    "attachment_filename",
     "convert_for_kindle",
+    "rename_for_title",
     "resolve_attachment",
+    "sanitize_filename_stem",
     "send_to_kindle",
 ]

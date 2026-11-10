@@ -2236,6 +2236,29 @@ class ToolsetTests(unittest.TestCase):
             toolset.send_kindle(["a.pdf"], to="other@free.kindle.com")
         self.assertEqual(sender.call_args.kwargs["recipient"], "other@free.kindle.com")
 
+    def test_send_kindle_title_passed_through_and_used_as_subject(self) -> None:
+        toolset = Toolset(Settings(api_key="x", kindle_email="me@free.kindle.com"))
+        with patch("deepfind.tools.send_to_kindle", return_value={}) as sender:
+            toolset.send_kindle(["a.pdf"], title="  My Report  ")
+        kwargs = sender.call_args.kwargs
+        self.assertEqual(kwargs["title"], "My Report")
+        self.assertEqual(kwargs["subject"], "My Report")
+
+    def test_send_kindle_explicit_subject_wins(self) -> None:
+        toolset = Toolset(Settings(api_key="x", kindle_email="me@free.kindle.com"))
+        with patch("deepfind.tools.send_to_kindle", return_value={}) as sender:
+            toolset.send_kindle(["a.pdf"], subject="convert", title="My Report")
+        kwargs = sender.call_args.kwargs
+        self.assertEqual(kwargs["title"], "My Report")
+        self.assertEqual(kwargs["subject"], "convert")
+
+    def test_send_kindle_title_in_tool_schema(self) -> None:
+        toolset = Toolset(Settings(api_key="x"))
+        spec = next(
+            item for item in toolset.specs() if item["function"]["name"] == "send_kindle"
+        )
+        self.assertIn("title", spec["function"]["parameters"]["properties"])
+
     def test_send_kindle_missing_config_error(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         with patch(

@@ -211,7 +211,7 @@ const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
   {
     name: "send_kindle",
     description: "Email local files to the configured Kindle address over SMTP.",
-    parameters: ["file_paths", "subject", "body", "to"],
+    parameters: ["file_paths", "title", "subject", "body", "to"],
   },
 ];
 function defaultSelectedTools(tools: ToolOption[]): string[] {
