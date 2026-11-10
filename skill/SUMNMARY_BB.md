@@ -40,8 +40,8 @@ Chrome 开着且 opencli 扩展 connected、`.env` 里的 SMTP/Kindle 配置有�
 今天是 D 日，就取 D、D-1、D-2 三天（比如 11/10 → 11/10、11/9、11/8）。
 
 ```powershell
-& "C:\Users\david\dev\deepfind-cli\.venv\Scripts\python.exe" `
-  "C:\Users\david\dev\deepfind-cli\skill\scripts\fetch_uploads.py"
+& ".\.venv\Scripts\python.exe" `
+  ".\skill\scripts\fetch_uploads.py"
 ```
 
 它会：
@@ -80,7 +80,7 @@ opencli 的两个坑（脚本已经处理，改脚本时注意）：
 标准路径是 **web CLI**（它会把过程落到 Web UI，并走和 UI 一样的 agent 流程）：
 
 ```powershell
-& "C:\Users\david\dev\deepfind-cli\.venv\Scripts\deepfind-chat.exe" "总结视频【261109 Bloomberg Weekend】并发送 kindle https://www.bilibili.com/video/BV1AKWx6BEKp/"
+& ".\.venv\Scripts\deepfind-chat.exe" "总结视频【261109 Bloomberg Weekend】并发送 kindle https://www.bilibili.com/video/BV1AKWx6BEKp/"
 ```
 
 要点：
@@ -123,8 +123,8 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 `assets/kd/`：
 
 ```powershell
-& "C:\Users\david\dev\deepfind-cli\.venv\Scripts\python.exe" `
-  "C:\Users\david\dev\deepfind-cli\tmp\send_summaries_kindle.py" BV1AKWx6BEKp
+& ".\.venv\Scripts\python.exe" `
+  ".\tmp\send_summaries_kindle.py" BV1AKWx6BEKp
 ```
 
 **SMTP 会限频。** 2026-11-09 晚上 QQ 邮箱返回
@@ -160,9 +160,9 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 ```powershell
 # 一条命令：读 tmp/bili_uploads.json，回填标题缓存，检查每条视频的转译/发送状态
-& "C:\Users\david\dev\deepfind-cli\.venv\Scripts\python.exe" `
-  "C:\Users\david\dev\deepfind-cli\skill\scripts\verify_videos.py" `
-  --from-uploads "C:\Users\david\dev\deepfind-cli\tmp\bili_uploads.json"
+& ".\.venv\Scripts\python.exe" `
+  ".\skill\scripts\verify_videos.py" `
+  --from-uploads ".\tmp\bili_uploads.json"
 ```
 
 `verify_videos.py` 只读检查 `<BV>/text/` 和 `assets/kd/`，判断「转译」「发送」：
