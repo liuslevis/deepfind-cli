@@ -189,6 +189,31 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
+| 11/11 BB China Show | 261111 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1wNW26fEb3 | 是 | 是 2026-11-12 07:11 |
+| 11/11 BB CNN News -Anderson Cooper 360 | 261111 CNN News -Anderson Cooper 360 | https://www.bilibili.com/video/BV1uaW263ECn | 是 | 是 2026-11-12 07:14 |
+| 11/11 BB Asia Trade | 261111 Bloomberg｜The Asia Trade | https://www.bilibili.com/video/BV1fUWy6DEv3 | 是 | 是 2026-11-12 07:24 |
+| 11/11 BB Tech | 261111 Bloomberg Tech | https://www.bilibili.com/video/BV1XAW163EMt | 是 | 是 2026-11-12 07:28 |
+| 11/11 BB ABC World News Tonight【中英】 | 261111 ABC World News Tonight【中英】 | https://www.bilibili.com/video/BV131W16kEkH | 是 | 是 2026-11-12 07:31 |
+| 11/11 BB ABC World News Tonight | 261111 ABC World News Tonight | https://www.bilibili.com/video/BV1WMWj6LEaS | 是 | 是 2026-11-12 07:33 |
+| 11/11 BB Balance of Power | 261111 Bloomberg Balance of Power | https://www.bilibili.com/video/BV1f7Wj6MEQy | 是 | 是 2026-11-12 07:39 |
+| 11/10 BB Brief | 261110 Bloomberg Brief | https://www.bilibili.com/video/BV1ndWj6VEd3 | 是 | 是 2026-11-12 07:43 |
+| 11/11 BB Surveillance 财经观察 | 261111 Bloomberg Surveillance 财经观察 | https://www.bilibili.com/video/BV1m6Wj6pEUY | 是 | 是 2026-11-12 07:56 |
+| 11/11 BB CNN News Central | 261111 CNN News Central | https://www.bilibili.com/video/BV1KZWV65EkA | 是 | 是 2026-11-12 08:00 |
+| 11/10 BB China Show | 261110 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1SsWg6uEQN | 是 | 是 2026-11-11 07:15 |
+| 11/10 BB Tech | 261110 Bloomberg Tech | https://www.bilibili.com/video/BV1SsWg6uEa8 | 是 | 是 2026-11-11 07:19 |
+| 11/10 BB ABC World News Tonight | 261110 ABC World News Tonight | https://www.bilibili.com/video/BV1TyWT6fENe | 是 | 是 2026-11-11 07:21 |
+| 11/10 BB CNN News -Anderson Cooper 360 | 261110 CNN News -Anderson Cooper 360 | https://www.bilibili.com/video/BV1tsWM6aEyt | 是 | 是 2026-11-11 07:24 |
+| 11/10 BB NBC Morning News NOW | 261110 NBC  Morning News NOW | https://www.bilibili.com/video/BV1hYWN6bEUt | 是 | 是 2026-11-11 07:31 |
+
+<!-- 2026-11-12 07:00 定时任务：页面 40 条，11/12 新上架 10 条（约 11 小时音频），全部转译并发出。
+     CNN News Central（BV1KZWV65EkA）首次 `bili audio` 下载 90 秒超时，单独重试后成功（08:00）。
+     11/09 那批已滑出 D-2 窗口，移到下方历史记录。
+     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
+
+### 历史记录（已滑出最近 3 天窗口）
+
+| Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
+|---|---|---|---|---|
 | 11/09 BB Asia Trade | 261109 Bloomberg｜The Asia Trade | https://www.bilibili.com/video/BV1aVWb68Edc | 是 | 是 2026-11-10 08:58 |
 | 11/09 BB China Show | 261109 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1nXWx6KEKb | 是 | 是 2026-11-10 09:08 |
 | 11/09 BB 采访：米塔尔与印度电信崛起 | 261109 Bloomberg 采访：米塔尔与印度电信崛起 | https://www.bilibili.com/video/BV1UhWW6kEtN | 是 | 是 2026-11-10 09:11 |
@@ -199,16 +224,6 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 | 11/08 BB Weekend | 261107 Bloomberg Weekend | https://www.bilibili.com/video/BV1oK446TEW9 | 是 | 是 2026-11-09 08:59 |
 | 11/08 BB CNN News -Anderson Cooper 360 | 261108 CNN News -Anderson Cooper 360 | https://www.bilibili.com/video/BV18jW76ZEBv | 是 | 是 2026-11-09 09:44 |
 | 11/08 BB CNN News -The Source | 261108 CNN News -The Source | https://www.bilibili.com/video/BV1AQ4x6mEgg | 是 | 是 2026-11-10 08:49 |
-
-<!-- 2026-11-10 10:44 复核：页面 42 条，最近 3 天（11/08~11/10）共 10 条，全部已转译已发送；
-     SMTP 仍为 235 正常。Wall street week 的「2天前」是页面相对时间，上架 11/08、
-     标题日期 261107（节目日期），不是日期冲突。
-     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
-
-### 历史记录（已滑出最近 3 天窗口）
-
-| Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
-|---|---|---|---|---|
 | 11/07 BB Balance of Power | 261107 Bloomberg Balance of Power | https://www.bilibili.com/video/BV1sv4764Ewu | 是 | 是 2026-11-10 09:20 |
 | 11/07 BB Surveillance | 261107 Bloomberg Surveillance | https://www.bilibili.com/video/BV1gE4L68EFE | 是 | 是 2026-11-09 08:38（存档名为旧标题，脚本核对不到） |
 | 11/07 BB Tech | 261107 Bloomberg Tech | https://www.bilibili.com/video/BV1Pv4764EAS | 是 | 是 2026-11-09 08:59（存档名为旧标题，脚本核对不到） |
