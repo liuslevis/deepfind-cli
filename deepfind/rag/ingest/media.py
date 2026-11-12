@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from functools import lru_cache
 from pathlib import Path
 
 from ...asr import (
     MissingDependencyError,
     TranscriptionError,
+    _asr_slot_model,
     gpu_asr_slot,
-    load_model,
+    slot_index,
     transcribe_audio,
 )
 from ..config import Config
@@ -19,11 +19,6 @@ from ..config import Config
 
 class MediaError(RuntimeError):
     pass
-
-
-@lru_cache(maxsize=2)
-def _load_shared_model(model_name: str):
-    return load_model(model_name)
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -138,7 +133,9 @@ def _transcribe_segments(
 
     try:
         with gpu_asr_slot():
-            backend, model, processor, device = _load_shared_model(config.asr_model)
+            # Shares the ASR slot cache, so the idle reaper can release it after
+            # ASR_IDLE_UNLOAD_SECONDS without a task.
+            backend, model, processor, device = _asr_slot_model(slot_index(), config.asr_model)
             for segment in pending:
                 text = transcribe_audio(segment, backend, model, processor, device)
                 (checkpoint_dir / f"{segment.stem}.txt").write_text(
