@@ -189,6 +189,17 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
+| 11/12 BB CNN News -The Lead | 261112 CNN News -The Lead | https://www.bilibili.com/video/BV1DyWR6PELf | 是 | 是 2026-11-13 09:20 |
+| 11/12 BB China Show | 261112 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV1fpWX66EBH | 是 | 是 2026-11-13 09:27 |
+| 11/12 BB China Show | 261112 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1qTW966EEG | 是 | 是 2026-11-13 09:27 |
+| 11/12 BB Asia Trade | 261112 Bloomberg｜The Asia Trade | https://www.bilibili.com/video/BV1qTW966EDw | 是 | 是 2026-11-13 09:32 |
+| 11/12 BB Balance of Power | 261112 Bloomberg Balance of Power | https://www.bilibili.com/video/BV1qTW966Ez1 | 是 | 是 2026-11-13 09:37 |
+| 11/12 BB ABC World News Tonight【Cut黄】 | 261112 ABC World News Tonight【Cut黄】 | https://www.bilibili.com/video/BV1HzW96UEtR | 是 | 是 2026-11-13 09:39 |
+| 11/12 BB Surveillance 财经观察 P2 | 261112 Bloomberg Surveillance 财经观察 P2 | https://www.bilibili.com/video/BV1nkW962EsU | 是 | 是 2026-11-13 09:45 |
+| 11/12 BB Surveillance 财经观察 | 261112 Bloomberg Surveillance 财经观察 | https://www.bilibili.com/video/BV1tEWS62EzZ | 是 | 是 2026-11-13 09:50 |
+| 11/12 BB NBC Morning News NOW | 261112 NBC  Morning News NOW | https://www.bilibili.com/video/BV1nBWQ6rE3P | 是 | 是 2026-11-13 09:57 |
+| 11/12 BB Tech ：CoreWeave平息AI恐惧,Anthropic IPO需求增加 | 261112 Bloomberg Tech ：CoreWeave平息AI恐惧，Anthropic IPO需求增加 | https://www.bilibili.com/video/BV1KTWX6QE2f | 是 | 是 2026-11-13 10:01（PDF/邮件标题里全角冒号被折叠成空格） |
+| 11/12 BB CNN News Central | 261112 CNN News Central | https://www.bilibili.com/video/BV1cEWX65EBC | 是 | 是 2026-11-13 10:05 |
 | 11/11 BB China Show | 261111 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1wNW26fEb3 | 是 | 是 2026-11-12 07:11 |
 | 11/11 BB CNN News -Anderson Cooper 360 | 261111 CNN News -Anderson Cooper 360 | https://www.bilibili.com/video/BV1uaW263ECn | 是 | 是 2026-11-12 07:14 |
 | 11/11 BB Asia Trade | 261111 Bloomberg｜The Asia Trade | https://www.bilibili.com/video/BV1fUWy6DEv3 | 是 | 是 2026-11-12 07:24 |
@@ -199,14 +210,23 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 | 11/10 BB Brief | 261110 Bloomberg Brief | https://www.bilibili.com/video/BV1ndWj6VEd3 | 是 | 是 2026-11-12 07:43 |
 | 11/11 BB Surveillance 财经观察 | 261111 Bloomberg Surveillance 财经观察 | https://www.bilibili.com/video/BV1m6Wj6pEUY | 是 | 是 2026-11-12 07:56 |
 | 11/11 BB CNN News Central | 261111 CNN News Central | https://www.bilibili.com/video/BV1KZWV65EkA | 是 | 是 2026-11-12 08:00 |
-| 11/10 BB China Show | 261110 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1SsWg6uEQN | 是 | 是 2026-11-11 07:15 |
-| 11/10 BB Tech | 261110 Bloomberg Tech | https://www.bilibili.com/video/BV1SsWg6uEa8 | 是 | 是 2026-11-11 07:19 |
-| 11/10 BB ABC World News Tonight | 261110 ABC World News Tonight | https://www.bilibili.com/video/BV1TyWT6fENe | 是 | 是 2026-11-11 07:21 |
-| 11/10 BB CNN News -Anderson Cooper 360 | 261110 CNN News -Anderson Cooper 360 | https://www.bilibili.com/video/BV1tsWM6aEyt | 是 | 是 2026-11-11 07:24 |
-| 11/10 BB NBC Morning News NOW | 261110 NBC  Morning News NOW | https://www.bilibili.com/video/BV1hYWN6bEUt | 是 | 是 2026-11-11 07:31 |
+
+<!-- 2026-11-13 09:16 手工补跑（当天 07:00 定时任务没跑成：本会话 schedule 列表里已没有
+     schedule-cfc66597…，tmp/bili_uploads.json 也停在 07:00:20 没往下走，原因未确认）。
+     抓取结果：页面 40 条，D-2 ~ D 窗口（11/11 ~ 11/13）共 21 条；11/13 当天新上架 9 条，
+     加上 11/12 上架但没处理的 2 条（Tech BV1KTWX6QE2f、CNN News Central BV1cEWX65EBC），
+     共 11 条全部新转写并发出（09:20 ~ 10:05，每条 SMTP attempts=1，没有 535）。
+     11/11 那批上轮已发，未重跑。批量脚本：`tmp/run_batch_1113.py`，日志 `tmp/run_batch_1113.log`。
+     注意：`run_batch.py` 模式的邮件/PDF 标题取自 `kindle_title(上传标题)`，和 send_summaries_kindle.py
+     取自 summary H1 略有出入；Tech 那条的全角「：」被 `kindle_title` 折叠成空格：
+     `1112 BB Tech CoreWeave平息AI恐惧,Anthropic IPO需求增加`。
+     11/10 那批（China Show/Tech/ABC/AC360/NBC）已滑出 D-2 窗口，移到下方历史记录。
+     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
 
 <!-- 2026-11-12 07:00 定时任务：页面 40 条，11/12 新上架 10 条（约 11 小时音频），全部转译并发出。
      CNN News Central（BV1KZWV65EkA）首次 `bili audio` 下载 90 秒超时，单独重试后成功（08:00）。
+     其中 Tech（BV1KTWX6QE2f）与 CNN News Central（BV1cEWX65EBC）在 07:00 扫描时页面还显示
+     「22小时前」，被记成 11/13 上架，实际是 11/12 pre-09:00 发布；11/13 补跑时按 11/12 处理。
      11/09 那批已滑出 D-2 窗口，移到下方历史记录。
      表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
 
@@ -214,6 +234,11 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
+| 11/10 BB China Show | 261110 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1SsWg6uEQN | 是 | 是 2026-11-11 07:15 |
+| 11/10 BB Tech | 261110 Bloomberg Tech | https://www.bilibili.com/video/BV1SsWg6uEa8 | 是 | 是 2026-11-11 07:19 |
+| 11/10 BB ABC World News Tonight | 261110 ABC World News Tonight | https://www.bilibili.com/video/BV1TyWT6fENe | 是 | 是 2026-11-11 07:21 |
+| 11/10 BB CNN News -Anderson Cooper 360 | 261110 CNN News -Anderson Cooper 360 | https://www.bilibili.com/video/BV1tsWM6aEyt | 是 | 是 2026-11-11 07:24 |
+| 11/10 BB NBC Morning News NOW | 261110 NBC  Morning News NOW | https://www.bilibili.com/video/BV1hYWN6bEUt | 是 | 是 2026-11-11 07:31 |
 | 11/09 BB Asia Trade | 261109 Bloomberg｜The Asia Trade | https://www.bilibili.com/video/BV1aVWb68Edc | 是 | 是 2026-11-10 08:58 |
 | 11/09 BB China Show | 261109 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1nXWx6KEKb | 是 | 是 2026-11-10 09:08 |
 | 11/09 BB 采访：米塔尔与印度电信崛起 | 261109 Bloomberg 采访：米塔尔与印度电信崛起 | https://www.bilibili.com/video/BV1UhWW6kEtN | 是 | 是 2026-11-10 09:11 |
