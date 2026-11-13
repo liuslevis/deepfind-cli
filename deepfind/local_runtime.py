@@ -107,6 +107,17 @@ def detect_local_model(settings: Settings) -> LocalModelStatus:
             reason="Set DEEPFIND_LOCAL_MODEL to an Ollama model name before enabling local mode.",
         )
 
+    if not gpu.available:
+        # Ollama only accelerates local inference on a detectable NVIDIA GPU here,
+        # so say so up front instead of running on a CPU silently.
+        return LocalModelStatus(
+            available=False,
+            model=settings.local_model,
+            base_url=settings.local_base_url,
+            gpu=gpu,
+            reason="No NVIDIA GPU detected (nvidia-smi was not found or reported no device).",
+        )
+
     # Try to connect to Ollama (works on both NVIDIA GPU systems and Mac)
     try:
         model_names = list_ollama_models(settings.local_base_url)

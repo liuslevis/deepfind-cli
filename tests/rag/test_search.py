@@ -1,5 +1,7 @@
 import pytest
 
+pytest.importorskip("qdrant_client", reason="the rag extra (qdrant-client) is not installed")
+
 from deepfind.rag.search import SearchError, SearchService
 
 

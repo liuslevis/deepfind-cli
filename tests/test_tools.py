@@ -1170,36 +1170,43 @@ class ToolsetTests(unittest.TestCase):
 
     def test_xhs_read_normalizes_note_for_model_consumption(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
+        # opencli xiaohongshu note reports field/value rows.
         payload = SimpleNamespace(
             returncode=0,
-            stdout=(
-                '{"ok":true,"schema_version":"1","data":{"items":[{"id":"69db389a000000002103a532","note_card":'
-                '{"note_id":"69db389a000000002103a532","title":"美伊谈判破裂，一场没有赢家的博弈",'
-                '"desc":"#国际新闻[话题]# #中东局势[话题]# #伊朗[话题]# #美伊谈判[话题]#",'
-                '"type":"video","time":1775974554000,"last_update_time":1775974554000,'
-                '"tag_list":[{"name":"国际新闻"},{"name":"中东局势"},{"name":"伊朗"},{"name":"美伊谈判"}],'
-                '"user":{"nickname":"眀洞四方","user_id":"667a7216000000000b0320c0"},'
-                '"interact_info":{"liked_count":"14","collected_count":"3","comment_count":"1","share_count":""},'
-                '"video":{"capa":{"duration":213}},"image_list":[{}]}}]}}'
+            stdout=dump_json(
+                {
+                    "ok": True,
+                    "schema_version": "1",
+                    "data": [
+                        {"field": "title", "value": "美伊谈判破裂，一场没有赢家的博弈"},
+                        {"field": "author", "value": "眀洞四方"},
+                        {"field": "type", "value": "video"},
+                        {"field": "content", "value": "Tags: #国际新闻[话题]# #中东局势[话题]#"},
+                        {"field": "likes", "value": "14"},
+                    ],
+                }
             ),
             stderr="",
         )
-        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
-            with patch("deepfind.tools.subprocess.run", return_value=payload):
-                result = toolset.xhs_read("69db389a000000002103a532")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload) as run_mock:
+                result = toolset.xhs_read("69db389a000000002103a532", xsec_token="TOKEN")
         self.assertTrue(result["ok"])
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[:3], ["/usr/bin/opencli", "xiaohongshu", "note"])
+        self.assertIn("69db389a000000002103a532", command[3])
+        self.assertIn("xsec_token=TOKEN", command[3])
+        self.assertEqual(command[-2:], ["-f", "json"])
+
         note = result["data"]["note"]
         self.assertEqual(note["id"], "69db389a000000002103a532")
         self.assertEqual(note["title"], "美伊谈判破裂，一场没有赢家的博弈")
         self.assertEqual(note["author"], "眀洞四方")
         self.assertEqual(note["media_type"], "video")
-        self.assertEqual(note["text_mode"], "tags_only")
-        self.assertEqual(note["video_duration_sec"], 213)
-        self.assertEqual(note["stats"], {"likes": 14, "collects": 3, "comments": 1, "shares": 0})
+        self.assertEqual(note["stats"]["likes"], 14)
         self.assertEqual(note["url"], "https://www.xiaohongshu.com/explore/69db389a000000002103a532")
-        self.assertIn("the main substance may be in the spoken audio", note["content_hint"])
-        self.assertIn("Title: 美伊谈判破裂，一场没有赢家的博弈", note["content_text"])
-        self.assertIn("Media type: video", note["content_text"])
+        self.assertIn("美伊谈判破裂，一场没有赢家的博弈", note["content_text"])
+        self.assertIn("Tags: #国际新闻[话题]#", note["content_text"])
 
     def test_xhs_read_rejects_truncated_url_before_cli_call(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
@@ -1224,64 +1231,71 @@ class ToolsetTests(unittest.TestCase):
 
     def test_xhs_read_passes_explicit_xsec_token_to_cli(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
-        payload = SimpleNamespace(returncode=0, stdout='{"ok":true,"schema_version":"1","data":{}}', stderr="")
-        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+        payload = SimpleNamespace(returncode=0, stdout='{"ok":true,"schema_version":"1","data":[]}', stderr="")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
             with patch("deepfind.tools.subprocess.run", return_value=payload) as run_mock:
                 result = toolset.xhs_read("6a169bc80000000007025c7e", xsec_token="TOKEN")
         self.assertFalse(result["ok"])
         self.assertEqual(result["error_code"], "invalid_note")
-        self.assertEqual(run_mock.call_args.args[0], ["/usr/bin/xhs", "read", "6a169bc80000000007025c7e", "--xsec-token", "TOKEN", "--json"])
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[:3], ["/usr/bin/opencli", "xiaohongshu", "note"])
+        self.assertIn("xsec_token=TOKEN", command[3])
+        self.assertEqual(command[-2:], ["-f", "json"])
 
     def test_xhs_read_cmt_normalizes_comment_list(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
+        # opencli xiaohongshu comments reports a flat list of {"rank", "author", "text", ...}.
         payload = SimpleNamespace(
             returncode=0,
-            stdout=(
-                '{"ok":true,"schema_version":"1","data":{"xsec_token":"TOKEN","cursor":"cursor-1","has_more":true,'
-                '"time":1779876676000,"comments":[{"id":"comment-1","note_id":"note-1","content":"Top comment",'
-                '"like_count":"5","create_time":1779876676000,"ip_location":"北京","sub_comment_count":"1",'
-                '"sub_comment_has_more":false,"sub_comment_cursor":"sub-cursor","show_tags":["is_author"],'
-                '"user_info":{"nickname":"Reader","user_id":"user-1","xsec_token":"USER_TOKEN"},'
-                '"sub_comments":[{"id":"sub-1","note_id":"note-1","content":"Reply","like_count":"2",'
-                '"create_time":1779877608000,"ip_location":"上海","user_info":{"nickname":"Author","user_id":"user-2"}}]}]}}'
+            stdout=dump_json(
+                {
+                    "ok": True,
+                    "schema_version": "1",
+                    "data": [
+                        {"rank": 1, "author": "Reader", "text": "Top comment", "likes": 5, "time": "2026-05-27", "is_reply": False},
+                        {"rank": 2, "author": "Author", "text": "Reply", "likes": 2, "time": "2026-05-27", "is_reply": True, "reply_to": "Top comment"},
+                    ],
+                }
             ),
             stderr="",
         )
-        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
-            with patch("deepfind.tools.subprocess.run", return_value=payload):
-                result = toolset.xhs_read_cmt("note-1")
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
+            with patch("deepfind.tools.subprocess.run", return_value=payload) as run_mock:
+                result = toolset.xhs_read_cmt("note-1", xsec_token="TOKEN")
         self.assertTrue(result["ok"])
         self.assertEqual(result["tool"], "xhs_read_cmt")
-        data = result["data"]
-        self.assertEqual(data["note_id"], "note-1")
-        self.assertEqual(data["cursor"], "cursor-1")
-        self.assertTrue(data["has_more"])
-        self.assertTrue(data["xsec_token_present"])
-        self.assertEqual(data["top_comment_count"], 1)
-        self.assertEqual(data["inline_sub_comment_count"], 1)
-        comment = data["comments"][0]
-        self.assertEqual(comment["content"], "Top comment")
-        self.assertEqual(comment["author"], "Reader")
-        self.assertEqual(comment["like_count"], 5)
-        self.assertEqual(comment["tags"], ["is_author"])
-        self.assertEqual(comment["sub_comments"][0]["content"], "Reply")
-        self.assertNotIn("xsec_token", comment)
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[:3], ["/usr/bin/opencli", "xiaohongshu", "comments"])
+        self.assertIn("note-1", command[3])
+        self.assertIn("xsec_token=TOKEN", command[3])
+
+        comments = result["data"]
+        self.assertEqual(len(comments), 2)
+        self.assertEqual(comments[0]["author"], "Reader")
+        self.assertEqual(comments[0]["text"], "Top comment")
+        self.assertEqual(comments[0]["likes"], 5)
+        self.assertFalse(comments[0]["is_reply"])
+        self.assertEqual(comments[1]["text"], "Reply")
+        self.assertTrue(comments[1]["is_reply"])
+        self.assertEqual(comments[1]["reply_to"], "Top comment")
 
     def test_xhs_read_cmt_passes_cursor_token_and_all_flag(self) -> None:
         toolset = Toolset(Settings(api_key="x"))
         payload = SimpleNamespace(
             returncode=0,
-            stdout='{"ok":true,"schema_version":"1","data":{"comments":[],"cursor":"","has_more":false}}',
+            stdout='{"ok":true,"schema_version":"1","data":[]}',
             stderr="",
         )
-        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/xhs"):
+        with patch("deepfind.tools.shutil.which", return_value="/usr/bin/opencli"):
             with patch("deepfind.tools.subprocess.run", return_value=payload) as run_mock:
                 result = toolset.xhs_read_cmt("note-1", xsec_token="TOKEN", cursor="CURSOR", fetch_all=True)
+        # opencli has no cursor flag; fetch_all maps to the maximum --limit.
         self.assertTrue(result["ok"])
-        self.assertEqual(
-            run_mock.call_args.args[0],
-            ["/usr/bin/xhs", "comments", "note-1", "--cursor", "CURSOR", "--xsec-token", "TOKEN", "--all", "--json"],
-        )
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[:3], ["/usr/bin/opencli", "xiaohongshu", "comments"])
+        self.assertIn("xsec_token=TOKEN", command[3])
+        self.assertNotIn("--cursor", command)
+        self.assertEqual(command[-4:], ["--limit", "50", "-f", "json"])
 
     def test_xhs_read_cmt_empty_payload_without_token_requires_xsec_token(self) -> None:
         toolset = Toolset(Settings(api_key="x"))

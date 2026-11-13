@@ -40,6 +40,11 @@ class FakeApp:
 
 class WebApiTests(unittest.TestCase):
     def setUp(self) -> None:
+        # Importing the app loads the repo .env, which may define a real
+        # DEEPFIND_WEB_TOKEN; without this the endpoints answer 401 to the client.
+        token_patch = patch.dict("os.environ", {"DEEPFIND_WEB_TOKEN": ""}, clear=False)
+        token_patch.start()
+        self.addCleanup(token_patch.stop)
         settings = Settings(
             api_key="deepseek-key",
             deepseek_api_key="deepseek-key",

@@ -12,7 +12,9 @@ class LocalRuntimeTests(unittest.TestCase):
         self.assertEqual(ollama_tags_url("http://127.0.0.1:11434/v1"), "http://127.0.0.1:11434/api/tags")
 
     def test_detect_local_model_requires_gpu(self) -> None:
-        settings = Settings(api_key="")
+        # local_model must be set, otherwise the missing-model check short-circuits
+        # before the GPU is ever consulted.
+        settings = Settings(api_key="", local_model="qwen3.5:9B")
 
         with patch("deepfind.local_runtime.detect_gpu") as detect_gpu:
             detect_gpu.return_value = type("Gpu", (), {"available": False, "name": "", "memory_total_mb": None})()

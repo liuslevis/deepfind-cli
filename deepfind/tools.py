@@ -106,6 +106,14 @@ def _xhs_type(value: str) -> str:
     return mapping.get(value, "all")
 
 
+def _xhs_read_args(ref: str, xsec_token: str) -> list[str]:
+    args = ["read", ref]
+    if xsec_token:
+        args.extend(["--xsec-token", xsec_token])
+    args.append("--json")
+    return args
+
+
 def _xhs_ref(value: str, xsec_token: str = "") -> tuple[str, str, str]:
     ref = value.strip()
     token = xsec_token.strip()
@@ -170,6 +178,22 @@ def _xhs_full_url(ref: str, xsec_token: str) -> str:
     if xsec_token:
         return f"{base_url}?xsec_token={xsec_token}"
     return base_url
+
+
+def _opencli_rows(data: Any) -> list[dict[str, Any]]:
+    """Unwrap opencli's ``{"ok", "schema_version", "data": [...]}`` envelope.
+
+    ``_run`` hands back the whole envelope, while the row transforms expect the
+    inner list, so callers must unwrap before transforming.
+    """
+    if isinstance(data, dict):
+        inner = data.get("data")
+        if isinstance(inner, list):
+            return [row for row in inner if isinstance(row, dict)]
+        return []
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    return []
 
 
 def _transform_opencli_comments(data: Any) -> list[dict[str, Any]]:
@@ -2537,7 +2561,7 @@ class Toolset:
             return result
 
         # opencli returns different format than old xhs CLI
-        note = _transform_opencli_note(result.get("data"), resolved_ref)
+        note = _transform_opencli_note(_opencli_rows(result.get("data")), resolved_ref)
         if not note:
             return _xhs_empty_note_response("xhs_read", resolved_ref, resolved_token)
 
@@ -2582,9 +2606,14 @@ class Toolset:
             return result
 
         # opencli returns different format than old xhs CLI
-        comments = _transform_opencli_comments(result.get("data"))
-        if not comments:
-            return _xhs_empty_note_response("xhs_read_cmt", resolved_ref, resolved_token)
+        rows = _opencli_rows(result.get("data"))
+        comments = _transform_opencli_comments(rows)
+        if not comments and not rows:
+            inner = result.get("data")
+            if not (isinstance(inner, dict) and isinstance(inner.get("data"), list)):
+                # No ``data`` list at all: opencli returned a blank instead of an
+                # envelope, which usually means the note/token pair is invalid.
+                return _xhs_empty_note_response("xhs_read_cmt", resolved_ref, resolved_token)
 
         return {
             "ok": True,

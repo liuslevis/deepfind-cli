@@ -16,6 +16,7 @@ from deepfind.orchestrator import (
     WORKER_PROMPT,
     _LONG_REPORT_LEAD_MAX_TOKENS,
     _canonicalize_url,
+    _lead_max_tokens,
     _parse_report,
     _should_shortcut_format_follow_up,
 )
@@ -317,7 +318,10 @@ class OrchestratorTests(unittest.TestCase):
             app._lead("Generate slides from this summary", transcript=[], synthesis=synthesis, max_iter=2)
         self.assertTrue(agent_cls.return_value.run.call_args.kwargs["use_tools"])
         self.assertEqual(agent_cls.return_value.run.call_args.kwargs["tool_names"], ["gen_slides"])
-        self.assertEqual(agent_cls.return_value.run.call_args.kwargs["max_tokens"], 1400)
+        self.assertEqual(
+            agent_cls.return_value.run.call_args.kwargs["max_tokens"],
+            _lead_max_tokens(False),
+        )
 
     def test_run_turn_structured_preserves_rag_reference_metadata(self) -> None:
         settings = Settings(api_key="x")

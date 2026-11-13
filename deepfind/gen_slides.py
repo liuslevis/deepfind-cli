@@ -263,8 +263,14 @@ def generate_slides(
     output_path.write_text(final_html, encoding="utf-8")
 
     try:
-        relative_path = output_path.resolve().relative_to(REPO_ROOT.resolve())
-    except ValueError:
+        # Report paths inside the repo relative to it; anything outside (a caller's
+        # temp directory, an absolute html_path) keeps its full path.
+        resolved = output_path.resolve()
+        if resolved.is_relative_to(REPO_ROOT.resolve()):
+            relative_path = resolved.relative_to(REPO_ROOT.resolve())
+        else:
+            relative_path = resolved
+    except (OSError, ValueError):
         relative_path = output_path.resolve()
 
     return {

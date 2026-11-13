@@ -160,5 +160,5 @@ class GenSlidesTests(unittest.TestCase):
                     slide_count=2,
                     html_path=str(initial_path),
                 )
-            self.assertEqual(result["html_path"], str(initial_path))
+            self.assertEqual(Path(result["html_path"]).resolve(), initial_path.resolve())
             self.assertTrue(initial_path.exists())
