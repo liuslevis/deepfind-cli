@@ -2,10 +2,25 @@
 
 跟踪表见本文件末尾「转译记录」，每次执行完都要更新它。
 
-**已配置每天 07:00（Asia/Shanghai）自动执行**（DSH schedule `schedule-cfc66597-68ac-4ea1-8e50-f8d60e1da84f`，
-daily）。自动任务就是按本文件第 1→5 节走一遍；它触发时依赖：
+**范围：只处理 Bloomberg/BB。** 上传标题必须在可选的 `YYMMDD` 日期后明确以
+`Bloomberg` 或 `BB` 标识来源。ABC、CNN、NBC、CBS、CNBC、BBC、MSNBC、FOX
+及其他频道全部跳过，不转译、不生成 PDF、不发送。
+
+**已配置每天 07:00（Asia/Shanghai）自动执行**（Windows 计划任务
+`DeepFind Daily BB News`）。自动任务就是按本文件第 1→5 节走一遍；它触发时依赖：
 Chrome 开着且 opencli 扩展 connected、`.env` 里的 SMTP/Kindle 配置有效。
 任一项失效，任务会中止并列出已生成但未发出的 PDF，手动按第 4 节补发即可。
+
+### 定时任务配置
+
+- 调度器：Windows Task Scheduler
+- 任务名：`DeepFind Daily BB News`
+- 触发时间：每天 07:00（Asia/Shanghai）
+- 启动脚本：`~/.copilot/scheduled-tasks/daily-bb-news/run.ps1`
+- Agent 提示词：`~/.copilot/scheduled-tasks/daily-bb-news/prompt.txt`
+- 工作目录：仓库根目录
+- 运行日志：`tmp/daily-bb-logs/`
+- 运行条件：仅用户登录时运行；错过 07:00 不补跑；不唤醒电脑
 
 ## 0. 必读：当前环境已知限制
 
@@ -19,7 +34,7 @@ Chrome 开着且 opencli 扩展 connected、`.env` 里的 SMTP/Kindle 配置有�
 2. **标题里的 `YYMMDD` 是节目日期，不是上架日期。** 261107 的节目可能在 11/08 上架
    （批量上传）。opencli 拿到的相对时间才是上架时间；两者不一致**很正常**，
    `fetch_uploads.py` 只会在整页都没人用这个日期时才标「日期冲突」。
-   判断「今天有没有新视频」用**上架时间**。
+   判断是否属于前一天 D-1 用**上架时间**。
 3. **`send_kindle` 工具在当前宿主机上必定失败。** 它在进程临时目录
    （`%TEMP%\dsh-*\deepfind-kindle-*`）里渲染 PDF 时权限被拒：
    `Failed to render summary.md as PDF: [Errno 13] Permission denied`。
@@ -35,9 +50,11 @@ Chrome 开着且 opencli 扩展 connected、`.env` 里的 SMTP/Kindle 配置有�
    判断方法：直接用 `smtplib.SMTP_SSL('smtp.qq.com',465).login(...)` 打一次，
    `535` 是账号侧问题（换授权码/解限频），超时或断连才是网络问题。
 
-## 1. 取最近 3 天的视频（opencli）
+## 1. 只取前一天的视频（opencli）
 
-今天是 D 日，就取 D、D-1、D-2 三天（比如 11/10 → 11/10、11/9、11/8）。
+今天是 D 日，只取上架日期为 D-1、且来源明确为 Bloomberg/BB 的视频
+（比如 11/16 运行时只取 11/15 的 Bloomberg/BB 条目）。
+当天 D、D-2 和更早日期都不处理，也不补转或补发 D-1 以外的未完成条目。
 
 ```powershell
 & ".\.venv\Scripts\python.exe" `
@@ -50,7 +67,8 @@ Chrome 开着且 opencli 扩展 connected、`.env` 里的 SMTP/Kindle 配置有�
   相对时间（`15小时前` / `昨天 07:56` / `2天前` / `11月6日`）、时长；
 - 按页面相对时间定上架日期，`YYMMDD` 只作兜底；整页其他视频都没用过的标题日期
   才标 `<-- 日期冲突`；
-- 只保留 D-2 ~ D 内的条目，写进 `tmp/bili_uploads.json`，格式和
+- 默认只保留上架日期等于 D-1、且标题来源为 Bloomberg/BB 的条目，写进
+  `tmp/bili_uploads.json`，格式和
   `bili user-videos --json` 兼容（另外多了 `published_date` / `relative` /
   `date_conflict` 字段）。
 
@@ -62,17 +80,21 @@ opencli 的两个坑（脚本已经处理，改脚本时注意）：
 
 `bili` 只用来补元数据（可选），例如 `bili video BVxxxx --json` 拿时长/作者。
 
-**定时任务只跑到这里。** 输出里第一行就是最新上架的视频：
+输出里第一行就是前一天最靠前的条目：
 
-- 有一条上架日期是今天（D 日）就说明今天有新视频；
-- 一条都没有，就说明今天还没上传，**不要**把旧的当新的处理；
-- opencli 连不上就 `opencli doctor` 看扩展是否 connected，再不行才退回
-  `bili user-videos 670833898 -n 15 --json`（前提是 `bili status` 是登录态）。
+- 只接受上架日期等于 D-1、来源明确为 Bloomberg/BB 的条目；
+- 一条都没有，就报告“昨天没有 Bloomberg/BB 上传”，**不要**处理当天、更早日期
+  或其他频道；
+- opencli 连不上就 `opencli doctor` 看扩展是否 connected；不要改用
+  `bili user-videos`。
 
 筛选规则：
-- 只留**上架日期**在 D、D-1、D-2 内的条目（`fetch_uploads.py` 已经过滤好）；
+- 只留**上架日期**等于 D-1，且上传标题在可选日期后以 `Bloomberg` 或 `BB`
+  开头的条目（`fetch_uploads.py` 默认已经过滤好）；
+- ABC、CNN、NBC、CBS、CNBC、BBC、MSNBC、FOX 及其他频道全部跳过；
 - 已在本文件「转译记录」里、且「转译」「发送」都打勾的，跳过；
 - 转译过但没发送的，只补发送（见第 4 步），不重新转写；
+- D-1 以外的条目无论状态如何都不处理；
 - 拿不准的逐条看 `relative`；**别猜**。
 
 ## 2. 转写 + 生成摘要
@@ -136,15 +158,17 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
   报 `535` 就是账号侧限流，报超时/断连才是网络问题。
 
 规则：
-- **PDF 文件名 = 邮件标题 = Kindle 标题**，统一用 `MM/DD BB <节目名>`：
+- **PDF 文件名 = 邮件标题 = Kindle 标题**，统一用
+  `MM/DD BB <节目名> [P1/P2]`：
   - `261109 Bloomberg Weekend` → `11/09 BB Weekend`
   - `261107 Bloomberg Wall street week` → `11/07 BB Wall Street Week`
   - `261107 Bloomberg Money` → `11/07 BB Money`
   - `261107 Bloomberg Tech …` → `11/07 BB Tech …`（节目标题里多出来的修饰语保留）
-  - `261109 Bloomberg｜The Asia Trade` → `11/09 BB Asia Trade`（全角 `｜` 是
-    Bloomberg 分隔符，会被折叠；`The China Show` → `China Show` 同理）
-  - 不是 Bloomberg 频道的（如 `261108 CNN News - Anderson Cooper 360`）→
-    `11/08 BB CNN News - Anderson Cooper 360`（前缀仍用 `BB`，节目名照原样）
+  - `261109 Bloomberg｜The Asia Trade P2` → `11/09 BB Asia Trade P2`
+  - `261113 Bloomberg｜The China Show P1` → `11/13 BB China Show P1`
+  - ABC、CNN 及其他非 Bloomberg/BB 条目不进入转译或发送流程；
+  - 只有**上传标题**明确出现 `P1` 或 `P2` 时才追加；不要从摘要正文猜测分集；
+    分集标记必须保留，避免 P1/P2 使用相同标题和存档名；
   - 标题不是 `YYMMDD` 开头的（如 `Bloomberg Surveillance 1106`）→ 原样去掉 `Bloomberg`
     → `Surveillance 1106`，**不要编造日期**；
   - 转换逻辑在 `tmp/send_summaries_kindle.py` 的 `kindle_title()`；只想看映射结果时：
@@ -181,7 +205,8 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 - 已知盲区 4：同一节目重发过多次时，脚本只认**最新**那份 PDF 与其后写入的存档；
   标题换过名（如 Wall street week 的「纪要」版）会显示「否」，需人工确认后手动标注。
 
-把结果贴回本文件末尾的表格（新的放最上面，旧的往下沉，只保留最近两周的，更早的删掉）。
+把 D-1 结果贴回本文件末尾的「转译记录」表；其他日期移到「历史记录」。
+历史记录只保留最近两周，更早的删掉。
 
 ## 6. 转译记录
 
@@ -189,6 +214,65 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
+| 11/13 BB Wall Street Week | 261113 Bloomberg Wall Street Week | https://www.bilibili.com/video/BV1EgsE61E3R | 是 | 是 2026-11-16 07:17 |
+| 11/15 BB Weekend | 261115 Bloomberg Weekend | https://www.bilibili.com/video/BV1tVsJ6aEYV | 是 | 是 2026-11-16 07:17 |
+
+<!-- 2026-11-16 07:00 手工执行（Asia/Shanghai）：opencli 页面共 40 条。页面将最新三条
+     显示为 18/20/22 小时前；按本次指定运行时间换算，上架日期均为 D-1（11/15）。
+     `fetch_uploads.py` 当前把不足 24 小时统一判成当天，首次输出因而误报 0 条；本次未改脚本，
+     只在任务产物 `tmp/bili_uploads.json` 中按运行时间校正。D-1 共 3 条：Bloomberg/BB
+     2 条全部新转写并发送；CNN 1 条跳过，未转译、未生成 PDF、未发送。
+     Weekend 首次摘要检查不合格，按规则 `refresh=True` 重做后通过；Wall Street Week
+     首次即通过。两封 SMTP 均首次成功，无 535。Wall Street Week PDF 在等待第二条摘要期间
+     与发送存档相差超过 verify 的 5 分钟窗口，发送后仅重新渲染同一摘要（未重复发信），
+     最终 verify 两条均为“是”。批量脚本 `tmp/run_batch_1116.py`，完整 SMTP/路径日志
+     `tmp/daily-bb-logs/run_batch_1116.log`，最终报告
+     `tmp/daily-bb-logs/run_report_2026-11-16.txt`。 -->
+
+<!-- 2026-11-15 07:00 手工执行（Asia/Shanghai）：页面 40 条，D-2 ~ D（11/13 ~ 11/15）
+     共 11 条；11/15 当天新上架 3 条。首次 verify 发现 6 条“转译 否/发送 否”，均完成转写、
+     中文摘要检查、PDF 渲染和 Kindle SMTP 直发；6 封均首次 SMTP 成功，无 535。
+     BV1TeWv6gEag 首次摘要检查不合格，按规则 refresh=True 重做后通过。
+     本次脚本 `tmp/run_batch_1115.py`，完整日志 `tmp/run_batch_1115.log`，最终核对
+     `tmp/verify_1115.txt`。China Show P1/P2 共用 `1113 BB China Show.md` 存档名；
+     P1 本次发送覆盖存档时间，导致最终 verify 对已有 11/14 09:46 PDF/存档的 P2 保守显示“否”；
+     该次原始 SMTP 返回未单独留存。
+     11/12 与 11/11 条目已滑出三天窗口，移入历史记录。 -->
+
+<!-- 2026-11-13 09:16 手工补跑（当天 07:00 定时任务没跑成：本会话 schedule 列表里已没有
+     schedule-cfc66597…，tmp/bili_uploads.json 也停在 07:00:20 没往下走，原因未确认）。
+     抓取结果：页面 40 条，D-2 ~ D 窗口（11/11 ~ 11/13）共 21 条；11/13 当天新上架 9 条，
+     加上 11/12 上架但没处理的 2 条（Tech BV1KTWX6QE2f、CNN News Central BV1cEWX65EBC），
+     共 11 条全部新转写并发出（09:20 ~ 10:05，每条 SMTP attempts=1，没有 535）。
+     11/11 那批上轮已发，未重跑。批量脚本：`tmp/run_batch_1113.py`，日志 `tmp/run_batch_1113.log`。
+     注意：`run_batch.py` 模式的邮件/PDF 标题取自 `kindle_title(上传标题)`，和 send_summaries_kindle.py
+     取自 summary H1 略有出入；Tech 那条的全角「：」被 `kindle_title` 折叠成空格：
+     `1112 BB Tech CoreWeave平息AI恐惧,Anthropic IPO需求增加`。
+     11/10 那批（China Show/Tech/ABC/AC360/NBC）已滑出 D-2 窗口，移到下方历史记录。
+     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
+
+<!-- 2026-11-12 07:00 定时任务：页面 40 条，11/12 新上架 10 条（约 11 小时音频），全部转译并发出。
+     CNN News Central（BV1KZWV65EkA）首次 `bili audio` 下载 90 秒超时，单独重试后成功（08:00）。
+     其中 Tech（BV1KTWX6QE2f）与 CNN News Central（BV1cEWX65EBC）在 07:00 扫描时页面还显示
+     「22小时前」，被记成 11/13 上架，实际是 11/12 pre-09:00 发布；11/13 补跑时按 11/12 处理。
+     11/09 那批已滑出 D-2 窗口，移到下方历史记录。
+     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
+
+### 历史记录（不属于当前 D-1）
+
+| Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
+|---|---|---|---|---|
+| 11/13 BB Money | 261113 Bloomberg Money | https://www.bilibili.com/video/BV1Zfs36ZETi | 是 | 是 2026-11-15 07:18 |
+| 11/14 BB ABC World News Tonight | 261114 ABC World News Tonight | https://www.bilibili.com/video/BV1r6Wk6EEkU | 是 | 是 2026-11-15 07:19 |
+| 11/14 BB Tech | 261114 Bloomberg Tech | https://www.bilibili.com/video/BV1WLWC6sEni | 是 | 是 2026-11-15 07:19 |
+| 11/13 BB Asia Trade | 261113 Bloomberg｜The Asia Trade P2 | https://www.bilibili.com/video/BV1QmWi6JE4i | 是 | 是 2026-11-14 09:54 |
+| 11/13 BB Asia Trade | 261113 Bloomberg｜The Asia Trade P1 | https://www.bilibili.com/video/BV1SQWi62ECF | 是 | 是 2026-11-14 09:54 |
+| 11/13 BB China Show | 261113 Bloomberg｜The China Show P2 | https://www.bilibili.com/video/BV1eWWq6REBk | 是 | 是 2026-11-14 09:46（既有 PDF/当时存档；同名 P1 于 11/15 覆盖存档时间后，最终 verify 保守显示“否”） |
+| 11/13 BB China Show | 261113 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV15xWq6WEFt | 是 | 是 2026-11-15 07:19 |
+| 11/13 BB ABC World News Tonight【中英】 | 261113 ABC World News Tonight【中英】 | https://www.bilibili.com/video/BV1WFWv6YEnT | 是 | 是 2026-11-15 07:19 |
+| 11/13 BB Surveillance 财经观察P2 | 261113 Bloomberg Surveillance 财经观察P2 | https://www.bilibili.com/video/BV1SSWe6gELR | 是 | 是 2026-11-14 09:40 |
+| 11/13 BB Surveillance 财经观察P1 | 261113 Bloomberg Surveillance 财经观察P1 | https://www.bilibili.com/video/BV1gsWY6BEFM | 是 | 是 2026-11-14 09:32 |
+| 11/13 BB ABC World News Tonight | 261113 ABC World News Tonight | https://www.bilibili.com/video/BV1TeWv6gEag | 是 | 是 2026-11-15 07:19 |
 | 11/12 BB CNN News -The Lead | 261112 CNN News -The Lead | https://www.bilibili.com/video/BV1DyWR6PELf | 是 | 是 2026-11-13 09:20 |
 | 11/12 BB China Show | 261112 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV1fpWX66EBH | 是 | 是 2026-11-13 09:27 |
 | 11/12 BB China Show | 261112 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1qTW966EEG | 是 | 是 2026-11-13 09:27 |
@@ -210,30 +294,6 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 | 11/10 BB Brief | 261110 Bloomberg Brief | https://www.bilibili.com/video/BV1ndWj6VEd3 | 是 | 是 2026-11-12 07:43 |
 | 11/11 BB Surveillance 财经观察 | 261111 Bloomberg Surveillance 财经观察 | https://www.bilibili.com/video/BV1m6Wj6pEUY | 是 | 是 2026-11-12 07:56 |
 | 11/11 BB CNN News Central | 261111 CNN News Central | https://www.bilibili.com/video/BV1KZWV65EkA | 是 | 是 2026-11-12 08:00 |
-
-<!-- 2026-11-13 09:16 手工补跑（当天 07:00 定时任务没跑成：本会话 schedule 列表里已没有
-     schedule-cfc66597…，tmp/bili_uploads.json 也停在 07:00:20 没往下走，原因未确认）。
-     抓取结果：页面 40 条，D-2 ~ D 窗口（11/11 ~ 11/13）共 21 条；11/13 当天新上架 9 条，
-     加上 11/12 上架但没处理的 2 条（Tech BV1KTWX6QE2f、CNN News Central BV1cEWX65EBC），
-     共 11 条全部新转写并发出（09:20 ~ 10:05，每条 SMTP attempts=1，没有 535）。
-     11/11 那批上轮已发，未重跑。批量脚本：`tmp/run_batch_1113.py`，日志 `tmp/run_batch_1113.log`。
-     注意：`run_batch.py` 模式的邮件/PDF 标题取自 `kindle_title(上传标题)`，和 send_summaries_kindle.py
-     取自 summary H1 略有出入；Tech 那条的全角「：」被 `kindle_title` 折叠成空格：
-     `1112 BB Tech CoreWeave平息AI恐惧,Anthropic IPO需求增加`。
-     11/10 那批（China Show/Tech/ABC/AC360/NBC）已滑出 D-2 窗口，移到下方历史记录。
-     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
-
-<!-- 2026-11-12 07:00 定时任务：页面 40 条，11/12 新上架 10 条（约 11 小时音频），全部转译并发出。
-     CNN News Central（BV1KZWV65EkA）首次 `bili audio` 下载 90 秒超时，单独重试后成功（08:00）。
-     其中 Tech（BV1KTWX6QE2f）与 CNN News Central（BV1cEWX65EBC）在 07:00 扫描时页面还显示
-     「22小时前」，被记成 11/13 上架，实际是 11/12 pre-09:00 发布；11/13 补跑时按 11/12 处理。
-     11/09 那批已滑出 D-2 窗口，移到下方历史记录。
-     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
-
-### 历史记录（已滑出最近 3 天窗口）
-
-| Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
-|---|---|---|---|---|
 | 11/10 BB China Show | 261110 Bloomberg｜The China Show | https://www.bilibili.com/video/BV1SsWg6uEQN | 是 | 是 2026-11-11 07:15 |
 | 11/10 BB Tech | 261110 Bloomberg Tech | https://www.bilibili.com/video/BV1SsWg6uEa8 | 是 | 是 2026-11-11 07:19 |
 | 11/10 BB ABC World News Tonight | 261110 ABC World News Tonight | https://www.bilibili.com/video/BV1TyWT6fENe | 是 | 是 2026-11-11 07:21 |

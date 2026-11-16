@@ -8,7 +8,8 @@ wins, and the row is still kept — a mismatch is worth seeing, not dropping.
 
 Output: ``tmp/bili_uploads.json`` in the same shape as ``bili user-videos --json``
 plus ``published_date`` / ``relative`` / ``date_conflict`` per item, so
-``verify_videos.py --from-uploads`` can consume it unchanged.
+``verify_videos.py --from-uploads`` can consume it unchanged. By default the
+output contains only Bloomberg/BB uploads published yesterday (D-1).
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -27,7 +28,7 @@ OUTPUT = REPO_ROOT / "tmp" / "bili_uploads.json"
 JS_FILE = REPO_ROOT / "tmp" / "extract_uploads.js"
 SPACE_URL = "https://space.bilibili.com/670833898/upload/video"
 SESSION = "bili"
-DEFAULT_DAYS = 3
+DEFAULT_FETCH_DAYS = 2
 
 # Wrapping in an IIFE is not cosmetic: the opencli CLI runs `eval` through
 # PowerShell, which mangles the inner double quotes on the Multi-line JS
@@ -93,14 +94,17 @@ def _eval(js: str) -> object:
     raise RuntimeError(f"unexpected opencli eval output: {out.strip()[:300]}")
 
 
-def parse_relative(rel: str, today: date) -> date | None:
+def parse_relative(rel: str, today: date, now: datetime | None = None) -> date | None:
     rel = (rel or "").strip()
     if not rel:
         return None
+    now = now or datetime.combine(today, datetime.now().time())
+    if now.date() != today:
+        now = datetime.combine(today, now.time())
     if m := re.fullmatch(r"(\d+)\s*分钟前", rel):
-        return today
+        return (now - timedelta(minutes=int(m.group(1)))).date()
     if m := re.fullmatch(r"(\d+)\s*小时前", rel):
-        return today if int(m.group(1)) < 24 else today - timedelta(days=int(m.group(1)) // 24)
+        return (now - timedelta(hours=int(m.group(1)))).date()
     if m := re.fullmatch(r"昨天\s*\d{2}:\d{2}", rel):
         return today - timedelta(days=1)
     if m := re.fullmatch(r"(\d+)\s*天前", rel):
@@ -112,8 +116,21 @@ def parse_relative(rel: str, today: date) -> date | None:
     return None
 
 
-def fetch(*, days: int = DEFAULT_DAYS, today: date | None = None, refresh_page: bool = True) -> list[dict]:
-    today = today or date.today()
+def is_bloomberg_title(title: str) -> bool:
+    """Return whether the upload title explicitly identifies Bloomberg/BB."""
+    without_date = re.sub(r"^\d{6}\b", "", title or "").strip()
+    return bool(re.match(r"^(?:Bloomberg|BB)\b", without_date, flags=re.IGNORECASE))
+
+
+def fetch(
+    *,
+    days: int = DEFAULT_FETCH_DAYS,
+    today: date | None = None,
+    now: datetime | None = None,
+    refresh_page: bool = True,
+) -> list[dict]:
+    now = now or datetime.now()
+    today = today or now.date()
     if refresh_page:
         _opencli("browser", SESSION, "open", SPACE_URL)
         time.sleep(3)
@@ -133,7 +150,7 @@ def fetch(*, days: int = DEFAULT_DAYS, today: date | None = None, refresh_page: 
         seen.add(bvid)
         title = (row.get("title") or "").strip()
         rel = row.get("rel") or ""
-        page_date = parse_relative(rel, today)
+        page_date = parse_relative(rel, today, now)
         if page_date and (today - page_date).days > days:
             page_date = None
         title_match = re.match(r"^(\d{2})(\d{2})(\d{2})\b", title)
@@ -170,20 +187,41 @@ def fetch(*, days: int = DEFAULT_DAYS, today: date | None = None, refresh_page: 
 
 
 def main(argv: list[str]) -> int:
-    days = DEFAULT_DAYS
+    days: int | None = None
     if "--days" in argv:
         days = int(argv[argv.index("--days") + 1])
-    today = date.today()
-    items = fetch(days=days, today=today)
-    cutoff = today - timedelta(days=days - 1)
-    recent = [item for item in items if item["published_date"] and date.fromisoformat(item["published_date"]) >= cutoff]
+    now = datetime.now()
+    today = now.date()
+    items = fetch(days=days or DEFAULT_FETCH_DAYS, today=today, now=now)
+    if days is None:
+        target = today - timedelta(days=1)
+        recent = [
+            item
+            for item in items
+            if item["published_date"]
+            and date.fromisoformat(item["published_date"]) == target
+            and is_bloomberg_title(item["title"])
+        ]
+        window = [target.isoformat(), target.isoformat()]
+        window_label = target.isoformat()
+    else:
+        cutoff = today - timedelta(days=days - 1)
+        recent = [
+            item
+            for item in items
+            if item["published_date"]
+            and date.fromisoformat(item["published_date"]) >= cutoff
+            and is_bloomberg_title(item["title"])
+        ]
+        window = [cutoff.isoformat(), today.isoformat()]
+        window_label = f"{cutoff} ~ {today}"
 
     payload = {
         "ok": True,
         "source": SPACE_URL,
         "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "today": today.isoformat(),
-        "window": [cutoff.isoformat(), today.isoformat()],
+        "window": window,
         "data": recent,
         "all_items": len(items),
     }
@@ -191,7 +229,7 @@ def main(argv: list[str]) -> int:
     for item in recent:
         flag = "  <-- 日期冲突" if item["date_conflict"] else ""
         print(f"{item['published_date']} | {item['bvid']} | {item['title']}{flag}")
-    print(f"\n{len(recent)} 条在 {cutoff} ~ {today} 内（页面共 {len(items)} 条），已写入 {OUTPUT}")
+    print(f"\n{len(recent)} 条在 {window_label} 内（页面共 {len(items)} 条），已写入 {OUTPUT}")
     return 0
 
 
