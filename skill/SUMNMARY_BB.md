@@ -214,8 +214,21 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
-| 11/13 BB Wall Street Week | 261113 Bloomberg Wall Street Week | https://www.bilibili.com/video/BV1EgsE61E3R | 是 | 是 2026-11-16 07:17 |
-| 11/15 BB Weekend | 261115 Bloomberg Weekend | https://www.bilibili.com/video/BV1tVsJ6aEYV | 是 | 是 2026-11-16 07:17 |
+| 11/16 BB China Show P1 | 261116 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV1DPsK6cEi8 | 是 | 是 2026-11-17 07:23 |
+| 11/16 BB Asia Trade P2 | 261116 Bloomberg｜The Asia Trade P2 | https://www.bilibili.com/video/BV19Dsc6WETu | 是 | 是 2026-11-17 07:23 |
+| 11/16 BB Asia Trade P1 | 261116 Bloomberg｜The Asia Trade P1 | https://www.bilibili.com/video/BV13Rsc6QEMX | 是 | 是 2026-11-17 07:23 |
+| 11/16 BB Weekend | 261116 Bloomberg Weekend | https://www.bilibili.com/video/BV188WZ63E4M | 是 | 是 2026-11-17 07:23 |
+
+<!-- 2026-11-17 07:00 手工执行（Asia/Shanghai）：opencli 页面共 40 条，D-1（11/16）
+     共 7 条；严格按“可选 YYMMDD 后明确 Bloomberg/BB”筛出 4 条并全部新转写、检查、
+     渲染和发送。跳过 3 条：`1114 Bloomberg Tech Europe ：Nvidia in Crisis` 不符合
+     可选六位 YYMMDD 后紧跟来源的标题规则，另两条为 ABC。Asia Trade P1 首次摘要检查
+     不合格，按规则 `refresh=True` 重做后通过；其余三条首次通过。4 封 SMTP 均首次返回
+     `235 Authentication successful`，`send_message` 拒收列表均为空，无 535。
+     前三份 PDF 因批量摘要耗时与发送存档相差超过 verify 的 5 分钟窗口，发送后仅重新渲染
+     同一摘要（未重复发信），最终 verify 四条均为“是”。批量脚本
+     `tmp/run_batch_1117.py`，完整日志 `tmp/daily-bb-logs/run_batch_1117.log`，
+     最终核对 `tmp/daily-bb-logs/verify_1117.txt`。 -->
 
 <!-- 2026-11-16 07:00 手工执行（Asia/Shanghai）：opencli 页面共 40 条。页面将最新三条
      显示为 18/20/22 小时前；按本次指定运行时间换算，上架日期均为 D-1（11/15）。
@@ -262,6 +275,8 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
+| 11/15 BB Weekend | 261115 Bloomberg Weekend | https://www.bilibili.com/video/BV1tVsJ6aEYV | 是 | 是 2026-11-16 07:17 |
+| 11/13 BB Wall Street Week | 261113 Bloomberg Wall Street Week | https://www.bilibili.com/video/BV1EgsE61E3R | 是 | 是 2026-11-16 07:17 |
 | 11/13 BB Money | 261113 Bloomberg Money | https://www.bilibili.com/video/BV1Zfs36ZETi | 是 | 是 2026-11-15 07:18 |
 | 11/14 BB ABC World News Tonight | 261114 ABC World News Tonight | https://www.bilibili.com/video/BV1r6Wk6EEkU | 是 | 是 2026-11-15 07:19 |
 | 11/14 BB Tech | 261114 Bloomberg Tech | https://www.bilibili.com/video/BV1WLWC6sEni | 是 | 是 2026-11-15 07:19 |
