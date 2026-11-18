@@ -1,4 +1,0 @@
-[console_scripts]
-deepfind = deepfind.cli:main
-deepfind-chat = deepfind.web_cli:main
-deepfind-web = deepfind.web_api:main

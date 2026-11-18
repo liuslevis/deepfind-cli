@@ -4,13 +4,14 @@ __pycache__/
 .venv/
 .env
 tmp/
+*.egg-info/
+pytest-of-david/
 web/node_modules/
 web/dist/
 web/.vite/
 web/coverage/
 web/*.tsbuildinfo
 slide
-assets
 sandbox/
 
 # Local Vite dependency cache
