@@ -11,14 +11,14 @@ A multi-agent research tool in both Web App and CLI, which can:
 
 ## Web App Usage
 
-![ui3](./doc/ui/3.png)
+![ui3](./doc/readme/ui/3.png)
 
-![ui4](./doc/ui/4.png)
+![ui4](./doc/readme/ui/4.png)
 
 
 ## CLI Usage
 
-![img3](./doc/img/screenshot4.png)
+![img3](./doc/readme/img/screenshot4.png)
 
 ```
 uv run -m deepfind.cli "Help me do a research on Robotic Hands, give me a TLDR table" --num-agent 1
@@ -171,8 +171,8 @@ TWITTER_CLI_BIN=twitter
 XHS_CLI_BIN=xhs
 BILI_BIN=bili
 ASR_MODEL=Qwen/Qwen3-ASR-1.7B
-DEEPFIND_VIDEO_DIR=assets/video
-DEEPFIND_RAG_DIR=assets
+DEEPFIND_VIDEO_DIR=doc/video
+DEEPFIND_RAG_DIR=doc
 QDRANT_URL=http://127.0.0.1:6333
 QDRANT_COLLECTION=investment_kb
 DENSE_MODEL=intfloat/multilingual-e5-large
@@ -195,8 +195,8 @@ uv run -m deepfind.cli "same query"
 
 ### Local RAG knowledge base
 
-Place PDFs under `assets/pdf` and RAG audio or video under `assets/media`.
-Downloaded video resources are stored under `assets/video`. Parsed artifacts
+Place PDFs under `doc/pdf` and RAG audio or video under `doc/media`.
+Downloaded video resources are stored under `doc/video`. Parsed artifacts
 are written beside each RAG source file. Set `DEEPFIND_RAG_DIR` when the
 knowledge-base root lives outside this repository.
 
@@ -397,7 +397,7 @@ curl http://127.0.0.1:8000/api/health
 then returns a query-focused summary. Use `bili_transcribe_full(bili_id)` when you need the full transcript.
 
 `bili_summary(bili_id, title, focus, refresh)` transcribes the video, writes a standalone Markdown document to
-`assets/video/bili/<BVID>/text/summary.md`, and returns its absolute path as `data.summary_path`. Pass that path
+`doc/video/bili/<BVID>/text/summary.md`, and returns its absolute path as `data.summary_path`. Pass that path
 to `send_kindle` to email the summary. The existing `summary.md` is reused unless you set `refresh: true`.
 
 Setup:

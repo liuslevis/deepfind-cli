@@ -39,8 +39,8 @@ class ConfigTests(unittest.TestCase):
             clear=True,
         ):
             settings = Settings.from_env(require_api_key=False)
-        self.assertEqual(settings.audio_dir, "assets/video")
-        self.assertEqual(settings.rag_dir, "assets")
+        self.assertEqual(settings.audio_dir, "doc/video")
+        self.assertEqual(settings.rag_dir, "doc")
 
     def test_clean_env_value_strips_inline_comment(self) -> None:
         self.assertEqual(

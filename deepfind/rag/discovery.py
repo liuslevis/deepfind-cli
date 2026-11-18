@@ -23,7 +23,7 @@ VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".webm"}
 AUDIO_SUFFIXES = {".mp3", ".m4a", ".wav", ".flac"}
 MEDIA_SUFFIXES = VIDEO_SUFFIXES | AUDIO_SUFFIXES
 
-EXCLUDED_DIR_NAMES = {".git", ".venv", "__pycache__", "assets", ".work"}
+EXCLUDED_DIR_NAMES = {".git", ".venv", "__pycache__", ".work"}
 TEMP_SUFFIXES = {".tmp", ".part", ".crdownload", ".download", ".partial"}
 
 

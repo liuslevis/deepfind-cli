@@ -1,7 +1,7 @@
 """Record which Bilibili videos already have a summary and reached Kindle.
 
-Read-only against the repo: it inspects ``assets/video/bili/<bvid>/text`` and
-``assets/kd`` so the tracking table in ``skill/SUMMARY_BB.md`` can be rebuilt
+Read-only against the repo: it inspects ``doc/video/bili/<bvid>/text`` and
+``doc/kd`` so the tracking table in ``skill/SUMMARY_BB.md`` can be rebuilt
 from real state instead of memory. Pass ``--list`` to print only the table.
 """
 
@@ -21,8 +21,8 @@ from deepfind.send_kindle import sanitize_filename_stem
 _load_dotenv()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-VIDEO_ROOT = REPO_ROOT / "assets" / "video" / "bili"
-KINDLE_DIR = REPO_ROOT / "assets" / "kd"
+VIDEO_ROOT = REPO_ROOT / "doc" / "video" / "bili"
+KINDLE_DIR = REPO_ROOT / "doc" / "kd"
 
 # Shared naming rule for Kindle titles; the sender script owns the convention.
 sys.path.insert(0, str(REPO_ROOT / "tmp"))

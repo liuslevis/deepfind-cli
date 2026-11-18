@@ -200,9 +200,9 @@ class Settings:
     ytdlp_extractor_args: str | None = "youtube:player_client=web;fetch_pot=always"
     ffmpeg_bin: str = "ffmpeg"
     asr_model: str = DEFAULT_ASR_MODEL
-    audio_dir: str = "assets/video"
+    audio_dir: str = "doc/video"
     subprocess_timeout: int = 90
-    rag_dir: str = "assets"
+    rag_dir: str = "doc"
     smtp_host: str = DEFAULT_SMTP_HOST
     smtp_port: int = DEFAULT_SMTP_PORT
     smtp_user: str = ""
@@ -419,12 +419,12 @@ class Settings:
             ),
             ffmpeg_bin=_env("FFMPEG_BIN", "ffmpeg") or "ffmpeg",
             asr_model=cls._resolve_asr_model(),
-            audio_dir=_env("DEEPFIND_VIDEO_DIR", "assets/video") or "assets/video",
+            audio_dir=_env("DEEPFIND_VIDEO_DIR", "doc/video") or "doc/video",
             subprocess_timeout=int(timeout or "90"),
             rag_dir=(
                 _env("DEEPFIND_RAG_DIR")
                 or _env("DEEPFIND_RAG_MCP_PROJECT_DIR")
-                or "assets"
+                or "doc"
             ),
             smtp_host=_env("SMTP_HOST", DEFAULT_SMTP_HOST) or DEFAULT_SMTP_HOST,
             smtp_port=int(_env("SMTP_PORT") or DEFAULT_SMTP_PORT),

@@ -117,7 +117,7 @@ opencli 的两个坑（脚本已经处理，改脚本时注意）：
   job 输出。日志里的中文是 GBK 乱码，不用管。
 - web CLI 跑到 `send_kindle` 报 `[Errno 13] Permission denied` 是正常的
   （见第 0 节第 3 条）。关键看 `bili_summary` 是否 `ok`，并确认
-  `assets/video/bili/<BV>/text/summary.md` 已生成。
+  `doc/video/bili/<BV>/text/summary.md` 已生成。
 - 一条视频一个 chat，把 chat id 记下来（`Chat ready in the UI: chat_xxx`）。
 
 批量兜底（后端不可用、或一次要跑好几条时）：直接调工具再自己发，参数和 CLI 一样，
@@ -142,7 +142,7 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 ## 4. 发送 Kindle
 
 用工作目录渲染 + 直发脚本，一条视频对应一份 PDF，同时把 Markdown 存一份到
-`assets/kd/`：
+`doc/kd/`：
 
 ```powershell
 & ".\.venv\Scripts\python.exe" `
@@ -152,7 +152,7 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 **SMTP 会限频。** 2026-11-09 晚上 QQ 邮箱返回
 `535 Login fail. … login frequency limited`，白天完全正常。规则：
 - 每封邮件最多重试 **1 次**，间隔 60 秒；再失败就停，别连续重试；
-- 失败时 PDF 和 `assets/kd` 存档都已生成，等限频解除后直接重跑同一条命令补发即可
+- 失败时 PDF 和 `doc/kd` 存档都已生成，等限频解除后直接重跑同一条命令补发即可
   （`send_one` 会重新渲染，不会重复转写）；
 - 判断是不是限频：单独跑一次 `smtplib.SMTP_SSL('smtp.qq.com',465).login(...)`，
   报 `535` 就是账号侧限流，报超时/断连才是网络问题。
@@ -174,7 +174,7 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
   - 转换逻辑在 `tmp/send_summaries_kindle.py` 的 `kindle_title()`；只想看映射结果时：
     `python tmp/send_summaries_kindle.py --names "261107 Bloomberg Money"`。
 - 收件人 `KINDLE_EMAIL`，发件人 `SMTP_USER`，`smtp.qq.com:465` 走 SSL，全部从 `.env` 读；
-- 成功标志：脚本返回 `"ok": true`，并且 `assets/kd/<stem>.md` 已写入；
+- 成功标志：脚本返回 `"ok": true`，并且 `doc/kd/<stem>.md` 已写入；
 - 如果 `tmp/send_summaries_kindle.py` 不在了，用 `deepfind.kindle_pdf._convert_to_pdf`
   （在工作目录里渲染）加 `deepfind.send_kindle._deliver` 补一个；
 - 整个流程**跑完自己核对，不要只信 agent 的口头汇报**：agent 常说「已发送」，
@@ -189,14 +189,14 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
   --from-uploads ".\tmp\bili_uploads.json"
 ```
 
-`verify_videos.py` 只读检查 `<BV>/text/` 和 `assets/kd/`，判断「转译」「发送」：
+`verify_videos.py` 只读检查 `<BV>/text/` 和 `doc/kd/`，判断「转译」「发送」：
 - 转译 = 有 `summary.md`；
-- 发送 = 有 PDF **且** 有对应 `assets/kd/*.md` 存档，且 PDF 时间不早于存档太多
+- 发送 = 有 PDF **且** 有对应 `doc/kd/*.md` 存档，且 PDF 时间不早于存档太多
   （防止把旧 PDF 误判成已发）；
 - `--from-uploads` 会把 `tmp/bili_uploads.json`（opencli 抓的页面）里的标题写进
   `tmp/bili_titles.json`；没有 `YYMMDD` 前缀的条目会继承上一条更新的 Bloomberg
   视频日期——所以别把列表打乱顺序；
-- 已知盲区 1：`assets/kd` 是从 11/9 才开始写的，更早单独发过的不在存档里，
+- 已知盲区 1：`doc/kd` 是从 11/9 才开始写的，更早单独发过的不在存档里，
   会显示「否」，需要人工确认后手动改表；
 - 已知盲区 2：PDF 在存档之前生成，所以一旦重新生成了 PDF（比如换了标题），
   「发送」会掉成「否」，提醒你补发一次——这是有意的保守行为；
@@ -262,14 +262,14 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
      取自 summary H1 略有出入；Tech 那条的全角「：」被 `kindle_title` 折叠成空格：
      `1112 BB Tech CoreWeave平息AI恐惧,Anthropic IPO需求增加`。
      11/10 那批（China Show/Tech/ABC/AC360/NBC）已滑出 D-2 窗口，移到下方历史记录。
-     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
+     表格时区为 Asia/Shanghai；「发送」时间以 doc/kd 存档写入时间为准。 -->
 
 <!-- 2026-11-12 07:00 定时任务：页面 40 条，11/12 新上架 10 条（约 11 小时音频），全部转译并发出。
      CNN News Central（BV1KZWV65EkA）首次 `bili audio` 下载 90 秒超时，单独重试后成功（08:00）。
      其中 Tech（BV1KTWX6QE2f）与 CNN News Central（BV1cEWX65EBC）在 07:00 扫描时页面还显示
      「22小时前」，被记成 11/13 上架，实际是 11/12 pre-09:00 发布；11/13 补跑时按 11/12 处理。
      11/09 那批已滑出 D-2 窗口，移到下方历史记录。
-     表格时区为 Asia/Shanghai；「发送」时间以 assets/kd 存档写入时间为准。 -->
+     表格时区为 Asia/Shanghai；「发送」时间以 doc/kd 存档写入时间为准。 -->
 
 ### 历史记录（不属于当前 D-1）
 
@@ -328,14 +328,14 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 | 11/07 BB Surveillance | 261107 Bloomberg Surveillance | https://www.bilibili.com/video/BV1gE4L68EFE | 是 | 是 2026-11-09 08:38（存档名为旧标题，脚本核对不到） |
 | 11/07 BB Tech | 261107 Bloomberg Tech | https://www.bilibili.com/video/BV1Pv4764EAS | 是 | 是 2026-11-09 08:59（存档名为旧标题，脚本核对不到） |
 
-<!-- Surveillance / Tech 是 11/9 早上手工发的，当时 SMTP 确认成功，但 assets/kd 用的是
+<!-- Surveillance / Tech 是 11/9 早上手工发的，当时 SMTP 确认成功，但 doc/kd 用的是
      旧标题（Bloomberg 261107 …），verify_videos.py 的判定看不到，所以手工补录在此。 -->
 
 ### 其他有用路径
 
-- 原始转录：`assets/video/bili/<BV>/text/transcript.txt`
-- 摘要：`assets/video/bili/<BV>/text/summary.md`
-- Kindle 存档：`assets/kd/<Kindle 标题>.md`（旧文件是 `Bloomberg <上传标题>.md`）
+- 原始转录：`doc/video/bili/<BV>/text/transcript.txt`
+- 摘要：`doc/video/bili/<BV>/text/summary.md`
+- Kindle 存档：`doc/kd/<Kindle 标题>.md`（旧文件是 `Bloomberg <上传标题>.md`）
 - 本次抓取：`tmp/bili_uploads.json`；页面抽取 JS：`tmp/extract_uploads.js`
 - 聊天记录：`tmp/web/chats/chat_*.json`
 - 标题缓存：`tmp/bili_titles.json`

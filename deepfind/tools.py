@@ -1401,7 +1401,7 @@ class Toolset:
             self._function_spec(
                 "bili_summary",
                 "Transcribe a Bilibili video by URL or BVID, write a Markdown summary document to "
-                "assets/video/bili/<BVID>/text/summary.md, and return its absolute path in data.summary_path. "
+                "doc/video/bili/<BVID>/text/summary.md, and return its absolute path in data.summary_path. "
                 "Use this whenever the user asks to summarize a Bilibili video, and especially before send_kindle: "
                 "pass data.summary_path straight into send_kindle.file_paths. "
                 "Never guess a summary file path, because the file only exists after this tool runs.",
