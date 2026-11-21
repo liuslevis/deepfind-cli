@@ -214,10 +214,38 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
-| 11/16 BB China Show P1 | 261116 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV1DPsK6cEi8 | 是 | 是 2026-11-17 07:23 |
-| 11/16 BB Asia Trade P2 | 261116 Bloomberg｜The Asia Trade P2 | https://www.bilibili.com/video/BV19Dsc6WETu | 是 | 是 2026-11-17 07:23 |
-| 11/16 BB Asia Trade P1 | 261116 Bloomberg｜The Asia Trade P1 | https://www.bilibili.com/video/BV13Rsc6QEMX | 是 | 是 2026-11-17 07:23 |
-| 11/16 BB Weekend | 261116 Bloomberg Weekend | https://www.bilibili.com/video/BV188WZ63E4M | 是 | 是 2026-11-17 07:23 |
+| 11/20 BB Tech：Anthropic纳斯达克IPO创纪录,估值约2万亿美元 | 261120 Bloomberg Tech：Anthropic纳斯达克IPO创纪录，估值约2万亿美元 | https://www.bilibili.com/video/BV1fRyWzZEHw | 是 | 是 2026-11-21 07:09 |
+| 11/19 BB Breif | 261119 Bloomberg Breif | https://www.bilibili.com/video/BV1FBsv6hEcv | 是 | 是 2026-11-21 07:09 |
+
+<!-- 2026-11-21 07:00 手工执行（Asia/Shanghai）：opencli 页面共 40 条，D-1（11/20）
+     共 3 条；严格筛出 2 条 Bloomberg/BB 并全部新转写、检查、渲染和发送。跳过 1 条
+     ABC（BV1MWsq6UEti，`261120 ABC World News Tonight`），未转译、未生成 PDF、未发送。
+     两份摘要首次检查均通过，首行为标题、中文正文充足且无英文思考残留。2 封 SMTP 均
+     首次返回 `235 Authentication successful`，`send_message` 拒收列表均为空，无 535。
+     批量脚本 `tmp/run_batch_1121.py`，完整日志 `tmp/daily-bb-logs/run_batch_1121.log`，
+     抓取与跳过审计分别为 `fetch_2026-11-21.txt`、`d1_all_2026-11-20.txt`，最终核对
+     `tmp/daily-bb-logs/verify_final_2026-11-21.txt`。 -->
+
+<!-- 2026-11-20 07:00 手工执行（Asia/Shanghai）：opencli 页面共 42 条，D-1（11/19）
+     共 3 条；严格筛出 2 条 Bloomberg/BB 并全部新转写、检查、渲染和发送。跳过 1 条
+     ABC（BV1uPs46QEAT，`261119 ABC World News Tonight`），未转译、未生成 PDF、未发送。
+     Balance of Power 首次检查发现英文原话触发思考残留规则，refresh 后仍保留该原话，
+     将该句准确译为中文后重新检查并渲染；Tech 首次检查通过。2 封 SMTP 均首次返回
+     `235 Authentication successful`，`send_message` 拒收列表均为空，无 535。
+     批量脚本 `tmp/run_batch_1120.py`，日志 `tmp/daily-bb-logs/run_batch_1120.log`
+     与 `tmp/daily-bb-logs/run_batch_1120_balance.log`，最终核对
+     `tmp/daily-bb-logs/verify_1120.txt`。 -->
+
+<!-- 2026-11-19 07:00 手工执行（Asia/Shanghai）：opencli 页面共 42 条，D-1（11/18）
+     共 7 条；严格筛出 6 条 Bloomberg/BB 并全部新转写、检查、渲染和发送。跳过 1 条
+     ABC（BV1gis16kE5i，`261118 ABC World News Tonight`），未转译、未生成 PDF、未发送。
+     首次运行因缺少 qwen_asr 中止，按错误提示执行 `uv sync --extra media` 后重跑成功；
+     6 份摘要首次检查均通过，无 refresh。6 封 SMTP 均首次返回
+     `235 Authentication successful`，`send_message` 拒收列表均为空，无 535。
+     前五份 PDF 因批量摘要耗时与发送存档相差超过 verify 的 5 分钟窗口，发送后仅重新渲染
+     同一摘要（未重复发信），最终 verify 六条均为“是”。批量脚本
+     `tmp/run_batch_1119.py`，完整日志 `tmp/daily-bb-logs/run_batch_1119.log`，
+     最终核对 `tmp/daily-bb-logs/verify_1119.txt`。 -->
 
 <!-- 2026-11-17 07:00 手工执行（Asia/Shanghai）：opencli 页面共 40 条，D-1（11/16）
      共 7 条；严格按“可选 YYMMDD 后明确 Bloomberg/BB”筛出 4 条并全部新转写、检查、
@@ -275,6 +303,18 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
+| 11/19 BB Balance of Power | 261119 Bloomberg Balance of Power | https://www.bilibili.com/video/BV1dvsb6MEXP | 是 | 是 2026-11-20 07:10 |
+| 11/19 BB Tech | 261119 Bloomberg Tech | https://www.bilibili.com/video/BV1dvsb6MELk | 是 | 是 2026-11-20 07:09 |
+| 11/18 BB Asia Trade P1 | 261118 Bloomberg｜The Asia Trade P1 | https://www.bilibili.com/video/BV1NdsS6LEF9 | 是 | 是 2026-11-19 07:42 |
+| 11/18 BB China Show P1 | 261118 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV1T2sm6CEnH | 是 | 是 2026-11-19 07:42 |
+| 11/18 BB Asia Trade P2 | 261118 Bloomberg｜The Asia Trade P2 | https://www.bilibili.com/video/BV1eYsm6pETr | 是 | 是 2026-11-19 07:42 |
+| 11/18 BB Surveillance 财经观察 P2 | 261118 Bloomberg Surveillance 财经观察 P2 | https://www.bilibili.com/video/BV1ows269EUH | 是 | 是 2026-11-19 07:42 |
+| 11/18 BB Tech | 261118 Bloomberg Tech | https://www.bilibili.com/video/BV1fZs164Evi | 是 | 是 2026-11-19 07:42 |
+| 11/18 BB Surveillance 财经观察 P1 | 261118 Bloomberg Surveillance 财经观察 P1 | https://www.bilibili.com/video/BV1kvs26wE7N | 是 | 是 2026-11-19 07:42 |
+| 11/16 BB China Show P1 | 261116 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV1DPsK6cEi8 | 是 | 是 2026-11-17 07:23 |
+| 11/16 BB Asia Trade P2 | 261116 Bloomberg｜The Asia Trade P2 | https://www.bilibili.com/video/BV19Dsc6WETu | 是 | 是 2026-11-17 07:23 |
+| 11/16 BB Asia Trade P1 | 261116 Bloomberg｜The Asia Trade P1 | https://www.bilibili.com/video/BV13Rsc6QEMX | 是 | 是 2026-11-17 07:23 |
+| 11/16 BB Weekend | 261116 Bloomberg Weekend | https://www.bilibili.com/video/BV188WZ63E4M | 是 | 是 2026-11-17 07:23 |
 | 11/15 BB Weekend | 261115 Bloomberg Weekend | https://www.bilibili.com/video/BV1tVsJ6aEYV | 是 | 是 2026-11-16 07:17 |
 | 11/13 BB Wall Street Week | 261113 Bloomberg Wall Street Week | https://www.bilibili.com/video/BV1EgsE61E3R | 是 | 是 2026-11-16 07:17 |
 | 11/13 BB Money | 261113 Bloomberg Money | https://www.bilibili.com/video/BV1Zfs36ZETi | 是 | 是 2026-11-15 07:18 |
