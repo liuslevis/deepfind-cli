@@ -11,6 +11,7 @@ web/dist/
 web/.vite/
 web/coverage/
 web/*.tsbuildinfo
+fastembed_cache/
 slide
 sandbox/
 
