@@ -11,14 +11,14 @@ A multi-agent research tool in both Web App and CLI, which can:
 
 ## Web App Usage
 
-![ui3](./doc/readme/ui/3.png)
+![ui3](./assets/readme/ui-3.png)
 
-![ui4](./doc/readme/ui/4.png)
+![ui4](./assets/readme/ui-4.png)
 
 
 ## CLI Usage
 
-![img3](./doc/readme/img/screenshot4.png)
+![img3](./assets/readme/screenshot4.png)
 
 ```
 uv run -m deepfind.cli "Help me do a research on Robotic Hands, give me a TLDR table" --num-agent 1
