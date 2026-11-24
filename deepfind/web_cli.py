@@ -1,9 +1,9 @@
 """Run a one-shot query that lands as a new chat in the DeepFind web UI.
 
-The web UI (web/ + Electron shell) reads its chat list from the ``/api/chats``
-endpoints of the FastAPI backend. This module drives the same HTTP API a
-browser session would use, so a terminal query creates a real chat with a user
-message and a streamed assistant answer that the UI can render directly.
+The web UI reads its chat list from the ``/api/chats`` endpoints of the FastAPI
+backend. This module drives the same HTTP API a browser session would use, so a
+terminal query creates a real chat with a user message and a streamed assistant
+answer that the UI can render directly.
 
 Authentication mirrors the UI: the backend requires ``DEEPFIND_WEB_TOKEN``
 whenever it was started with that variable set, so the client resolves the

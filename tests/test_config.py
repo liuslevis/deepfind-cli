@@ -282,7 +282,7 @@ class ConfigTests(unittest.TestCase):
             (project / ".env").write_text(
                 "DEEPSEEK_API_KEY=sk-from-parent\nDEEPSEEK_MODEL_NAME=deepseek-v4-flash\n"
             )
-            nested = project / "web" / "electron"
+            nested = project / "web" / "src"
             nested.mkdir(parents=True)
 
             previous_cwd = Path.cwd()

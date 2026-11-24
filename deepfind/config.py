@@ -93,8 +93,7 @@ def _env_file_candidates() -> list[Path]:
     longer disables configuration: the loader keeps searching the working
     directory, ``DEEPFIND_PROJECT_DIR``, the working directory's parents, and the
     repository root. That keeps the CLI and the web backend working regardless of
-    where they are started from, and lets the desktop shell fall back to the
-    repository ``.env`` when the app's user-data directory has none yet.
+    where they are started from.
     """
     candidates: list[Path] = []
     seen: set[str] = set()

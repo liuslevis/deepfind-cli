@@ -431,40 +431,9 @@ npm run dev
 Open the Vite URL during development, or run `npm run build` so `deepfind-web` can
 serve `web/dist` directly.
 
-Desktop development:
-
-```bash
-cd web
-npm run desktop:dev
-```
-
-The Electron app starts and stops the Python backend automatically. Development
-builds read the repository `.env`; packaged builds keep application data and an
-optional `.env` file in the platform's DeepFind user-data directory
-(`%APPDATA%\DeepFind\.env` on Windows, `~/Library/Application Support/DeepFind/.env`
-on macOS). The backend also falls back to the working directory, its parents, and
-the repository root when `DEEPFIND_ENV_FILE` points at a file that does not exist
-yet, so a missing user-data `.env` no longer hides the repository config.
-
 If a remote model reports that its API key is missing, check that the `.env`
 file the app loads defines it, for example
 `DEEPSEEK_API_KEY=...` for the DeepSeek model.
-
-On Windows, the development launcher stages the Electron runtime under
-`%LOCALAPPDATA%\DeepFind\electron-dev` and grants that directory AppContainer
-read access. This avoids Chromium sandbox startup failures caused by restrictive
-ACLs on repository directories.
-
-Build an installer on the target operating system:
-
-```bash
-cd web
-npm run desktop:dist:win
-npm run desktop:dist:mac
-```
-
-The Windows installer must be built on Windows, and the macOS DMG/ZIP must be
-built on macOS. Backend packaging uses the Python `desktop` extra and PyInstaller.
 
 The production shell now includes a web manifest, touch icon, and iPhone Safari
 safe-area handling so it works cleanly in Safari and when added to the Home
