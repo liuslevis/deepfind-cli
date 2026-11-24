@@ -161,6 +161,47 @@ class SendKindleTests(unittest.TestCase):
                     _send([str(pdf)])
         self.assertIn("SMTP send failed", str(ctx.exception))
 
+    def test_scheduled_allowlist_accepts_d1_bvid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf = Path(tmpdir) / "BV1Allowed" / "text" / "1123 BB Tech.pdf"
+            pdf.parent.mkdir(parents=True)
+            pdf.write_bytes(b"%PDF-1.4")
+            with patch.dict(
+                "os.environ",
+                {"DEEPFIND_KINDLE_ALLOWED_BVIDS": "BV1Allowed"},
+            ):
+                with patch("deepfind.send_kindle.smtplib.SMTP_SSL"):
+                    _send([str(pdf)])
+
+    def test_scheduled_allowlist_rejects_old_bvid_before_smtp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf = Path(tmpdir) / "BV1Old" / "text" / "1112 BB Tech.pdf"
+            pdf.parent.mkdir(parents=True)
+            pdf.write_bytes(b"%PDF-1.4")
+            with patch.dict(
+                "os.environ",
+                {"DEEPFIND_KINDLE_ALLOWED_BVIDS": "BV1Allowed"},
+            ):
+                with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                    with self.assertRaises(KindleSendError) as ctx:
+                        _send([str(pdf)])
+        smtp_ssl.assert_not_called()
+        self.assertIn("BV1Old", str(ctx.exception))
+
+    def test_scheduled_allowlist_fails_closed_without_bvid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf = Path(tmpdir) / "1123 BB Tech.pdf"
+            pdf.write_bytes(b"%PDF-1.4")
+            with patch.dict(
+                "os.environ",
+                {"DEEPFIND_KINDLE_ALLOWED_BVIDS": "BV1Allowed"},
+            ):
+                with patch("deepfind.send_kindle.smtplib.SMTP_SSL") as smtp_ssl:
+                    with self.assertRaises(KindleSendError) as ctx:
+                        _send([str(pdf)])
+        smtp_ssl.assert_not_called()
+        self.assertIn("no BVID", str(ctx.exception))
+
 
 class SanitizeFilenameTests(unittest.TestCase):
     def test_strips_illegal_characters(self) -> None:

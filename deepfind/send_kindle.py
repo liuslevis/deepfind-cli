@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import mimetypes
+import os
 import re
 import shutil
 import smtplib
@@ -58,6 +59,7 @@ _WINDOWS_RESERVED_STEMS = {
 }
 MAX_FILENAME_STEM_LENGTH = 100
 _FALLBACK_FILENAME_STEM = "kindle-document"
+_BVID_PATTERN = re.compile(r"\bBV[0-9A-Za-z]+\b")
 
 
 class KindleSendError(RuntimeError):
@@ -66,6 +68,32 @@ class KindleSendError(RuntimeError):
 
 class MissingKindleConfigError(KindleSendError):
     """Raised when SMTP or Kindle settings are incomplete."""
+
+
+def _enforce_scheduled_bvid_allowlist(
+    sources: Sequence[Path],
+    *,
+    subject: str | None,
+    body: str | None,
+) -> None:
+    raw_allowlist = os.environ.get("DEEPFIND_KINDLE_ALLOWED_BVIDS", "").strip()
+    if not raw_allowlist:
+        return
+
+    allowed = {item.strip() for item in raw_allowlist.split(",") if item.strip()}
+    evidence = " ".join([*(str(path) for path in sources), subject or "", body or ""])
+    found = set(_BVID_PATTERN.findall(evidence))
+    if not found:
+        raise KindleSendError(
+            "Scheduled Kindle send blocked: no BVID was found in the source paths, "
+            "subject, or body."
+        )
+    rejected = found - allowed
+    if rejected:
+        raise KindleSendError(
+            "Scheduled Kindle send blocked for non-D-1 BVID(s): "
+            + ", ".join(sorted(rejected))
+        )
 
 
 def resolve_attachment(file_path: str) -> Path:
@@ -272,6 +300,8 @@ def _deliver(
     body: str | None,
     timeout: int,
 ) -> dict[str, object]:
+    _enforce_scheduled_bvid_allowlist(sources, subject=subject, body=body)
+
     total_bytes = sum(path.stat().st_size for path in attachments)
     if total_bytes > MAX_ATTACHMENT_BYTES:
         raise KindleSendError(

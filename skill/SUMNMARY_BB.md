@@ -214,8 +214,17 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
-| 11/20 BB Tech：Anthropic纳斯达克IPO创纪录,估值约2万亿美元 | 261120 Bloomberg Tech：Anthropic纳斯达克IPO创纪录，估值约2万亿美元 | https://www.bilibili.com/video/BV1fRyWzZEHw | 是 | 是 2026-11-21 07:09 |
-| 11/19 BB Breif | 261119 Bloomberg Breif | https://www.bilibili.com/video/BV1FBsv6hEcv | 是 | 是 2026-11-21 07:09 |
+| 11/21 BB Tech | 261121 Bloomberg Tech | https://www.bilibili.com/video/BV1LdyhzGEjK | 是 | 是 2026-11-22 07:05 |
+
+<!-- 2026-11-22 07:00 手工执行（Asia/Shanghai）：opencli 页面共 42 条，D-1（11/21）
+     共 2 条；严格筛出 1 条 Bloomberg/BB 并完成新转写、检查、渲染和发送。跳过 1 条
+     ABC（BV1g2yazTE5p，`261121 ABC World News Tonight`），未转译、未生成 PDF、未发送。
+     Tech 首次摘要检查不合格，按规则 `refresh=True` 重做后通过；最终首行为标题、中文正文
+     充足且无英文思考残留。SMTP 首次返回 `235 Authentication successful`，
+     `send_message` 拒收列表为空，无 535，未发送 PDF 列表为空。批量脚本
+     `tmp/run_batch_1122.py`，完整日志 `tmp/daily-bb-logs/run_batch_1122.log`，抓取与跳过
+     审计分别为 `fetch_2026-11-22.txt`、`d1_all_2026-11-21.txt`，初次/最终核对分别为
+     `verify_initial_2026-11-22.txt`、`verify_final_2026-11-22.txt`。 -->
 
 <!-- 2026-11-21 07:00 手工执行（Asia/Shanghai）：opencli 页面共 40 条，D-1（11/20）
      共 3 条；严格筛出 2 条 Bloomberg/BB 并全部新转写、检查、渲染和发送。跳过 1 条
@@ -303,6 +312,8 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
+| 11/20 BB Tech：Anthropic纳斯达克IPO创纪录,估值约2万亿美元 | 261120 Bloomberg Tech：Anthropic纳斯达克IPO创纪录，估值约2万亿美元 | https://www.bilibili.com/video/BV1fRyWzZEHw | 是 | 是 2026-11-21 07:09 |
+| 11/19 BB Breif | 261119 Bloomberg Breif | https://www.bilibili.com/video/BV1FBsv6hEcv | 是 | 是 2026-11-21 07:09 |
 | 11/19 BB Balance of Power | 261119 Bloomberg Balance of Power | https://www.bilibili.com/video/BV1dvsb6MEXP | 是 | 是 2026-11-20 07:10 |
 | 11/19 BB Tech | 261119 Bloomberg Tech | https://www.bilibili.com/video/BV1dvsb6MELk | 是 | 是 2026-11-20 07:09 |
 | 11/18 BB Asia Trade P1 | 261118 Bloomberg｜The Asia Trade P1 | https://www.bilibili.com/video/BV1NdsS6LEF9 | 是 | 是 2026-11-19 07:42 |
@@ -364,12 +375,6 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 | 11/08 BB Weekend | 261107 Bloomberg Weekend | https://www.bilibili.com/video/BV1oK446TEW9 | 是 | 是 2026-11-09 08:59 |
 | 11/08 BB CNN News -Anderson Cooper 360 | 261108 CNN News -Anderson Cooper 360 | https://www.bilibili.com/video/BV18jW76ZEBv | 是 | 是 2026-11-09 09:44 |
 | 11/08 BB CNN News -The Source | 261108 CNN News -The Source | https://www.bilibili.com/video/BV1AQ4x6mEgg | 是 | 是 2026-11-10 08:49 |
-| 11/07 BB Balance of Power | 261107 Bloomberg Balance of Power | https://www.bilibili.com/video/BV1sv4764Ewu | 是 | 是 2026-11-10 09:20 |
-| 11/07 BB Surveillance | 261107 Bloomberg Surveillance | https://www.bilibili.com/video/BV1gE4L68EFE | 是 | 是 2026-11-09 08:38（存档名为旧标题，脚本核对不到） |
-| 11/07 BB Tech | 261107 Bloomberg Tech | https://www.bilibili.com/video/BV1Pv4764EAS | 是 | 是 2026-11-09 08:59（存档名为旧标题，脚本核对不到） |
-
-<!-- Surveillance / Tech 是 11/9 早上手工发的，当时 SMTP 确认成功，但 doc/kd 用的是
-     旧标题（Bloomberg 261107 …），verify_videos.py 的判定看不到，所以手工补录在此。 -->
 
 ### 其他有用路径
 
