@@ -340,20 +340,7 @@ instead if the backend should only be available on this computer.
 On Windows, open PowerShell in the repository root:
 
 ```powershell
-$repo = (Get-Location).Path
-$python = Join-Path $repo ".venv\Scripts\python.exe"
-$action = New-ScheduledTaskAction `
-  -Execute $python `
-  -Argument "-m deepfind.web_api --host 0.0.0.0 --port 62000" `
-  -WorkingDirectory $repo
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-Register-ScheduledTask `
-  -TaskName "DeepFind Web" `
-  -Action $action `
-  -Trigger $trigger `
-  -Description "Start the DeepFind web backend at sign-in" `
-  -Force
-Start-ScheduledTask -TaskName "DeepFind Web"
+.\script\start-deepfind-cli.ps1 -InstallStartup
 ```
 
 Check or remove the Windows task:

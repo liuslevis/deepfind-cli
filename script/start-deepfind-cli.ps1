@@ -1,5 +1,7 @@
 param(
-    [switch]$Restart
+    [switch]$Restart,
+    [switch]$InstallStartup,
+    [switch]$RemoveStartup
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,11 +10,49 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 $hostAddress = if ($env:DEEPFIND_HOST) { $env:DEEPFIND_HOST } else { "0.0.0.0" }
 $port = if ($env:DEEPFIND_PORT) { $env:DEEPFIND_PORT } else { "62000" }
+$healthTimeoutSec = if ($env:DEEPFIND_HEALTH_TIMEOUT_SEC) { [int]$env:DEEPFIND_HEALTH_TIMEOUT_SEC } else { 10 }
+$startupTimeoutSec = if ($env:DEEPFIND_STARTUP_TIMEOUT_SEC) { [int]$env:DEEPFIND_STARTUP_TIMEOUT_SEC } else { 120 }
 $stateDir = Join-Path $env:LOCALAPPDATA "DeepFind"
 $logDir = Join-Path $stateDir "logs"
 $pidFile = Join-Path $stateDir "deepfind-web.pid"
 $stdoutLog = Join-Path $logDir "backend.log"
 $stderrLog = Join-Path $logDir "backend-error.log"
+$taskName = "DeepFind Web"
+$powershell = (Get-Command powershell.exe).Source
+
+if ($InstallStartup -and $RemoveStartup) {
+    throw "Use either -InstallStartup or -RemoveStartup, not both."
+}
+
+if ($RemoveStartup) {
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "Removed scheduled task '$taskName'."
+    exit 0
+}
+
+if ($InstallStartup) {
+    $action = New-ScheduledTaskAction `
+        -Execute $powershell `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" `
+        -WorkingDirectory $repoRoot
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $settings = New-ScheduledTaskSettingsSet `
+        -ExecutionTimeLimit (New-TimeSpan -Days 1) `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1)
+
+    Register-ScheduledTask `
+        -TaskName $taskName `
+        -Action $action `
+        -Trigger $trigger `
+        -Settings $settings `
+        -Description "Start the DeepFind web backend when the user signs in" `
+        -Force | Out-Null
+
+    Start-ScheduledTask -TaskName $taskName
+    Write-Host "Registered '$taskName' to start DeepFind at sign-in."
+    exit 0
+}
 
 if (-not (Test-Path $python -PathType Leaf)) {
     throw "DeepFind virtual environment not found. Run 'uv sync' in $repoRoot first."
@@ -50,7 +90,7 @@ if (Test-Path $pidFile -PathType Leaf) {
 try {
     $health = Invoke-RestMethod `
         -Uri "http://127.0.0.1:$port/api/health" `
-        -TimeoutSec 2
+        -TimeoutSec $healthTimeoutSec
     if ($health.ok -eq $true -and $health.service -eq "deepfind-web") {
         if ($Restart) {
             throw "DeepFind is responding on port $port, but its PID is not tracked in $pidFile. Stop that process explicitly before restarting."
@@ -72,11 +112,12 @@ $backend = Start-Process `
     -PassThru
 $backend.Id | Set-Content $pidFile
 
-for ($attempt = 0; $attempt -lt 30; $attempt++) {
+$deadline = [DateTime]::UtcNow.AddSeconds($startupTimeoutSec)
+while ([DateTime]::UtcNow -lt $deadline) {
     try {
         $health = Invoke-RestMethod `
             -Uri "http://127.0.0.1:$port/api/health" `
-            -TimeoutSec 2
+            -TimeoutSec $healthTimeoutSec
         if ($health.ok -eq $true -and $health.service -eq "deepfind-web") {
             Write-Host "DeepFind backend started with PID $($backend.Id) at http://${hostAddress}:$port."
             Write-Host "Logs: $stdoutLog and $stderrLog"
@@ -89,7 +130,7 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
             break
         }
     }
-    Start-Sleep -Seconds 1
+    Start-Sleep -Milliseconds 500
 }
 
 Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
