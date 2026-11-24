@@ -8,6 +8,24 @@ import type {
 } from "./types";
 
 const TOKEN_KEY = "deepfind_auth_token";
+const MALWARE_BLOCK_PAGE_MARKER =
+  "The URL you are attempting to access has been flagged for malware and blocked";
+const SERVICE_UNAVAILABLE_MESSAGE =
+  "The selected model service is currently unavailable. Try again later or switch to another model.";
+
+function normalizeErrorMessage(message: string, contentType = ""): string {
+  const trimmed = message.trim();
+  if (
+    trimmed.includes(MALWARE_BLOCK_PAGE_MARKER) ||
+    contentType.toLowerCase().includes("text/html") ||
+    /^<!doctype html\b/i.test(trimmed) ||
+    /^<html\b/i.test(trimmed) ||
+    /<(?:head|body|script)\b/i.test(trimmed)
+  ) {
+    return SERVICE_UNAVAILABLE_MESSAGE;
+  }
+  return trimmed;
+}
 
 export function getAuthToken(): string | null {
   try {
@@ -39,13 +57,17 @@ async function readErrorMessage(response: Response): Promise<string> {
   if (!text) {
     return response.statusText || `Request failed (${response.status})`;
   }
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (contentType.toLowerCase().includes("text/html")) {
+    return SERVICE_UNAVAILABLE_MESSAGE;
+  }
   try {
     const parsed = JSON.parse(text) as {
       detail?: unknown;
       message?: unknown;
     };
     if (typeof parsed.detail === "string" && parsed.detail.trim()) {
-      return parsed.detail;
+      return normalizeErrorMessage(parsed.detail);
     }
     if (
       parsed.detail &&
@@ -53,15 +75,15 @@ async function readErrorMessage(response: Response): Promise<string> {
       "message" in parsed.detail &&
       typeof parsed.detail.message === "string"
     ) {
-      return parsed.detail.message;
+      return normalizeErrorMessage(parsed.detail.message);
     }
     if (typeof parsed.message === "string" && parsed.message.trim()) {
-      return parsed.message;
+      return normalizeErrorMessage(parsed.message);
     }
   } catch {
     // Non-JSON error bodies should fall back to the raw response text.
   }
-  return text;
+  return normalizeErrorMessage(text, contentType);
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -97,10 +119,14 @@ function parseEventBlock(block: string): ProgressEvent | null {
     return null;
   }
   const parsed = JSON.parse(payload) as { timestamp?: string; data?: Record<string, unknown> };
+  const data = parsed.data ?? {};
+  if (type === "error" && typeof data.message === "string") {
+    data.message = normalizeErrorMessage(data.message);
+  }
   return {
     type,
     timestamp: parsed.timestamp ?? new Date().toISOString(),
-    data: parsed.data ?? {},
+    data,
   };
 }
 

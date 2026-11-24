@@ -667,6 +667,72 @@ describe("App", () => {
     expect(errorElements.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("replaces an upstream HTML error page with a clear service error", async () => {
+    let chatsRequestCount = 0;
+    const blockMarker =
+      "The URL you are attempting to access has been flagged for malware and blocked";
+    const internalEmail = "employee@corp.invalid";
+    const rawHtml = `<html><head><title>Blocked</title></head><body>${blockMarker} Contact ${internalEmail}</body></html>`;
+    const friendlyError =
+      "The selected model service is currently unavailable. Try again later or switch to another model.";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      if (url === "/api/chats" && method === "GET") {
+        chatsRequestCount += 1;
+        return jsonResponse({
+          chats:
+            chatsRequestCount === 1
+              ? []
+              : [
+                  {
+                    id: "chat_html_error",
+                    title: "Unavailable model",
+                    created_at: "2026-03-22T00:00:00Z",
+                    updated_at: "2026-03-22T00:01:00Z",
+                    preview: "",
+                  },
+                ],
+        });
+      }
+      if (url === "/api/chats" && method === "POST") {
+        return jsonResponse({
+          chat: {
+            id: "chat_html_error",
+            title: "New chat",
+            created_at: "2026-03-22T00:00:00Z",
+            updated_at: "2026-03-22T00:00:00Z",
+            messages: [],
+          },
+        });
+      }
+      if (url === "/api/chats/chat_html_error/messages/stream") {
+        return streamResponse([
+          { type: "error", data: { message: rawHtml } },
+          { type: "done", data: { chat_id: "chat_html_error" } },
+        ]);
+      }
+      if (url === "/api/health" && method === "GET") {
+        return jsonResponse({ status: "ok", requires_token: false });
+      }
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await userEvent.type(screen.getByLabelText("Ask DeepFind"), "Are you available?");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const errorElements = await screen.findAllByText(friendlyError);
+    expect(errorElements.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(rawHtml)).not.toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(blockMarker))).not.toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(internalEmail))).not.toBeInTheDocument();
+  });
+
   it("restores the selected chat from local storage", async () => {
     localStorage.setItem("deepfind.web.selected-chat", "chat_b");
 
