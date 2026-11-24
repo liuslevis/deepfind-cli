@@ -189,16 +189,6 @@ const FALLBACK_TOOL_OPTIONS: ToolOption[] = [
     parameters: ["bili_id", "title", "focus", "refresh"],
   },
   {
-    name: "youtube_transcribe",
-    description: "Transcribe YouTube audio and summarize it for a query.",
-    parameters: ["url", "query"],
-  },
-  {
-    name: "youtube_transcribe_full",
-    description: "Return the full transcript of a YouTube video.",
-    parameters: ["url"],
-  },
-  {
     name: "gen_img",
     description: "Generate an image and save it locally.",
     parameters: ["prompt", "aspect_ratio", "image_size"],
@@ -218,7 +208,12 @@ function defaultSelectedTools(tools: ToolOption[]): string[] {
   return tools
     .filter((tool) => {
       const name = tool.name;
-      if (name === "gen_img" || name === "gen_slides" || name === "zhihu_search") {
+      if (
+        name === "gen_img" ||
+        name === "gen_slides" ||
+        name === "zhihu_search" ||
+        name === "x_search"
+      ) {
         return false;
       }
       if (name.startsWith("xhs_") || name.startsWith("boss_")) {
@@ -251,8 +246,6 @@ function toolLabel(name: string): string {
     bili_transcribe: "Bilibili Transcribe",
     bili_transcribe_full: "Bilibili Full Transcript",
     bili_summary: "Bilibili Summary Doc",
-    youtube_transcribe: "YouTube Transcribe",
-    youtube_transcribe_full: "YouTube Full Transcript",
     gen_img: "Generate Image",
     gen_slides: "Generate Slides",
     send_kindle: "Send to Kindle",

@@ -273,9 +273,152 @@ model button that rotates between `DeepSeek`, `Qwen`, `Mimo`, `Minimax`, `GLM`, 
 when a compatible NVIDIA GPU is available. `DeepSeek` is selected by default.
 
 Backend:
+
 ```bash
 uv run deepfind-web --reload
 ```
+
+### Run the backend in the background
+
+Before starting, run `uv sync` from the repository root and configure `.env`.
+The startup scripts bind to `0.0.0.0:62000` by default, save the process ID, and
+write logs outside the repository.
+
+On Windows, use PowerShell:
+
+```powershell
+.\script\start-deepfind-cli.ps1
+```
+
+You can also launch it from Command Prompt:
+
+```batch
+script\start-deepfind-cli.cmd
+```
+
+On macOS:
+
+```bash
+./script/start-deepfind-cli.sh
+```
+
+Override the default host or port with environment variables:
+
+```bash
+DEEPFIND_HOST=127.0.0.1 DEEPFIND_PORT=62001 \
+  ./script/start-deepfind-cli.sh
+```
+
+Check that the backend is ready at `http://127.0.0.1:62000/api/health`. Windows
+stores state and logs under `%LOCALAPPDATA%\DeepFind`; macOS uses
+`~/Library/Application Support/DeepFind` and `~/Library/Logs/DeepFind`.
+
+### Restart after updating
+
+After pulling code or changing Python dependencies, run `uv sync` and restart the
+backend. A successful health check only confirms that a process is responding;
+an existing process continues to use the code that was loaded when it started.
+The startup scripts return without changing a running backend unless you pass
+`-Restart` on Windows or `--restart` on macOS. Restarting is limited to the PID
+recorded by the startup script; it will not terminate an unknown process that
+happens to use the same port. For an automatically started service, use the Task
+Scheduler or `launchctl` stop/start commands below.
+
+If the UI reports `Connection error`, first restart the backend and inspect
+`backend.log` and `backend-error.log` in the platform log directory. Do not
+disable TLS certificate verification. Use the
+[web E2E regression test](skill/E2E_TEST.md) to verify the browser, authentication,
+SSE, and selected model together.
+
+### Start the backend automatically
+
+Before registering the service, run `uv sync` from the repository root and
+configure `.env`. These examples start the backend when you sign in. They use
+`0.0.0.0` so other devices on the local network can connect; use `127.0.0.1`
+instead if the backend should only be available on this computer.
+
+On Windows, open PowerShell in the repository root:
+
+```powershell
+$repo = (Get-Location).Path
+$python = Join-Path $repo ".venv\Scripts\python.exe"
+$action = New-ScheduledTaskAction `
+  -Execute $python `
+  -Argument "-m deepfind.web_api --host 0.0.0.0 --port 62000" `
+  -WorkingDirectory $repo
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+Register-ScheduledTask `
+  -TaskName "DeepFind Web" `
+  -Action $action `
+  -Trigger $trigger `
+  -Description "Start the DeepFind web backend at sign-in" `
+  -Force
+Start-ScheduledTask -TaskName "DeepFind Web"
+```
+
+Check or remove the Windows task:
+
+```powershell
+Get-ScheduledTask -TaskName "DeepFind Web"
+Stop-ScheduledTask -TaskName "DeepFind Web"
+Unregister-ScheduledTask -TaskName "DeepFind Web" -Confirm:$false
+```
+
+On macOS, create a user LaunchAgent from the repository root:
+
+```bash
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/DeepFind"
+repo="$(pwd)"
+label="io.github.liuslevis.deepfind-web"
+plist="$HOME/Library/LaunchAgents/$label.plist"
+
+cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$repo/.venv/bin/python</string>
+    <string>-m</string>
+    <string>deepfind.web_api</string>
+    <string>--host</string>
+    <string>0.0.0.0</string>
+    <string>--port</string>
+    <string>62000</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$repo</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$HOME/Library/Logs/DeepFind/backend.log</string>
+  <key>StandardErrorPath</key>
+  <string>$HOME/Library/Logs/DeepFind/backend-error.log</string>
+</dict>
+</plist>
+EOF
+
+launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$plist"
+launchctl kickstart -k "gui/$(id -u)/$label"
+```
+
+Check or remove the macOS LaunchAgent:
+
+```bash
+launchctl print "gui/$(id -u)/io.github.liuslevis.deepfind-web"
+launchctl bootout "gui/$(id -u)" \
+  "$HOME/Library/LaunchAgents/io.github.liuslevis.deepfind-web.plist"
+rm "$HOME/Library/LaunchAgents/io.github.liuslevis.deepfind-web.plist"
+```
+
+After registering either service, open `http://127.0.0.1:62000/api/health` on the
+same computer to verify that the backend is ready.
 
 Frontend:
 
@@ -326,62 +469,6 @@ built on macOS. Backend packaging uses the Python `desktop` extra and PyInstalle
 The production shell now includes a web manifest, touch icon, and iPhone Safari
 safe-area handling so it works cleanly in Safari and when added to the Home
 Screen.
-
-## Deploy To Raspberry Pi
-
-The repo includes deployment scripts for a Raspberry Pi 5 running Ubuntu at
-`david@192.168.0.205`.
-
-One-time SSH key bootstrap from your local machine:
-
-```bash
-./scripts/bootstrap_rpi_ssh_key.sh
-```
-
-Notes:
-
-- The bootstrap script is now key-only. It verifies passwordless SSH access and, if access is missing, tells you which public key to install on the Pi.
-- It uses your existing `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub` by default.
-- Override `PUBKEY_PATH`, `RPI_HOST`, `RPI_USER`, or `RPI_SSH_PORT` if needed.
-
-Deploy the app after SSH keys are working:
-
-```bash
-./scripts/deploy_rpi.sh
-```
-
-What the deploy script does:
-
-- Syncs the repo to `/home/david/apps/deepfind-cli`
-- Copies the local `.env` file to the Pi
-- Installs `uv` if it is missing
-- Runs `uv sync --frozen`, `npm ci`, and `npm run build` on the Pi
-- Installs and restarts a user-level `deepfind-web` systemd service with `systemctl --user`
-
-No-password deploy requirements:
-
-- Passwordless SSH to the Pi must already work for `david@<host>`.
-- The Pi already needs `python3` 3.11+, `curl`, `tar`, and `systemd`.
-- `deploy_rpi.sh` will install a user-local Node.js 20.x automatically when `node`/`npm` are missing or too old.
-- `deploy_rpi.sh` will also install `@jackwener/opencli` under the same user so `web_search` works after deploy.
-- Boot persistence for the user service requires a one-time admin command on the Pi:
-
-```bash
-sudo loginctl enable-linger david
-```
-
-Default LAN URL after deployment:
-
-```text
-http://192.168.0.205:8000
-```
-
-Useful checks on the Pi:
-
-```bash
-systemctl --user status deepfind-web
-curl http://127.0.0.1:8000/api/health
-```
 
 ## How It Works
 

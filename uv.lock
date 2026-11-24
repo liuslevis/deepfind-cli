@@ -654,6 +654,7 @@ dependencies = [
     { name = "openai" },
     { name = "pypdf" },
     { name = "reportlab" },
+    { name = "truststore" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -706,6 +707,7 @@ requires-dist = [
     { name = "torchaudio", marker = "sys_platform == 'darwin' and extra == 'media'", specifier = ">=2.0.0" },
     { name = "torchaudio", marker = "(sys_platform == 'linux' and extra == 'media') or (sys_platform == 'win32' and extra == 'media')", specifier = "==2.11.0+cu130" },
     { name = "transformers", marker = "extra == 'media'", specifier = ">=4.37.0" },
+    { name = "truststore", specifier = ">=0.10.0" },
     { name = "uvicorn", specifier = ">=0.35.0" },
     { name = "websockets", specifier = ">=15.0" },
 ]

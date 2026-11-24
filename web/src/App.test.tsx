@@ -355,6 +355,11 @@ describe("App", () => {
               parameters: ["query", "limit"],
             },
             {
+              name: "x_search",
+              description: "Search X.",
+              parameters: ["query", "max_results", "tab"],
+            },
+            {
               name: "xhs_search",
               description: "Search Xiaohongshu notes.",
               parameters: ["query", "page", "sort", "note_type"],

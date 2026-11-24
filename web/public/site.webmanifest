@@ -2,6 +2,7 @@
   "name": "DeepFind Web",
   "short_name": "DeepFind",
   "description": "Local-first multi-agent web research cockpit.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

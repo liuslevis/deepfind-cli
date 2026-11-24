@@ -254,6 +254,28 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.base_url, DEFAULT_DEEPSEEK_BASE_URL)
         self.assertEqual(settings.api_mode, "responses")
 
+    def test_new_client_uses_the_system_certificate_store(self) -> None:
+        settings = Settings(
+            api_key="sk-test",
+            base_url="https://example.com/v1",
+        )
+
+        with (
+            patch("deepfind.config.truststore.SSLContext") as ssl_context,
+            patch("deepfind.config.httpx.Client") as http_client,
+            patch("deepfind.config.OpenAI") as openai,
+        ):
+            client = settings.new_client()
+
+        ssl_context.assert_called_once()
+        http_client.assert_called_once_with(verify=ssl_context.return_value)
+        openai.assert_called_once_with(
+            api_key="sk-test",
+            base_url="https://example.com/v1",
+            http_client=http_client.return_value,
+        )
+        self.assertIs(client, openai.return_value)
+
     def test_from_env_finds_dotenv_above_the_working_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             project = Path(tmpdir)

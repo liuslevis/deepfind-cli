@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 import platform
+import ssl
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import httpx
+import truststore
 from openai import OpenAI
 
 from .asr import DEFAULT_ASR_MODEL
@@ -436,7 +439,13 @@ class Settings:
         )
 
     def new_client(self) -> OpenAI:
-        return OpenAI(api_key=self.api_key, base_url=self.base_url)
+        ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        http_client = httpx.Client(verify=ssl_context)
+        return OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            http_client=http_client,
+        )
 
     def ensure_remote_ready(self) -> "Settings":
         if not self.api_key:
