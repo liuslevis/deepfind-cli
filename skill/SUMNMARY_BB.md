@@ -16,8 +16,9 @@ Chrome 开着且 opencli 扩展 connected、`.env` 里的 SMTP/Kindle 配置有�
 - 调度器：Windows Task Scheduler
 - 任务名：`DeepFind Daily BB News`
 - 触发时间：每天 07:00（Asia/Shanghai）
-- 启动脚本：`~/.copilot/scheduled-tasks/daily-bb-news/run.ps1`
-- Agent 提示词：`~/.copilot/scheduled-tasks/daily-bb-news/prompt.txt`
+- 启动脚本：`scheduled-tasks/daily-bb-news/run.ps1`（仓库根目录下）
+- Agent 提示词：`scheduled-tasks/daily-bb-news/prompt.txt`
+- 任务定义 XML：`scheduled-tasks/daily-bb-news/task.xml`
 - 工作目录：仓库根目录
 - 运行日志：`tmp/daily-bb-logs/`
 - 运行条件：仅用户登录时运行；错过 07:00 不补跑；不唤醒电脑
@@ -106,13 +107,17 @@ opencli 的两个坑（脚本已经处理，改脚本时注意）：
 ```
 
 要点：
-- 后端在 `http://127.0.0.1:8000`，要先确认 `/api/health` 可用：
-  `Invoke-WebRequest http://127.0.0.1:8000/api/health`
+- 后端在 `http://127.0.0.1:62000`（`script/start-deepfind-cli.ps1` 默认就是 62000），要先确认
+  `/api/health` 可用：`Invoke-WebRequest http://127.0.0.1:62000/api/health`。
+  `deepfind-chat` 优先读 `.env` 里的 `DEEPFIND_WEB_URL`，所以 `.env` 里保留
+  `DEEPFIND_WEB_URL=http://127.0.0.1:62000`；手动临时指向别的端口时加 `--base-url` 或
+  改这个环境变量即可。
 - **后端 token 必须和 `.env` 里的 `DEEPFIND_WEB_TOKEN` 一致。** 健康检查返回
   `requires_token: true`、而 `/api/chats` 返回 401，就说明这个后端是用别的
-  token 起的：停掉它（`netstat -ano | Select-String ':8000\s+.*LISTENING'`
-  拿到 PID → `Stop-Process`），再用 `.venv\Scripts\deepfind-web.exe --host
-  127.0.0.1 --port 8000` 重启，让它重新读 `.env`。**不要自己编一个 token。**
+  token 起的：停掉它（`netstat -ano | Select-String ':62000\s+.*LISTENING'`
+  拿到 PID → `Stop-Process`），再跑 `.\script\start-deepfind-cli.ps1 -Restart`
+  （等价于 `.venv\Scripts\deepfind-web.exe --host 127.0.0.1 --port 62000`）让它重新读 `.env`。
+  **不要自己编一个 token。**
 - `bili_summary` 输出一般 3–10 分钟一条，直接跑会超时；用后台 job 跑，完成后读
   job 输出。日志里的中文是 GBK 乱码，不用管。
 - web CLI 跑到 `send_kindle` 报 `[Errno 13] Permission denied` 是正常的
@@ -210,11 +215,50 @@ print(toolset.bili_summary("BV1AKWx6BEKp", title="261109 Bloomberg Weekend"))
 
 ## 6. 转译记录
 
+<!-- 2026-11-25 起：计划任务 `DeepFind Daily BB News` 已重建，触发时间仍为每天 07:00
+     （Asia/Shanghai），注册信息见 `scheduled-tasks/daily-bb-news/task.xml`（仓库内）。
+     重建前的问题：11/23、11/24 的日志每次只有 0 字节的 stdout/stderr 一对，11/25 连日志都没
+     有；重建后查 `Get-ScheduledTaskInfo` 显示 `LastRunTime=11/25 07:00:01`、
+     `LastTaskResult=1`——任务当时确实被触发过，但 run.ps1 在写出 `run.ps1 started` 那行之前
+     就退出了（0 字节 stdout），所以不能只凭「日志目录里有没有文件」判断有没有触发。
+     run.ps1 现在会在第一行写入 `run.ps1 started`，再跑 fetch_uploads.py → copilot 按
+     prompt.txt 执行 SOP → 最后自动跑 verify_videos.py 做独立核对。
+     排查顺序：`Get-ScheduledTaskInfo "DeepFind Daily BB News"` 看 LastTaskResult 和日志内容 →
+     `Get-Command copilot` 确认 CLI 在 PATH 上 → 手动 `powershell -File run.ps1` 复现。
+     已知限制：重建前 07:00 之前的那一轮依赖 `copilot` CLI 的联网鉴权，与 `bili_summary`
+     的后端（127.0.0.1:62000 的 deepfind-web）是两条独立路径；后端没起时 SOP 里第 2 节的
+     deepfind-chat 路径会失败，需要先跑 `.\script\start-deepfind-cli.ps1`
+     （默认 `--host 0.0.0.0 --port 62000`，日志在 `%LOCALAPPDATA%\DeepFind\logs`）。 -->
+
 <!-- 由 `verify_videos.py --from-uploads tmp/bili_uploads.json` 生成；Kindle 标题用新规范，上传标题留作对账 -->
 
 | Kindle 标题 | 上传标题 | BID 链接 | 转译 | 发送 |
 |---|---|---|---|---|
-| 11/21 BB Tech | 261121 Bloomberg Tech | https://www.bilibili.com/video/BV1LdyhzGEjK | 是 | 是 2026-11-22 07:05 |
+| 11/24 BB China Show P1 | 261124 Bloomberg｜The China Show P1 | https://www.bilibili.com/video/BV1cL1FzAENi | 是 | 是 2026-11-25 08:41 |
+| 11/24 BB Asia Trade | 261124 Bloomberg｜The Asia Trade | https://www.bilibili.com/video/BV1tc1FzrETc | 是 | 是 2026-11-25 08:41 |
+| 11/24 BB Surveilliance P1 | 261124 Bloomberg Surveilliance  P1 | https://www.bilibili.com/video/BV1JuydzSEeS | 是 | 是 2026-11-25 08:41 |
+| 11/24 BB Breif | 261124 Bloomberg Breif | https://www.bilibili.com/video/BV1mRyRzFEP1 | 是 | 是 2026-11-25 08:41 |
+
+<!-- 2026-11-25 08:41 手工补跑（当天 07:00 定时任务没有留下任何日志，Windows 任务
+     `DeepFind Daily BB News` 也已不存在，07:41 才手工跑 fetch_uploads.py）。opencli 页面共
+     42 条，D-1（11/24）共 4 条，全部为 Bloomberg/BB，无其他频道条目。4 条均新转写、检查、
+     渲染并发送：Surveilliance P1（BV1JuydzSEeS）、Breif（BV1mRyRzFEP1）、China Show P1
+     （BV1cL1FzAENi）、Asia Trade（BV1tc1FzrETc）。Breif 首次摘要因中文正文不足，
+     按规则 `refresh=True` 重做后通过；其余三份首次即通过。4 封 SMTP 均首次返回
+     `235 Authentication successful`，`send_message` 拒收列表均为空，无 535，未发送 PDF
+     列表为空。批量脚本 `tmp/run_batch_1125.py`（不带 `--send` 先转写渲染，再带 `--send` 发信），
+     日志 `tmp/daily-bb-logs/run_batch_1125.log`、`run_batch_1125_send.log`，最终核对
+     `tmp/daily-bb-logs/verify_2026-11-25.txt`。同日已重建 07:00 计划任务（见下方说明）。 -->
+
+<!-- 2026-11-23 13:24 手工处理（补录，Asia/Shanghai）：`1123 BB China Show P1`
+     （BV1Y6ynzrEPh）与 `1123 BB weekend P1`（BV1o5yHzEEpB）当天 13:17–13:24 转写完、
+     渲染并发信，`doc/kd` 存档齐全；当时未回填本表，2026-11-25 用
+     `verify_videos.py --list` 核对后补录，核对结果见
+     `tmp/daily-bb-logs/verify_backfill_2026-11-25.txt`。 -->
+
+<!-- 2026-11-24 13:13 手工处理（补录，Asia/Shanghai）：`1122 BB weekend P1`
+     （BV1Lqy3zXE2r）于 11/24 13:05–13:13 转写完、渲染并发信，`doc/kd` 存档齐全；11/22
+     07:00 那轮只处理了 11/21 的 Tech，这条 weekend 是隔天补做的。2026-11-25 核对后补录。 -->
 
 <!-- 2026-11-22 07:00 手工执行（Asia/Shanghai）：opencli 页面共 42 条，D-1（11/21）
      共 2 条；严格筛出 1 条 Bloomberg/BB 并完成新转写、检查、渲染和发送。跳过 1 条

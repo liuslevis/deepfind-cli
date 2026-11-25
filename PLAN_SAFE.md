@@ -6,7 +6,7 @@
 
 ## 一、威胁模型
 
-你的场景：手机通过公网访问 `http://localhost:5173`（Vite dev server → FastAPI 8000）。
+你的场景：手机通过公网访问 `http://localhost:5173`（Vite dev server → FastAPI 62000）。
 
 攻击者只需知道你的公网 IP + 端口，即可：
 - 调用所有 API（无认证）
@@ -168,11 +168,11 @@ cd web && npm run build
 # 用 HTTPS 反代（推荐 Caddy，自动 Let's Encrypt）
 # Caddyfile:
 your-domain.com {
-    reverse_proxy 127.0.0.1:8000
+    reverse_proxy 127.0.0.1:62000
 }
 
-# 启动后端（不暴露 8000 端口到公网）
-deepfind-web --host 127.0.0.1 --port 8000
+# 启动后端（不暴露 62000 端口到公网）
+deepfind-web --host 127.0.0.1 --port 62000
 ```
 
 **绝对不要把 `npm run dev` (Vite dev server) 暴露到公网。**
@@ -261,7 +261,7 @@ def browser_fetch(self, url: str, prompt: str, headless: bool = True) -> dict:
 
 ```
                     ┌──────────────┐
-  手机 ──HTTPS──▶  │  Caddy 反代   │ ──HTTP──▶ FastAPI :8000
+  手机 ──HTTPS──▶  │  Caddy 反代   │ ──HTTP──▶ FastAPI :62000
                     │  (自动证书)    │           (仅监听 127.0.0.1)
                     │  + 限速       │           (Token 认证)
                     └──────────────┘           (静态文件: web/dist)

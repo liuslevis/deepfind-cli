@@ -4,7 +4,7 @@
 
 Your development environment is now **RUNNING**!
 
-- **Backend**: http://localhost:8000 ✅
+- **Backend**: http://localhost:62000 ✅
 - **Frontend**: http://localhost:5173 ✅
 
 ## Next Steps
@@ -78,7 +78,7 @@ Or press `Ctrl+C` in each window.
 
 ```bash
 # Find what's using the ports
-lsof -i :8000
+lsof -i :62000
 lsof -i :5173
 
 # Kill the processes
@@ -89,7 +89,7 @@ kill -9 <PID>
 
 ```bash
 # Check backend health
-curl http://localhost:8000/api/health
+curl http://localhost:62000/api/health
 
 # Restart backend only
 cd /Users/xiaojiliu/dev/deepfind-cli
@@ -120,6 +120,6 @@ npm run dev -- --host
 ---
 
 **Current Session:**
-- Backend: Running on http://localhost:8000
+- Backend: Running on http://localhost:62000
 - Frontend: Running on http://localhost:5173
 - XHS Login: ⚠️ Pending (see XIAOHONGSHU_LOGIN_FIX.md)

@@ -14,7 +14,7 @@ web/*.tsbuildinfo
 fastembed_cache/
 slide
 sandbox/
-
+scheduled-tasks/
 # Local Vite dependency cache
 .vite/
 

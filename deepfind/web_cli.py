@@ -24,7 +24,7 @@ from urllib.request import Request, urlopen
 from .config import _load_dotenv
 from .web_models import ChatMode, DEFAULT_MODEL_TARGET, ModelTarget, ResearchMode
 
-DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_BASE_URL = "http://127.0.0.1:62000"
 DEFAULT_CHAT_MODE: ChatMode = "fast"
 DEFAULT_RESEARCH_MODE: ResearchMode = "chat"
 _REQUEST_TIMEOUT = 30.0

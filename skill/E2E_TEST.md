@@ -12,14 +12,14 @@
 - `.venv` 已安装项目 Python 依赖；
 - `.env` 包含可用的 `DEEPFIND_WEB_TOKEN` 和至少一个模型 API Key；
 - 前端监听 `http://127.0.0.1:5173`；
-- 后端监听 `http://127.0.0.1:8000`。
+- 后端监听 `http://127.0.0.1:62000`。
 
 先检查环境：
 
 ```bash
 python3 -m playwright --version
 opencli --version
-curl --fail http://127.0.0.1:8000/api/health
+curl --fail http://127.0.0.1:62000/api/health
 curl --fail http://127.0.0.1:5173/
 ```
 
@@ -239,7 +239,7 @@ PY
 
 ```bash
 SSL_CERT_FILE="$PWD/tmp/reg-test-ca.pem" \
-  .venv/bin/deepfind-web --host 127.0.0.1 --port 8000
+  .venv/bin/deepfind-web --host 127.0.0.1 --port 62000
 ```
 
 然后重新运行页面 E2E。测试完成并停止后端后，可删除明确的临时文件：
